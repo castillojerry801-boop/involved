@@ -7,7 +7,7 @@ const features = [
   {
     icon: Dumbbell,
     title: 'Smart Training',
-    description: 'Structured programs for strength, conditioning, running, and obstacle racing. Built around your goals, not someone else\'s.',
+    description: 'Structured programs for strength, conditioning, and sport-specific training. Built around your goals, not someone else\'s.',
   },
   {
     icon: Bot,
@@ -28,10 +28,10 @@ const features = [
 
 const forWhom = [
   'First-time gym-goers building a habit',
-  'Spartan & obstacle-course racers',
+  'Basketball & court sport players',
+  'Football athletes & linemen',
+  'Wrestlers cutting and building strength',
   'Runners chasing new PRs',
-  'Strength athletes pushing limits',
-  'Hyrox competitors',
   'Anyone ready to be more active',
 ]
 
@@ -75,7 +75,7 @@ export default function LandingPage() {
             </h1>
 
             <p className="mx-auto mb-10 max-w-xl text-lg text-zinc-400 md:text-xl">
-              The fitness platform built for real people. Whether you&apos;re just starting or training for your next Spartan — Involved meets you where you are.
+              The fitness platform built for real people. Whether you&apos;re just starting out or training for your next season — Involved meets you where you are.
             </p>
 
             <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
