@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Sun, Utensils, Dumbbell, TrendingUp, User } from 'lucide-react'
+import Image from 'next/image'
 import { cn } from '@/lib/utils'
-import { InvolvedLogo } from '@/components/logo'
 
 const navItems = [
   { href: '/today',    label: 'Today',    icon: Sun },
@@ -21,8 +21,17 @@ export function AppNav() {
     <>
       {/* Desktop sidebar */}
       <aside className="hidden md:flex flex-col w-64 min-h-screen border-r border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-4 py-8 fixed top-0 left-0">
-        <div className="mb-10 px-2">
-          <InvolvedLogo size="sm" />
+        <div className="mb-10 -mx-2">
+          <div className="rounded-xl bg-zinc-950 px-3 py-2.5">
+            <Image
+              src="/involved-logo.png"
+              alt="Involved"
+              width={140}
+              height={47}
+              className="w-full object-contain"
+              priority
+            />
+          </div>
         </div>
         <nav className="flex flex-col gap-1 flex-1">
           {navItems.map(({ href, label, icon: Icon }) => {
