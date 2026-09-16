@@ -7,7 +7,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <header className="flex h-16 items-center border-b border-zinc-100 bg-white px-6 dark:border-zinc-800 dark:bg-zinc-950">
         <Link href="/">
           <div className="rounded-lg bg-zinc-950 px-3 py-1.5">
-            <Image src="/involved-logo.png" alt="Involved" width={100} height={33} className="object-contain" priority />
+            <Image src="/involved-logo-custom.jpg" alt="Involved" width={100} height={33} className="object-contain" priority />
           </div>
         </Link>
       </header>

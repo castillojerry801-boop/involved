@@ -37,11 +37,11 @@ const forWhom = [
 
 export default function LandingPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-white dark:bg-zinc-950">
+    <div className="flex min-h-screen flex-col">
       {/* Nav */}
-      <header className="sticky top-0 z-50 border-b border-zinc-100 bg-white/95 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/95">
+      <header className="sticky top-0 z-50 border-b border-zinc-200/40 bg-white/70 backdrop-blur-md dark:border-zinc-700/40 dark:bg-zinc-950/70">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <InvolvedLogo size="sm" />
+          <InvolvedLogo size="sm" variant="wordmark" />
           <div className="flex items-center gap-3">
             <Link href="/login">
               <Button variant="ghost" size="sm">Sign in</Button>
@@ -55,12 +55,7 @@ export default function LandingPage() {
 
       <main className="flex-1">
         {/* Hero */}
-        <section className="relative overflow-hidden bg-zinc-950 px-6 pb-24 pt-20 text-white md:pb-32 md:pt-28">
-          {/* Background texture */}
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 opacity-[0.03] [background-image:repeating-linear-gradient(0deg,transparent,transparent_40px,white_40px,white_41px),repeating-linear-gradient(90deg,transparent,transparent_40px,white_40px,white_41px)]"
-          />
+        <section className="relative overflow-hidden px-6 pb-24 pt-20 text-white md:pb-32 md:pt-28">
 
           <div className="relative mx-auto max-w-4xl text-center">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-4 py-1.5 text-xs font-medium text-zinc-300">
@@ -104,7 +99,7 @@ export default function LandingPage() {
         </section>
 
         {/* For whom */}
-        <section className="border-b border-zinc-100 bg-zinc-50 px-6 py-16 dark:border-zinc-800 dark:bg-zinc-900">
+        <section className="border-b border-zinc-200/30 bg-white/20 px-6 py-16 backdrop-blur-sm dark:border-zinc-700/30 dark:bg-zinc-950/30">
           <div className="mx-auto max-w-4xl">
             <p className="mb-8 text-center text-sm font-semibold uppercase tracking-widest text-zinc-500">
               Built for every kind of athlete
@@ -113,7 +108,7 @@ export default function LandingPage() {
               {forWhom.map((item) => (
                 <div
                   key={item}
-                  className="flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-medium text-zinc-700 shadow-sm dark:bg-zinc-800 dark:text-zinc-300"
+                  className="flex items-center gap-2 rounded-xl bg-white/60 px-4 py-3 text-sm font-medium text-zinc-900 shadow-sm backdrop-blur-sm dark:bg-zinc-800/60 dark:text-zinc-200"
                 >
                   <div className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
                   {item}
@@ -124,7 +119,7 @@ export default function LandingPage() {
         </section>
 
         {/* Features */}
-        <section className="px-6 py-20">
+        <section className="bg-white/10 px-6 py-20 backdrop-blur-sm dark:bg-zinc-950/20">
           <div className="mx-auto max-w-5xl">
             <div className="mb-14 text-center">
               <h2 className="mb-4 font-black text-3xl tracking-tight text-zinc-900 dark:text-white md:text-4xl">
@@ -139,7 +134,7 @@ export default function LandingPage() {
               {features.map(({ icon: Icon, title, description }) => (
                 <div
                   key={title}
-                  className="group rounded-2xl border border-zinc-100 bg-white p-8 shadow-sm transition-shadow hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900"
+                  className="group rounded-2xl border border-zinc-200/40 bg-white/60 p-8 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md dark:border-zinc-700/40 dark:bg-zinc-900/60"
                 >
                   <div className="mb-4 inline-flex size-12 items-center justify-center rounded-xl bg-zinc-950 text-white dark:bg-white dark:text-zinc-900">
                     <Icon className="size-6" />
@@ -153,7 +148,7 @@ export default function LandingPage() {
         </section>
 
         {/* Community callout */}
-        <section className="px-6 py-16 border-t border-zinc-100 dark:border-zinc-800">
+        <section className="border-t border-zinc-200/30 bg-white/10 px-6 py-16 backdrop-blur-sm dark:border-zinc-700/30 dark:bg-zinc-950/20">
           <div className="mx-auto max-w-3xl text-center">
             <div className="mb-4 inline-flex size-14 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800">
               <Users className="size-7 text-zinc-600 dark:text-zinc-400" />
@@ -166,7 +161,7 @@ export default function LandingPage() {
         </section>
 
         {/* CTA */}
-        <section className="bg-zinc-950 px-6 py-20 text-white">
+        <section className="bg-black/30 px-6 py-20 text-white backdrop-blur-sm">
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="mb-4 font-black text-3xl tracking-tight md:text-5xl">
               A more involved you starts today.
@@ -188,9 +183,9 @@ export default function LandingPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-zinc-100 bg-white px-6 py-8 dark:border-zinc-800 dark:bg-zinc-950">
+      <footer className="border-t border-zinc-200/30 bg-white/70 px-6 py-8 backdrop-blur-md dark:border-zinc-700/30 dark:bg-zinc-950/70">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-zinc-400 sm:flex-row">
-          <InvolvedLogo size="sm" scheme="dark" />
+          <InvolvedLogo size="sm" variant="wordmark" />
           <p>© 2026 Involved. All rights reserved.</p>
         </div>
       </footer>

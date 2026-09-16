@@ -37,7 +37,7 @@ export function InvolvedLogo({
     const { width, height } = wordmarkSizes[size]
     return (
       <Image
-        src="/involved-logo.png"
+        src="/involved-logo-custom.jpg"
         alt="Involved"
         width={width}
         height={height}
