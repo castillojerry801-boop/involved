@@ -1,0 +1,435 @@
+// Involved — Prisma Schema
+// Database: Supabase PostgreSQL
+// Run `npx prisma db push` after setting DATABASE_URL in .env.local
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// USER PROFILE
+// Extends Supabase auth.users. Created automatically via DB trigger
+// on first sign-up. id matches auth.users.id.
+// ═════════════════════════════════════════════════════════════════════
+
+model Profile {
+  id               String           @id @db.Uuid
+  username         String?          @unique @db.VarChar(30)
+  displayName      String?          @map("display_name") @db.VarChar(100)
+  avatarUrl        String?          @map("avatar_url")
+  bio              String?          @db.VarChar(500)
+  dateOfBirth      DateTime?        @map("date_of_birth") @db.Date
+  heightCm         Decimal?         @map("height_cm") @db.Decimal(5, 1)
+  weightKg         Decimal?         @map("weight_kg") @db.Decimal(5, 1)
+  fitnessLevel     FitnessLevel?    @map("fitness_level")
+  subscriptionTier SubscriptionTier @default(free) @map("subscription_tier")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  // Training relations
+  goals            Goal[]
+  aiUsageLogs      AiUsageLog[]
+
+  // Nutrition relations
+  createdFoods     FoodItem[]       @relation("FoodItemsCreated")
+  foodLogEntries   FoodLogEntry[]
+  nutritionTargets NutritionTarget[]
+  foodFavorites    FoodFavorite[]
+  savedMeals       SavedMeal[]
+
+  @@map("profiles")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// GOALS
+// User-defined fitness goals. Tied to optional events/races.
+// ═════════════════════════════════════════════════════════════════════
+
+model Goal {
+  id          String     @id @default(uuid()) @db.Uuid
+  userId      String     @map("user_id") @db.Uuid
+  type        GoalType
+  title       String     @db.VarChar(200)
+  description String?    @db.VarChar(1000)
+  targetDate  DateTime?  @map("target_date") @db.Date
+  status      GoalStatus @default(active)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  profile     Profile    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("goals")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// AI USAGE LOGS
+// Tracks AI Coach interactions per user per billing period.
+// Enables metering and subscription-tier enforcement.
+// Billing period format: "2026-09" (year-month)
+// ═════════════════════════════════════════════════════════════════════
+
+model AiUsageLog {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  billingPeriod    String   @map("billing_period") @db.VarChar(7) // "2026-09"
+  interactionCount Int      @default(0) @map("interaction_count")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  profile          Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, billingPeriod])
+  @@index([userId])
+  @@map("ai_usage_logs")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────────
+// NUTRITION — FOOD LIBRARY
+//
+// Architecture notes:
+//
+// 1. HISTORICAL ACCURACY
+//    FoodLogEntry stores a full nutrition snapshot at time of logging.
+//    The snapshot never changes even if FoodItem data is later corrected.
+//    food_item_id is retained for traceability and optional re-sync,
+//    but daily totals are always derived from the snapshot values.
+//
+// 2. PROVIDER ABSTRACTION
+//    source_provider is a free-form string ("usda_fooddata_central",
+//    "open_food_facts", etc.). Adding a new provider requires no DB
+//    migration — only a new TypeScript class implementing FoodProvider
+//    (see lib/nutrition/providers/types.ts).
+//
+// 3. TRUST MODEL
+//    FoodVisibility controls who can read a food item.
+//    RLS enforces this at the database layer.
+//    AI-extracted nutrition data enters as a user-owned draft and
+//    must be explicitly confirmed before persisting.
+//
+// 4. NUTRIENT STORAGE
+//    Core macros (calories, protein, carbs, fat) are fixed columns for
+//    fast aggregation (SQL SUM). Extended nutrients (fiber, sugar,
+//    sodium, vitamins, etc.) live in nutrients_json (JSONB) so new
+//    nutrients can be added without schema migrations.
+// ─────────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────
+// FOOD ITEMS — The Involved Food Library
+//
+// A food item can originate from:
+//   - Involved team (system-curated)
+//   - An external API (USDA, Open Food Facts, etc.)
+//   - A user (private by default, can be elevated after moderation)
+//
+// External foods retain provenance (source_provider + external_id) so
+// we can re-sync or attribute data correctly.
+//
+// Visibility lifecycle:
+//   private → (user submits for sharing) → community → (admin verifies) → verified
+//
+// Do NOT automatically elevate user foods. A moderation step is required.
+// ─────────────────────────────────────────────────────────────────────
+
+model FoodItem {
+  id          String @id @default(uuid()) @db.Uuid
+
+  // ── Identity ────────────────────────────────────────────────────────
+  name        String  @db.VarChar(300)
+  brand       String? @db.VarChar(200)
+  // barcode stores UPC-12, EAN-13, GTIN-14, or any barcode format.
+  // Stored as a string to preserve leading zeros and handle all formats.
+  barcode     String? @db.VarChar(50)
+
+  // ── Source / Provenance ─────────────────────────────────────────────
+  // sourceCategory: broad classification of origin
+  // sourceProvider: specific named provider ("usda_fooddata_central", etc.)
+  // externalId:     the item's ID in the external system
+  // lastSyncedAt:   when we last fetched/refreshed from the external source
+  sourceCategory  FoodSourceCategory @map("source_category")
+  sourceProvider  String?            @map("source_provider") @db.VarChar(100)
+  externalId      String?            @map("external_id") @db.VarChar(200)
+  lastSyncedAt    DateTime?          @map("last_synced_at")
+
+  // ── Trust / Visibility ───────────────────────────────────────────────
+  visibility    FoodVisibility @default(private_food)
+  createdById   String?        @map("created_by_id") @db.Uuid
+  // Moderation — only set by admin/system, never directly by users
+  verifiedAt    DateTime?      @map("verified_at")
+  verifiedById  String?        @map("verified_by_id") @db.Uuid
+  // If this food is a known duplicate of another, link them.
+  // Allows search to de-duplicate without deleting user-created foods.
+  duplicateOfId String?        @map("duplicate_of_id") @db.Uuid
+
+  // ── Serving ─────────────────────────────────────────────────────────
+  servingSize          Decimal  @map("serving_size") @db.Decimal(10, 3)
+  servingUnit          String   @map("serving_unit") @db.VarChar(50) // "g", "oz", "cup", "piece", etc.
+  servingsPerContainer Decimal? @map("servings_per_container") @db.Decimal(8, 2)
+
+  // ── Core Macros (per serving) ────────────────────────────────────────
+  // Fixed columns for fast SQL aggregation in daily total queries.
+  calories      Decimal @db.Decimal(8, 2)
+  proteinG      Decimal @map("protein_g") @db.Decimal(8, 3)
+  carbohydrateG Decimal @map("carbohydrate_g") @db.Decimal(8, 3)
+  fatG          Decimal @map("fat_g") @db.Decimal(8, 3)
+
+  // ── Extended Nutrients (per serving) ─────────────────────────────────
+  // JSONB allows adding new nutrients without schema migrations.
+  // Well-known keys: fiber_g, sugar_g, sodium_mg, saturated_fat_g,
+  //   polyunsaturated_fat_g, monounsaturated_fat_g, trans_fat_g,
+  //   cholesterol_mg, vitamin_a_iu, vitamin_c_mg, calcium_mg, iron_mg, ...
+  //
+  // Application code that reads this should handle missing keys gracefully.
+  nutrientsJson Json? @map("nutrients_json")
+
+  // ── Ingredients ──────────────────────────────────────────────────────
+  ingredientsText String? @map("ingredients_text") @db.Text
+
+  // ── AI-extracted draft flag ───────────────────────────────────────────
+  // True when this food was created from a nutrition label photo and has
+  // not yet been confirmed by the user. Draft foods are always private
+  // and excluded from search until confirmed.
+  isDraft Boolean @default(false) @map("is_draft")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // ── Relations ────────────────────────────────────────────────────────
+  createdBy      Profile?       @relation("FoodItemsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  duplicateOf    FoodItem?      @relation("FoodDuplicates", fields: [duplicateOfId], references: [id])
+  duplicatedBy   FoodItem[]     @relation("FoodDuplicates")
+  foodLogEntries FoodLogEntry[]
+  foodFavorites  FoodFavorite[]
+  savedMealItems SavedMealItem[]
+
+  // name index for text search; barcode index for O(1) barcode lookup;
+  // composite for deduplication queries across providers
+  @@index([name])
+  @@index([barcode])
+  @@index([sourceCategory, sourceProvider, externalId])
+  @@index([visibility, createdById])
+  @@map("food_items")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// FOOD LOG ENTRIES
+//
+// Each row represents a single food logged by a user for a meal.
+//
+// CRITICAL: The snapshot_* columns capture the food's nutrition data
+// at the exact moment it was logged. These values must NEVER be
+// overwritten by subsequent changes to FoodItem. If a food's recipe
+// changes, create a new FoodItem — do not update the existing one.
+// This guarantees that historical logs remain accurate forever.
+//
+// food_item_id is retained as a soft reference for traceability.
+// It is nullable (SET NULL on delete) because the source food item
+// may be deleted while we still want to keep the historical log.
+//
+// Daily totals are computed at query time:
+//   calories_total = snapshot_calories_per_serving * serving_multiplier
+// This is simple arithmetic — never AI.
+// ─────────────────────────────────────────────────────────────────────
+
+model FoodLogEntry {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  // Nullable because the source food may be deleted; snapshot preserves the data.
+  foodItemId        String?  @map("food_item_id") @db.Uuid
+
+  // log_date: the date the user is logging FOR (user-selected, timezone-aware)
+  // logged_at: the actual timestamp of the log action (server time)
+  // Storing both avoids timezone ambiguity in daily total queries.
+  logDate           DateTime @map("log_date") @db.Date
+  loggedAt          DateTime @default(now()) @map("logged_at") @db.Timestamptz(3)
+
+  mealType          MealType @map("meal_type")
+  // How many servings. Can be fractional (e.g., 0.5 for half a serving).
+  servingMultiplier Decimal  @map("serving_multiplier") @db.Decimal(8, 3)
+  notes             String?  @db.VarChar(500)
+
+  // ── Nutrition Snapshot ────────────────────────────────────────────────
+  // All values are PER SERVING as of the time of logging.
+  // Multiply by serving_multiplier to get the actual amount consumed.
+  snapshotFoodName                String   @map("snapshot_food_name") @db.VarChar(300)
+  snapshotServingSize             Decimal  @map("snapshot_serving_size") @db.Decimal(10, 3)
+  snapshotServingUnit             String   @map("snapshot_serving_unit") @db.VarChar(50)
+  snapshotCaloriesPerServing      Decimal  @map("snapshot_calories_per_serving") @db.Decimal(8, 2)
+  snapshotProteinGPerServing      Decimal  @map("snapshot_protein_g_per_serving") @db.Decimal(8, 3)
+  snapshotCarbohydrateGPerServing Decimal  @map("snapshot_carbohydrate_g_per_serving") @db.Decimal(8, 3)
+  snapshotFatGPerServing          Decimal  @map("snapshot_fat_g_per_serving") @db.Decimal(8, 3)
+  // Extended nutrients at time of logging (nullable — only captured if available)
+  snapshotNutrientsJson           Json?    @map("snapshot_nutrients_json")
+
+  // ── Audit ─────────────────────────────────────────────────────────────
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  profile  Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodItem FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+
+  // Primary access pattern: all entries for a user on a given date
+  @@index([userId, logDate])
+  // Secondary: filter by meal type within a date range
+  @@index([userId, mealType])
+  @@map("food_log_entries")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// NUTRITION TARGETS
+//
+// A user's daily nutrition goals. Multiple rows per user — one per
+// time period. Always use the most recent row where effective_date
+// is <= the query date.
+//
+// Storing history allows the AI Coach to understand target changes
+// over time (e.g., "my calories were 1,800 last month but now 2,200").
+// ─────────────────────────────────────────────────────────────────────
+
+model NutritionTarget {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  // The date this target takes effect. Use latest where effective_date <= today.
+  effectiveDate DateTime @map("effective_date") @db.Date
+
+  // Core targets (required)
+  calories      Decimal @db.Decimal(8, 2)
+  proteinG      Decimal @map("protein_g") @db.Decimal(8, 2)
+  carbohydrateG Decimal @map("carbohydrate_g") @db.Decimal(8, 2)
+  fatG          Decimal @map("fat_g") @db.Decimal(8, 2)
+
+  // Extended targets (optional — expand as features grow)
+  fiberG        Decimal? @map("fiber_g") @db.Decimal(8, 2)
+  sugarG        Decimal? @map("sugar_g") @db.Decimal(8, 2)
+  sodiumMg      Decimal? @map("sodium_mg") @db.Decimal(10, 2)
+
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  profile       Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, effectiveDate])
+  @@map("nutrition_targets")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// FOOD FAVORITES
+//
+// Explicit user favorites. "Recent foods" are derived from
+// food_log_entries (ORDER BY logged_at DESC GROUP BY food_item_id)
+// and do not need a separate table.
+// ─────────────────────────────────────────────────────────────────────
+
+model FoodFavorite {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  foodItemId String   @map("food_item_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  profile  Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodItem FoodItem @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, foodItemId])
+  @@index([userId])
+  @@map("food_favorites")
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// SAVED MEALS
+//
+// A named collection of foods that can be logged as a group.
+// "Copy previous meal/day" is implemented at the application layer
+// by reading food_log_entries and creating new entries — no extra
+// table needed for that use case.
+// ─────────────────────────────────────────────────────────────────────
+
+model SavedMeal {
+  id        String          @id @default(uuid()) @db.Uuid
+  userId    String          @map("user_id") @db.Uuid
+  name      String          @db.VarChar(200)
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  profile   Profile         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     SavedMealItem[]
+
+  @@index([userId])
+  @@map("saved_meals")
+}
+
+model SavedMealItem {
+  id                String    @id @default(uuid()) @db.Uuid
+  savedMealId       String    @map("saved_meal_id") @db.Uuid
+  foodItemId        String    @map("food_item_id") @db.Uuid
+  servingMultiplier Decimal   @map("serving_multiplier") @db.Decimal(8, 3)
+  mealType          MealType  @map("meal_type")
+  sortOrder         Int       @default(0) @map("sort_order")
+
+  savedMeal         SavedMeal @relation(fields: [savedMealId], references: [id], onDelete: Cascade)
+  foodItem          FoodItem  @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+
+  @@index([savedMealId])
+  @@map("saved_meal_items")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ENUMS
+// ═════════════════════════════════════════════════════════════════════
+
+// ── Training ─────────────────────────────────────────────────────────
+
+enum FitnessLevel {
+  beginner
+  intermediate
+  advanced
+}
+
+enum SubscriptionTier {
+  free
+  plus
+}
+
+enum GoalType {
+  event      // Race or obstacle course event
+  strength   // Lifting milestone (e.g., 2x bodyweight squat)
+  endurance  // Running or cardio goal
+  body_comp  // Weight loss / body composition
+  habit      // Consistency goal (e.g., train 4x/week)
+  custom     // User-defined
+}
+
+enum GoalStatus {
+  active
+  completed
+  paused
+}
+
+// ── Nutrition ─────────────────────────────────────────────────────────
+
+enum FoodSourceCategory {
+  system        // Added/curated by Involved team
+  external_api  // Imported from an external food database
+  user_created  // Created by an Involved user
+}
+
+enum FoodVisibility {
+  // Naming avoids reserved-word conflict; maps to clean DB values via @map
+  private_food @map("private")   // Only visible to the creator
+  community                      // Visible to all Involved users; not yet verified
+  verified                       // Reviewed and trusted by Involved team
+}
+
+enum MealType {
+  breakfast
+  lunch
+  dinner
+  snack
+  other
+}
