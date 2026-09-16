@@ -5,10 +5,10 @@ import Image from 'next/image'
 
 // Drop additional background photos into /public/backgrounds/ and add their paths here.
 // All images are rendered in grayscale automatically.
-const IMAGES = [
-  '/backgrounds/bg-1.jpg',
-  '/backgrounds/bg-2.jpg',
-  '/backgrounds/bg-3.jpg',
+const IMAGES: { src: string; position?: string; scale?: number }[] = [
+  { src: '/backgrounds/bg-1.jpg' },
+  { src: '/backgrounds/bg-2.jpg' },
+  { src: '/backgrounds/bg-3.jpg', position: 'center top' },              // deadlift — anchored to top so head stays visible
 ]
 
 const INTERVAL_MS = 12000
@@ -26,7 +26,7 @@ export function BackgroundCarousel() {
 
   return (
     <div className="fixed inset-0 -z-10 overflow-hidden">
-      {IMAGES.map((src, i) => (
+      {IMAGES.map(({ src, position, scale }, i) => (
         <div
           key={src}
           className="absolute inset-0 transition-opacity"
@@ -40,6 +40,11 @@ export function BackgroundCarousel() {
             alt=""
             fill
             className="object-cover grayscale"
+            style={{
+              objectPosition: position ?? 'center',
+              transform: scale ? `scale(${scale})` : undefined,
+              transformOrigin: 'center',
+            }}
             priority={i === 0}
             sizes="100vw"
           />
