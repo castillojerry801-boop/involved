@@ -9,16 +9,14 @@
 //   3. No database migrations required
 
 import type { FoodProvider } from './types'
-
-// Providers are imported and instantiated here when implemented.
-// Example (not yet active):
-// import { UsdaFoodProvider } from './usda'
-// import { OpenFoodFactsProvider } from './open-food-facts'
+import { OpenFoodFactsProvider } from './open-food-facts'
+// import { NutritionixProvider } from './nutritionix' // uncomment when ready
 
 export const FOOD_PROVIDERS: FoodProvider[] = [
-  // new UsdaFoodProvider(),
-  // new OpenFoodFactsProvider(),
+  new OpenFoodFactsProvider(),
+  // new NutritionixProvider(),
 ]
+
 
 export function getProvider(providerId: string): FoodProvider | undefined {
   return FOOD_PROVIDERS.find(p => p.providerId === providerId)

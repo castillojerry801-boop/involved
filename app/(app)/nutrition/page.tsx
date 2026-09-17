@@ -1,175 +1,228 @@
-import type { Metadata } from 'next'
-import { Plus, ChevronRight, Search } from 'lucide-react'
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { Plus, Trash2, Search } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { FoodSearchModal } from '@/components/nutrition/food-search-modal'
+import { cn } from '@/lib/utils'
 
-export const metadata: Metadata = { title: 'Nutrition' }
+type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
-const DEMO_MEALS = [
-  {
-    name: 'Breakfast',
-    time: '7:42 AM',
-    calories: 520,
-    items: ['Greek Yogurt (plain, 1 cup)', 'Blueberries (½ cup)', 'Granola (¼ cup)'],
-  },
-  {
-    name: 'Lunch',
-    time: '12:15 PM',
-    calories: 720,
-    items: ['Grilled Chicken Breast (6 oz)', 'Brown Rice (1 cup)', 'Mixed Vegetables (1 cup)'],
-  },
-  {
-    name: 'Dinner',
-    time: null,
-    calories: 0,
-    items: [],
-  },
-  {
-    name: 'Snacks',
-    time: null,
-    calories: 400,
-    items: ['Protein Shake (1 serving)', 'Apple (1 medium)'],
-  },
-]
-
-const DEMO_TOTALS = {
-  calories:  { consumed: 1640, target: 2200 },
-  proteinG:  { consumed: 132,  target: 170 },
-  carbsG:    { consumed: 180,  target: 220 },
-  fatG:      { consumed: 52,   target: 70 },
+interface LogEntry {
+  id: string
+  mealType: MealType
+  foodName: string
+  calories: number
+  proteinG: number
+  carbohydrateG: number
+  fatG: number
+  servingSize: number
+  servingUnit: string
+  servingMultiplier: number
 }
+
+interface DailyTotals {
+  calories: number
+  proteinG: number
+  carbohydrateG: number
+  fatG: number
+}
+
+interface Target {
+  calories: number
+  proteinG: number
+  carbohydrateG: number
+  fatG: number
+}
+
+const MEAL_TYPES: { id: MealType; label: string }[] = [
+  { id: 'breakfast', label: 'Breakfast' },
+  { id: 'lunch', label: 'Lunch' },
+  { id: 'dinner', label: 'Dinner' },
+  { id: 'snack', label: 'Snacks' },
+]
 
 function pct(consumed: number, target: number) {
   return Math.min(Math.round((consumed / target) * 100), 100)
 }
 
+function today() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 export default function NutritionPage() {
-  const { calories, proteinG, carbsG, fatG } = DEMO_TOTALS
-  const remaining = calories.target - calories.consumed
+  const [entries, setEntries] = useState<LogEntry[]>([])
+  const [totals, setTotals] = useState<DailyTotals>({ calories: 0, proteinG: 0, carbohydrateG: 0, fatG: 0 })
+  const [target, setTarget] = useState<Target>({ calories: 2000, proteinG: 150, carbohydrateG: 250, fatG: 65 })
+  const [loading, setLoading] = useState(true)
+  const [addingTo, setAddingTo] = useState<MealType | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const logDate = today()
+
+  const fetchDaily = useCallback(async () => {
+    const res = await fetch(`/api/nutrition/daily?date=${logDate}`)
+    if (!res.ok) return
+    const data = await res.json() as { entries: LogEntry[]; totals: DailyTotals; target: Target }
+    setEntries(data.entries)
+    setTotals(data.totals)
+    setTarget(data.target)
+    setLoading(false)
+  }, [logDate])
+
+  useEffect(() => { fetchDaily() }, [fetchDaily])
+
+  const deleteEntry = async (id: string) => {
+    setDeleting(id)
+    await fetch('/api/nutrition/log', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    await fetchDaily()
+    setDeleting(null)
+  }
+
+  const remaining = target.calories - totals.calories
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 md:py-8">
-
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Nutrition</h1>
-          <p className="text-sm text-zinc-500">Today's food log</p>
+          <p className="text-sm text-zinc-500">
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </p>
         </div>
-        <Button size="sm">
+        <Button size="sm" onClick={() => setAddingTo('breakfast')}>
           <Plus className="size-4" />
           Add food
         </Button>
       </div>
 
-      {/* Daily summary card */}
+      {/* Daily summary */}
       <Card className="mb-6">
         <div className="mb-4 flex items-start justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-1">Daily total</p>
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-black text-zinc-900 dark:text-white">
-                {calories.consumed.toLocaleString()}
+                {loading ? '—' : totals.calories.toLocaleString()}
               </span>
-              <span className="text-sm text-zinc-400">/ {calories.target.toLocaleString()} cal</span>
+              <span className="text-sm text-zinc-400">/ {target.calories.toLocaleString()} cal</span>
             </div>
             <p className="text-sm text-zinc-500 mt-0.5">
-              {remaining > 0 ? `${remaining.toLocaleString()} remaining` : 'Target reached'}
+              {loading ? '' : remaining > 0 ? `${remaining.toLocaleString()} remaining` : 'Goal reached!'}
             </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-zinc-400 mb-1">Targets</p>
-            <button className="text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white">Edit</button>
           </div>
         </div>
 
         {/* Calorie bar */}
         <div className="mb-5 h-3 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
           <div
-            className="h-full rounded-full bg-emerald-500"
-            style={{ width: `${pct(calories.consumed, calories.target)}%` }}
+            className={cn('h-full rounded-full transition-all duration-500', remaining < 0 ? 'bg-red-500' : 'bg-emerald-500')}
+            style={{ width: `${pct(totals.calories, target.calories)}%` }}
           />
         </div>
 
-        {/* Macro summary */}
+        {/* Macros */}
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: 'Protein', consumed: proteinG.consumed, target: proteinG.target, color: 'bg-sky-400', textColor: 'text-sky-500' },
-            { label: 'Carbs',   consumed: carbsG.consumed,   target: carbsG.target,   color: 'bg-amber-400', textColor: 'text-amber-500' },
-            { label: 'Fat',     consumed: fatG.consumed,     target: fatG.target,     color: 'bg-orange-400', textColor: 'text-orange-500' },
-          ].map(({ label, consumed, target, color, textColor }) => (
+            { label: 'Protein',  consumed: totals.proteinG,      target: target.proteinG,      color: 'bg-sky-400',    text: 'text-sky-500' },
+            { label: 'Carbs',    consumed: totals.carbohydrateG,  target: target.carbohydrateG, color: 'bg-amber-400',  text: 'text-amber-500' },
+            { label: 'Fat',      consumed: totals.fatG,           target: target.fatG,          color: 'bg-orange-400', text: 'text-orange-500' },
+          ].map(({ label, consumed, target: t, color, text }) => (
             <div key={label} className="flex flex-col gap-1.5">
               <p className="text-xs text-zinc-400">{label}</p>
-              <p className={`text-base font-black ${textColor}`}>{consumed}g</p>
+              <p className={`text-base font-black ${text}`}>{loading ? '—' : `${consumed}g`}</p>
               <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-                <div className={`h-full rounded-full ${color}`} style={{ width: `${pct(consumed, target)}%` }} />
+                <div className={`h-full rounded-full ${color} transition-all duration-500`} style={{ width: `${pct(consumed, t)}%` }} />
               </div>
-              <p className="text-xs text-zinc-400">of {target}g</p>
+              <p className="text-xs text-zinc-400">of {t}g</p>
             </div>
           ))}
         </div>
       </Card>
 
-      {/* Food search shortcut */}
-      <button className="mb-6 flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left text-sm text-zinc-400 shadow-sm transition-colors hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900">
+      {/* Quick add search bar */}
+      <button
+        onClick={() => setAddingTo('breakfast')}
+        className="mb-6 flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/80 px-4 py-3 text-left text-sm text-zinc-400 shadow-sm transition-colors hover:border-zinc-300 backdrop-blur-sm"
+      >
         <Search className="size-4 shrink-0" />
-        Search foods, brands, or scan barcode...
+        Search foods, scan barcode, or snap a photo...
       </button>
 
-      {/* Meals */}
+      {/* Meal cards */}
       <div className="flex flex-col gap-3">
-        {DEMO_MEALS.map((meal) => (
-          <Card key={meal.name} className="p-0 overflow-hidden">
-            {/* Meal header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
-              <div className="flex items-center gap-2">
-                <p className="font-semibold text-sm text-zinc-900 dark:text-white">{meal.name}</p>
-                {meal.time && (
-                  <span className="text-xs text-zinc-400">{meal.time}</span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {meal.calories > 0 && (
-                  <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">
-                    {meal.calories} cal
-                  </span>
-                )}
-                <button className="flex size-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800">
-                  <Plus className="size-4" />
-                </button>
-              </div>
-            </div>
+        {MEAL_TYPES.map(({ id, label }) => {
+          const mealEntries = entries.filter(e => e.mealType === id)
+          const mealCals = mealEntries.reduce((s, e) => s + e.calories, 0)
 
-            {/* Food items */}
-            {meal.items.length > 0 ? (
-              <div className="px-5 py-2">
-                {meal.items.map((item) => (
+          return (
+            <Card key={id} className="p-0 overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-sm text-zinc-900 dark:text-white">{label}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {mealCals > 0 && (
+                    <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
+                      {mealCals} cal
+                    </span>
+                  )}
                   <button
-                    key={item}
-                    className="flex w-full items-center justify-between py-2 text-left text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 border-b border-zinc-50 dark:border-zinc-800/50 last:border-0"
+                    onClick={() => setAddingTo(id)}
+                    className="flex size-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 transition-colors"
                   >
-                    {item}
-                    <ChevronRight className="size-4 shrink-0 text-zinc-300 dark:text-zinc-600" />
+                    <Plus className="size-4" />
                   </button>
-                ))}
+                </div>
               </div>
-            ) : (
-              <div className="px-5 py-4">
-                <p className="text-sm text-zinc-400">No foods logged yet</p>
-              </div>
-            )}
-          </Card>
-        ))}
+
+              {mealEntries.length > 0 ? (
+                <div className="px-5 py-1">
+                  {mealEntries.map(entry => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between py-2.5 border-b border-zinc-50 dark:border-zinc-800/50 last:border-0"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-zinc-700 dark:text-zinc-300 truncate">{entry.foodName}</p>
+                        <p className="text-xs text-zinc-400">
+                          {entry.calories} cal · P {entry.proteinG}g · C {entry.carbohydrateG}g · F {entry.fatG}g
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => deleteEntry(entry.id)}
+                        disabled={deleting === entry.id}
+                        className="ml-3 flex size-7 shrink-0 items-center justify-center rounded-lg text-zinc-300 hover:bg-red-50 hover:text-red-400 dark:hover:bg-red-950/30 transition-colors disabled:opacity-40"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="px-5 py-4">
+                  <p className="text-sm text-zinc-400">No foods logged yet</p>
+                </div>
+              )}
+            </Card>
+          )
+        })}
       </div>
 
-      {/* Coming soon */}
-      <div className="mt-6 rounded-2xl border border-dashed border-zinc-200 bg-white p-6 text-center dark:border-zinc-800 dark:bg-zinc-900">
-        <p className="font-semibold text-zinc-900 dark:text-white">Food search & barcode scanning</p>
-        <p className="mt-1 text-sm text-zinc-500">
-          Search from thousands of foods, scan barcodes, or add your own — coming in the next phase.
-        </p>
-      </div>
+      {/* Add food modal */}
+      {addingTo && (
+        <FoodSearchModal
+          mealType={addingTo}
+          logDate={logDate}
+          onLogged={() => { fetchDaily() }}
+          onClose={() => setAddingTo(null)}
+        />
+      )}
     </div>
   )
 }
