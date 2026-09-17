@@ -1,35 +1,13 @@
 import type { Metadata } from 'next'
-import { Flame, ChevronRight, Plus, Trophy, ArrowRight, Bot } from 'lucide-react'
+import { ChevronRight, Plus, ArrowRight, Bot, Dumbbell } from 'lucide-react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { getUser } from '@/lib/supabase/server'
+import { prisma } from '@/lib/prisma'
+import { redirect } from 'next/navigation'
 
 export const metadata: Metadata = { title: 'Today' }
-
-// Demo data — replaced by real queries once Supabase is connected
-const DEMO = {
-  displayName: 'Athlete',
-  streak: 7,
-  nutrition: {
-    calories:  { consumed: 1640, target: 2200 },
-    proteinG:  { consumed: 132,  target: 170 },
-    carbsG:    { consumed: 180,  target: 220 },
-    fatG:      { consumed: 52,   target: 70 },
-    mealsLogged: 2,
-  },
-  training: {
-    todayWorkout: {
-      name: 'Upper Body Strength',
-      duration: '45 min',
-      type: 'Strength',
-      completed: false,
-    },
-    lastWorkout: { name: 'Zone 2 Run', date: 'Sep 13', duration: '35 min' },
-    weeklyWorkouts: { done: 3, total: 5 },
-  },
-  upcomingEvent: { name: 'Spartan Sprint', daysAway: 54 },
-}
 
 function getGreeting() {
   const hour = new Date().getHours()
@@ -39,42 +17,74 @@ function getGreeting() {
 }
 
 function pct(consumed: number, target: number) {
+  if (!target) return 0
   return Math.min(Math.round((consumed / target) * 100), 100)
 }
 
-function MacroRow({
-  label,
-  consumed,
-  target,
-  unit,
-  color,
-}: {
-  label: string
-  consumed: number
-  target: number
-  unit: string
-  color: string
-}) {
-  const p = pct(consumed, target)
-  return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-xs">
-        <span className="font-medium text-zinc-600 dark:text-zinc-400">{label}</span>
-        <span className="text-zinc-400">
-          {consumed}{unit} <span className="text-zinc-300 dark:text-zinc-600">/</span> {target}{unit}
-        </span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-        <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${p}%` }} />
-      </div>
-    </div>
+async function getTodayNutrition(userId: string) {
+  const today = new Date().toISOString().slice(0, 10)
+
+  const [entries, target] = await Promise.all([
+    prisma.foodLogEntry.findMany({
+      where: { userId, logDate: new Date(today) },
+      select: {
+        servingMultiplier: true,
+        snapshotCaloriesPerServing: true,
+        snapshotProteinGPerServing: true,
+        snapshotCarbohydrateGPerServing: true,
+        snapshotFatGPerServing: true,
+      },
+    }),
+    prisma.nutritionTarget.findFirst({
+      where: { userId },
+      orderBy: { effectiveDate: 'desc' },
+    }),
+  ])
+
+  const totals = entries.reduce(
+    (acc, e) => {
+      const m = Number(e.servingMultiplier)
+      return {
+        calories: acc.calories + Math.round(Number(e.snapshotCaloriesPerServing) * m),
+        proteinG: acc.proteinG + Math.round(Number(e.snapshotProteinGPerServing) * m * 10) / 10,
+        carbsG: acc.carbsG + Math.round(Number(e.snapshotCarbohydrateGPerServing) * m * 10) / 10,
+        fatG: acc.fatG + Math.round(Number(e.snapshotFatGPerServing) * m * 10) / 10,
+      }
+    },
+    { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
   )
+
+  return {
+    totals,
+    target: target
+      ? {
+          calories: Number(target.calories),
+          proteinG: Number(target.proteinG),
+          carbsG: Number(target.carbohydrateG),
+          fatG: Number(target.fatG),
+        }
+      : null,
+    hasEntries: entries.length > 0,
+  }
 }
 
-export default function TodayPage() {
-  const { nutrition, training, upcomingEvent } = DEMO
-  const calRemaining = nutrition.calories.target - nutrition.calories.consumed
-  const calPct = pct(nutrition.calories.consumed, nutrition.calories.target)
+export default async function TodayPage() {
+  const user = await getUser()
+  if (!user) redirect('/login')
+
+  const [nutrition, profile] = await Promise.all([
+    getTodayNutrition(user.id),
+    prisma.profile.findUnique({ where: { id: user.id }, select: { displayName: true } }).catch(() => null),
+  ])
+
+  const displayName =
+    profile?.displayName ||
+    user.user_metadata?.full_name ||
+    user.email?.split('@')[0] ||
+    'Athlete'
+
+  const { totals, target, hasEntries } = nutrition
+  const calRemaining = target ? target.calories - totals.calories : 0
 
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
@@ -84,21 +94,13 @@ export default function TodayPage() {
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 md:py-8">
 
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <p className="text-sm font-medium text-zinc-500">{getGreeting()}, {DEMO.displayName}</p>
-          <p className="text-xs text-zinc-400 mt-0.5">{today}</p>
-        </div>
-        <div className="flex items-center gap-1.5 rounded-xl bg-zinc-100 px-3 py-2 dark:bg-zinc-800">
-          <Flame className="size-3.5 fill-orange-400 text-orange-400" />
-          <span className="text-sm font-bold text-zinc-900 dark:text-white">{DEMO.streak}</span>
-          <span className="text-xs text-zinc-400">streak</span>
-        </div>
+      <div className="mb-6">
+        <p className="text-sm font-medium text-zinc-500">{getGreeting()}, {displayName}</p>
+        <p className="text-xs text-zinc-400 mt-0.5">{today}</p>
       </div>
 
-      {/* ── NUTRITION ───────────────────────────────────────────────────── */}
+      {/* ── NUTRITION ─────────────────────────────────────────────────── */}
       <Card className="mb-4">
-        {/* Section header */}
         <div className="mb-4 flex items-center justify-between">
           <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Nutrition</p>
           <Link
@@ -109,141 +111,103 @@ export default function TodayPage() {
           </Link>
         </div>
 
-        {/* Calorie count */}
-        <div className="mb-1 flex items-baseline gap-2">
-          <span className="text-4xl font-black tracking-tight text-zinc-900 dark:text-white">
-            {nutrition.calories.consumed.toLocaleString()}
-          </span>
-          <span className="text-sm text-zinc-400">
-            / {nutrition.calories.target.toLocaleString()} cal
-          </span>
-        </div>
-        <p className="mb-4 text-sm text-zinc-500">
-          {calRemaining > 0
-            ? <><span className="font-semibold text-zinc-700 dark:text-zinc-300">{calRemaining.toLocaleString()}</span> calories remaining</>
-            : <span className="font-semibold text-amber-600">Target reached</span>
-          }
-        </p>
+        {!target ? (
+          /* No goals set yet */
+          <div className="py-2">
+            <p className="text-sm text-zinc-500 mb-3">Set your daily nutrition goals to start tracking calories and macros.</p>
+            <Link href="/nutrition">
+              <Button size="sm" variant="secondary" className="w-full">
+                Set my goals
+              </Button>
+            </Link>
+          </div>
+        ) : (
+          <>
+            <div className="mb-1 flex items-baseline gap-2">
+              <span className="text-4xl font-black tracking-tight text-zinc-900 dark:text-white">
+                {totals.calories.toLocaleString()}
+              </span>
+              <span className="text-sm text-zinc-400">
+                / {target.calories.toLocaleString()} cal
+              </span>
+            </div>
+            <p className="mb-4 text-sm text-zinc-500">
+              {calRemaining > 0
+                ? <><span className="font-semibold text-zinc-700 dark:text-zinc-300">{calRemaining.toLocaleString()}</span> calories remaining</>
+                : totals.calories === 0
+                  ? 'Nothing logged yet today'
+                  : <span className="font-semibold text-amber-600">Goal reached</span>
+              }
+            </p>
 
-        {/* Calorie bar */}
-        <div className="mb-5 h-2.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-          <div
-            className="h-full rounded-full bg-emerald-500 transition-all"
-            style={{ width: `${calPct}%` }}
-          />
-        </div>
+            {/* Calorie bar */}
+            <div className="mb-5 h-2.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all"
+                style={{ width: `${pct(totals.calories, target.calories)}%` }}
+              />
+            </div>
 
-        {/* Macro rows */}
-        <div className="mb-5 flex flex-col gap-3">
-          <MacroRow label="Protein" consumed={nutrition.proteinG.consumed}  target={nutrition.proteinG.target}  unit="g" color="bg-sky-400" />
-          <MacroRow label="Carbs"   consumed={nutrition.carbsG.consumed}    target={nutrition.carbsG.target}    unit="g" color="bg-amber-400" />
-          <MacroRow label="Fat"     consumed={nutrition.fatG.consumed}      target={nutrition.fatG.target}      unit="g" color="bg-orange-400" />
-        </div>
+            {/* Macro rows */}
+            <div className="mb-5 flex flex-col gap-3">
+              {[
+                { label: 'Protein', consumed: totals.proteinG,  target: target.proteinG, color: 'bg-sky-400' },
+                { label: 'Carbs',   consumed: totals.carbsG,    target: target.carbsG,   color: 'bg-amber-400' },
+                { label: 'Fat',     consumed: totals.fatG,      target: target.fatG,     color: 'bg-orange-400' },
+              ].map(({ label, consumed, target: t, color }) => (
+                <div key={label}>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="font-medium text-zinc-600 dark:text-zinc-400">{label}</span>
+                    <span className="text-zinc-400">
+                      {consumed}g <span className="text-zinc-300 dark:text-zinc-600">/</span> {t}g
+                    </span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                    <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct(consumed, t)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
 
-        {/* Quick add */}
-        <div className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
-          <Link href="/nutrition">
-            <Button variant="secondary" size="sm" className="w-full">
-              <Plus className="size-4" />
-              Add food
-            </Button>
-          </Link>
-        </div>
+            <div className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
+              <Link href="/nutrition">
+                <Button variant="secondary" size="sm" className="w-full">
+                  <Plus className="size-4" />
+                  {hasEntries ? 'Add more food' : 'Log your first meal'}
+                </Button>
+              </Link>
+            </div>
+          </>
+        )}
       </Card>
 
-      {/* ── TRAINING ────────────────────────────────────────────────────── */}
+      {/* ── TRAINING ──────────────────────────────────────────────────── */}
       <Card className="mb-4">
-        {/* Section header */}
         <div className="mb-4 flex items-center justify-between">
           <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Training</p>
           <Link
             href="/training"
             className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
           >
-            History <ChevronRight className="size-3" />
+            Library <ChevronRight className="size-3" />
           </Link>
         </div>
 
-        {/* Today's workout */}
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <p className="font-bold text-zinc-900 dark:text-white">
-              {training.todayWorkout.name}
-            </p>
-            <p className="mt-0.5 text-sm text-zinc-500">
-              {training.todayWorkout.duration} · {training.todayWorkout.type}
-            </p>
+        <div className="flex flex-col items-center py-4 text-center">
+          <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800">
+            <Dumbbell className="size-6 text-zinc-400" />
           </div>
-          {training.todayWorkout.completed && (
-            <Badge variant="success" className="shrink-0">Done</Badge>
-          )}
-        </div>
-
-        {/* CTAs */}
-        <div className="mb-4 flex gap-2">
-          <Link href="/training" className="flex-1">
-            <Button size="sm" className="w-full">
-              {training.todayWorkout.completed ? 'View workout' : 'Start workout'}
+          <p className="font-semibold text-zinc-900 dark:text-white mb-1">No workout logged today</p>
+          <p className="text-sm text-zinc-400 mb-4">Browse exercises and start building your routine.</p>
+          <Link href="/training/exercises" className="w-full">
+            <Button variant="secondary" size="sm" className="w-full">
+              Browse exercises
             </Button>
           </Link>
-          <Link href="/training">
-            <Button size="sm" variant="secondary">
-              <Plus className="size-4" />
-              Log activity
-            </Button>
-          </Link>
-        </div>
-
-        {/* Last workout */}
-        <div className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
-          <p className="text-xs text-zinc-400">Last workout</p>
-          <p className="mt-0.5 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-            {training.lastWorkout.name}
-            <span className="text-zinc-400"> · {training.lastWorkout.date} · {training.lastWorkout.duration}</span>
-          </p>
         </div>
       </Card>
 
-      {/* ── SNAPSHOT ROW ────────────────────────────────────────────────── */}
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        {/* Event */}
-        <Card className="flex flex-col gap-1 py-4">
-          <div className="mb-1 flex size-8 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
-            <Trophy className="size-4" />
-          </div>
-          <p className="text-xs text-zinc-400">Next event</p>
-          <p className="font-bold text-sm text-zinc-900 dark:text-white leading-snug">
-            {upcomingEvent.name}
-          </p>
-          <Badge variant="success" className="mt-1 w-fit text-[10px]">
-            {upcomingEvent.daysAway} days out
-          </Badge>
-        </Card>
-
-        {/* Weekly training */}
-        <Card className="flex flex-col gap-1 py-4">
-          <p className="text-xs text-zinc-400">This week</p>
-          <p className="text-2xl font-black text-zinc-900 dark:text-white">
-            {training.weeklyWorkouts.done}
-            <span className="text-base font-normal text-zinc-400"> / {training.weeklyWorkouts.total}</span>
-          </p>
-          <p className="text-xs text-zinc-500">workouts done</p>
-          <div className="mt-2 flex gap-1">
-            {Array.from({ length: training.weeklyWorkouts.total }, (_, i) => (
-              <div
-                key={i}
-                className={`h-1.5 flex-1 rounded-full ${
-                  i < training.weeklyWorkouts.done
-                    ? 'bg-emerald-500'
-                    : 'bg-zinc-100 dark:bg-zinc-800'
-                }`}
-              />
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* ── COACH — compact ─────────────────────────────────────────────── */}
+      {/* ── COACH ─────────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-dashed border-zinc-200 bg-white px-4 py-4 dark:border-zinc-700 dark:bg-zinc-900">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -263,12 +227,6 @@ export default function TodayPage() {
         </div>
       </div>
 
-      {/* Demo mode notice */}
-      {!process.env.NEXT_PUBLIC_SUPABASE_URL && (
-        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-700 dark:border-amber-800/30 dark:bg-amber-900/10 dark:text-amber-400">
-          <strong>Demo mode:</strong> Add Supabase credentials to <code>.env.local</code> to enable real data.
-        </div>
-      )}
     </div>
   )
 }
