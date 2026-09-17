@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Turnstile } from '@/components/turnstile'
 import { createClient } from '@/lib/supabase/client'
 
 export default function SignupPage() {
@@ -12,6 +13,9 @@ export default function SignupPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
+  const [honeypot, setHoneypot] = useState('')
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileError, setTurnstileError] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -19,9 +23,30 @@ export default function SignupPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+
+    // Honeypot — bot filled the hidden field, silently drop
+    if (honeypot) return
+
+    if (!turnstileToken) {
+      setError('Please wait for the security check to complete.')
+      return
+    }
+
     setLoading(true)
 
     try {
+      // Verify Turnstile token server-side
+      const verify = await fetch('/api/security/turnstile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: turnstileToken }),
+      })
+      if (!verify.ok) {
+        setError('Security check failed. Please try again.')
+        setTurnstileToken(null)
+        return
+      }
+
       const supabase = createClient()
       const { error } = await supabase.auth.signUp({
         email,
@@ -53,7 +78,8 @@ export default function SignupPage() {
         </div>
         <h2 className="mb-2 text-xl font-black text-zinc-900 dark:text-white">Check your email</h2>
         <p className="text-sm text-zinc-500">
-          We sent a confirmation link to <strong className="text-zinc-900 dark:text-white">{email}</strong>.
+          We sent a confirmation link to{' '}
+          <strong className="text-zinc-900 dark:text-white">{email}</strong>.
           Click it to activate your account and start training.
         </p>
       </div>
@@ -70,12 +96,24 @@ export default function SignupPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {/* Honeypot — hidden from real users, bots fill it */}
+        <input
+          type="text"
+          name="website"
+          value={honeypot}
+          onChange={e => setHoneypot(e.target.value)}
+          style={{ display: 'none' }}
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+        />
+
         <Input
           label="Full name"
           type="text"
           placeholder="Your name"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={e => setName(e.target.value)}
           autoComplete="name"
           required
         />
@@ -84,7 +122,7 @@ export default function SignupPage() {
           type="email"
           placeholder="you@example.com"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={e => setEmail(e.target.value)}
           autoComplete="email"
           required
         />
@@ -93,15 +131,31 @@ export default function SignupPage() {
           type="password"
           placeholder="Min. 8 characters"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={e => setPassword(e.target.value)}
           autoComplete="new-password"
           hint="At least 8 characters"
-          error={error ?? undefined}
           required
           minLength={8}
         />
 
-        <Button type="submit" loading={loading} size="lg" className="w-full mt-2">
+        <Turnstile
+          onVerify={token => { setTurnstileToken(token); setTurnstileError(false) }}
+          onError={() => setTurnstileError(true)}
+          onExpire={() => setTurnstileToken(null)}
+        />
+
+        {turnstileError && (
+          <p className="text-xs text-red-500">Security check failed. Please refresh and try again.</p>
+        )}
+        {error && <p className="text-xs text-red-500">{error}</p>}
+
+        <Button
+          type="submit"
+          loading={loading}
+          size="lg"
+          className="w-full mt-1"
+          disabled={loading || !turnstileToken}
+        >
           Create account
         </Button>
       </form>
