@@ -10,9 +10,11 @@
 
 import type { FoodProvider } from './types'
 import { OpenFoodFactsProvider } from './open-food-facts'
+import { UsdaFoodDataProvider } from './usda-fooddata'
 // import { NutritionixProvider } from './nutritionix' // uncomment when ready
 
 export const FOOD_PROVIDERS: FoodProvider[] = [
+  new UsdaFoodDataProvider(),
   new OpenFoodFactsProvider(),
   // new NutritionixProvider(),
 ]
