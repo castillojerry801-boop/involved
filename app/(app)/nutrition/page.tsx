@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Search } from 'lucide-react'
+import { Plus, Trash2, Search, ChevronLeft, ChevronRight, Pencil } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { FoodSearchModal } from '@/components/nutrition/food-search-modal'
+import { GoalsEditor } from '@/components/nutrition/goals-editor'
 import { cn } from '@/lib/utils'
 
 type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
@@ -47,22 +48,35 @@ function pct(consumed: number, target: number) {
   return Math.min(Math.round((consumed / target) * 100), 100)
 }
 
-function today() {
-  return new Date().toISOString().slice(0, 10)
+function toDateString(d: Date) {
+  return d.toISOString().slice(0, 10)
+}
+
+function formatDisplayDate(dateStr: string) {
+  const d = new Date(dateStr + 'T12:00:00')
+  const today = toDateString(new Date())
+  const yesterday = toDateString(new Date(Date.now() - 86400000))
+  if (dateStr === today) return `Today · ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`
+  if (dateStr === yesterday) return `Yesterday · ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
 export default function NutritionPage() {
+  const [logDate, setLogDate] = useState(toDateString(new Date()))
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [totals, setTotals] = useState<DailyTotals>({ calories: 0, proteinG: 0, carbohydrateG: 0, fatG: 0 })
   const [target, setTarget] = useState<Target>({ calories: 2000, proteinG: 150, carbohydrateG: 250, fatG: 65 })
   const [loading, setLoading] = useState(true)
   const [addingTo, setAddingTo] = useState<MealType | null>(null)
+  const [editingGoals, setEditingGoals] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
-  const logDate = today()
+
+  const isToday = logDate === toDateString(new Date())
 
   const fetchDaily = useCallback(async () => {
+    setLoading(true)
     const res = await fetch(`/api/nutrition/daily?date=${logDate}`)
-    if (!res.ok) return
+    if (!res.ok) { setLoading(false); return }
     const data = await res.json() as { entries: LogEntry[]; totals: DailyTotals; target: Target }
     setEntries(data.entries)
     setTotals(data.totals)
@@ -71,6 +85,18 @@ export default function NutritionPage() {
   }, [logDate])
 
   useEffect(() => { fetchDaily() }, [fetchDaily])
+
+  const goBack = () => {
+    const d = new Date(logDate + 'T12:00:00')
+    d.setDate(d.getDate() - 1)
+    setLogDate(toDateString(d))
+  }
+
+  const goForward = () => {
+    const d = new Date(logDate + 'T12:00:00')
+    d.setDate(d.getDate() + 1)
+    setLogDate(toDateString(d))
+  }
 
   const deleteEntry = async (id: string) => {
     setDeleting(id)
@@ -87,18 +113,51 @@ export default function NutritionPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 md:py-8">
+
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Nutrition</h1>
-          <p className="text-sm text-zinc-500">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </p>
+        <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Nutrition</h1>
+        {isToday && (
+          <Button size="sm" onClick={() => setAddingTo('breakfast')}>
+            <Plus className="size-4" />
+            Add food
+          </Button>
+        )}
+      </div>
+
+      {/* Date navigation */}
+      <div className="mb-5 flex items-center justify-between rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm px-2 py-1">
+        <button
+          onClick={goBack}
+          className="flex size-9 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+        >
+          <ChevronLeft className="size-5" />
+        </button>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={logDate}
+            max={toDateString(new Date())}
+            onChange={e => e.target.value && setLogDate(e.target.value)}
+            className="absolute opacity-0 w-0 h-0"
+            id="date-picker"
+          />
+          <label
+            htmlFor="date-picker"
+            className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 cursor-pointer"
+          >
+            {formatDisplayDate(logDate)}
+          </label>
         </div>
-        <Button size="sm" onClick={() => setAddingTo('breakfast')}>
-          <Plus className="size-4" />
-          Add food
-        </Button>
+
+        <button
+          onClick={goForward}
+          disabled={isToday}
+          className="flex size-9 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronRight className="size-5" />
+        </button>
       </div>
 
       {/* Daily summary */}
@@ -116,6 +175,13 @@ export default function NutritionPage() {
               {loading ? '' : remaining > 0 ? `${remaining.toLocaleString()} remaining` : 'Goal reached!'}
             </p>
           </div>
+          <button
+            onClick={() => setEditingGoals(true)}
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white transition-colors"
+          >
+            <Pencil className="size-3" />
+            Edit goals
+          </button>
         </div>
 
         {/* Calorie bar */}
@@ -130,8 +196,8 @@ export default function NutritionPage() {
         <div className="grid grid-cols-3 gap-4">
           {[
             { label: 'Protein',  consumed: totals.proteinG,      target: target.proteinG,      color: 'bg-sky-400',    text: 'text-sky-500' },
-            { label: 'Carbs',    consumed: totals.carbohydrateG,  target: target.carbohydrateG, color: 'bg-amber-400',  text: 'text-amber-500' },
-            { label: 'Fat',      consumed: totals.fatG,           target: target.fatG,          color: 'bg-orange-400', text: 'text-orange-500' },
+            { label: 'Carbs',    consumed: totals.carbohydrateG, target: target.carbohydrateG, color: 'bg-amber-400',  text: 'text-amber-500' },
+            { label: 'Fat',      consumed: totals.fatG,          target: target.fatG,          color: 'bg-orange-400', text: 'text-orange-500' },
           ].map(({ label, consumed, target: t, color, text }) => (
             <div key={label} className="flex flex-col gap-1.5">
               <p className="text-xs text-zinc-400">{label}</p>
@@ -145,14 +211,16 @@ export default function NutritionPage() {
         </div>
       </Card>
 
-      {/* Quick add search bar */}
-      <button
-        onClick={() => setAddingTo('breakfast')}
-        className="mb-6 flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/80 px-4 py-3 text-left text-sm text-zinc-400 shadow-sm transition-colors hover:border-zinc-300 backdrop-blur-sm"
-      >
-        <Search className="size-4 shrink-0" />
-        Search foods, scan barcode, or snap a photo...
-      </button>
+      {/* Quick add — only on current day */}
+      {isToday && (
+        <button
+          onClick={() => setAddingTo('breakfast')}
+          className="mb-6 flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/80 px-4 py-3 text-left text-sm text-zinc-400 shadow-sm transition-colors hover:border-zinc-300 backdrop-blur-sm"
+        >
+          <Search className="size-4 shrink-0" />
+          Search foods, scan barcode, or snap a photo...
+        </button>
+      )}
 
       {/* Meal cards */}
       <div className="flex flex-col gap-3">
@@ -168,45 +236,44 @@ export default function NutritionPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {mealCals > 0 && (
-                    <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">
-                      {mealCals} cal
-                    </span>
+                    <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">{mealCals} cal</span>
                   )}
-                  <button
-                    onClick={() => setAddingTo(id)}
-                    className="flex size-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 transition-colors"
-                  >
-                    <Plus className="size-4" />
-                  </button>
+                  {isToday && (
+                    <button
+                      onClick={() => setAddingTo(id)}
+                      className="flex size-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      <Plus className="size-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 
               {mealEntries.length > 0 ? (
                 <div className="px-5 py-1">
                   {mealEntries.map(entry => (
-                    <div
-                      key={entry.id}
-                      className="flex items-center justify-between py-2.5 border-b border-zinc-50 dark:border-zinc-800/50 last:border-0"
-                    >
+                    <div key={entry.id} className="flex items-center justify-between py-2.5 border-b border-zinc-50 dark:border-zinc-800/50 last:border-0">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-zinc-700 dark:text-zinc-300 truncate">{entry.foodName}</p>
                         <p className="text-xs text-zinc-400">
                           {entry.calories} cal · P {entry.proteinG}g · C {entry.carbohydrateG}g · F {entry.fatG}g
                         </p>
                       </div>
-                      <button
-                        onClick={() => deleteEntry(entry.id)}
-                        disabled={deleting === entry.id}
-                        className="ml-3 flex size-7 shrink-0 items-center justify-center rounded-lg text-zinc-300 hover:bg-red-50 hover:text-red-400 dark:hover:bg-red-950/30 transition-colors disabled:opacity-40"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
+                      {isToday && (
+                        <button
+                          onClick={() => deleteEntry(entry.id)}
+                          disabled={deleting === entry.id}
+                          className="ml-3 flex size-7 shrink-0 items-center justify-center rounded-lg text-zinc-300 hover:bg-red-50 hover:text-red-400 dark:hover:bg-red-950/30 transition-colors disabled:opacity-40"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="px-5 py-4">
-                  <p className="text-sm text-zinc-400">No foods logged yet</p>
+                  <p className="text-sm text-zinc-400">{isToday ? 'No foods logged yet' : 'Nothing logged'}</p>
                 </div>
               )}
             </Card>
@@ -214,13 +281,21 @@ export default function NutritionPage() {
         })}
       </div>
 
-      {/* Add food modal */}
+      {/* Modals */}
       {addingTo && (
         <FoodSearchModal
           mealType={addingTo}
           logDate={logDate}
-          onLogged={() => { fetchDaily() }}
+          onLogged={fetchDaily}
           onClose={() => setAddingTo(null)}
+        />
+      )}
+
+      {editingGoals && (
+        <GoalsEditor
+          current={target}
+          onSaved={setTarget}
+          onClose={() => setEditingGoals(false)}
         />
       )}
     </div>
