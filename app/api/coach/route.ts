@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getOpenAI } from '@/lib/ai/client'
 import { coachModel } from '@/lib/ai/models'
-import { getLimit } from '@/lib/ai/limits'
+import { getAiLimit } from '@/lib/subscription/config'
+import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { buildCoachContext, contextToSystemSnippet } from '@/lib/ai/context'
 import { SEARCH_EXERCISES_TOOL, executeExerciseSearch } from '@/lib/ai/tools/exercises'
 import { PROPOSE_WORKOUT_TOOL, validateWorkoutDraft } from '@/lib/ai/tools/workout'
@@ -43,20 +44,19 @@ function billingPeriod() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-async function checkAndIncrementUsage(userId: string, tier: 'free' | 'plus') {
-  const limit = getLimit(tier, 'coach_message')
+async function checkAndIncrementUsage(userId: string, tier: 'free' | 'trial' | 'plus') {
+  const limit = getAiLimit(tier, 'coach_message')
   const period = billingPeriod()
 
   const record = await prisma.aiUsageLog.upsert({
-    where: { userId_billingPeriod: { userId, billingPeriod: period } },
+    where: { userId_billingPeriod_feature: { userId, billingPeriod: period, feature: 'coach_message' } },
     update: { interactionCount: { increment: 1 } },
-    create: { userId, billingPeriod: period, interactionCount: 1 },
+    create: { userId, billingPeriod: period, feature: 'coach_message', interactionCount: 1 },
   })
 
   if (limit !== null && record.interactionCount > limit) {
-    // Undo the increment — user is over limit
     await prisma.aiUsageLog.update({
-      where: { userId_billingPeriod: { userId, billingPeriod: period } },
+      where: { userId_billingPeriod_feature: { userId, billingPeriod: period, feature: 'coach_message' } },
       data: { interactionCount: { decrement: 1 } },
     })
     return { allowed: false, count: record.interactionCount - 1, limit }
@@ -73,18 +73,15 @@ export async function GET() {
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const period = billingPeriod()
-  const [usage, profile] = await Promise.all([
+  const [usage, entitlement] = await Promise.all([
     prisma.aiUsageLog.findUnique({
-      where: { userId_billingPeriod: { userId: user.id, billingPeriod: period } },
+      where: { userId_billingPeriod_feature: { userId: user.id, billingPeriod: period, feature: 'coach_message' } },
     }).catch(() => null),
-    prisma.profile.findUnique({
-      where: { id: user.id },
-      select: { subscriptionTier: true },
-    }).catch(() => null),
+    getUserEntitlement(user.id),
   ])
 
-  const tier = (profile?.subscriptionTier ?? 'free') as 'free' | 'plus'
-  const limit = getLimit(tier, 'coach_message')
+  const tier = entitlement.tier
+  const limit = getAiLimit(tier, 'coach_message')
   const count = usage?.interactionCount ?? 0
   const nextReset = new Date()
   nextReset.setMonth(nextReset.getMonth() + 1, 1)
@@ -95,6 +92,7 @@ export async function GET() {
     limit,
     remaining: limit !== null ? Math.max(0, limit - count) : null,
     resetsAt: nextReset.toLocaleDateString('en-US', { month: 'long', day: 'numeric' }),
+    trialDaysRemaining: entitlement.trialDaysRemaining,
   })
 }
 
@@ -110,12 +108,8 @@ export async function POST(req: NextRequest) {
   }
   if (!body.messages?.length) return new Response('No messages', { status: 400 })
 
-  // Get tier
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { subscriptionTier: true },
-  }).catch(() => null)
-  const tier = (profile?.subscriptionTier ?? 'free') as 'free' | 'plus'
+  const entitlement = await getUserEntitlement(user.id)
+  const tier = entitlement.tier
 
   // Check usage
   const usage = await checkAndIncrementUsage(user.id, tier)
@@ -129,7 +123,8 @@ export async function POST(req: NextRequest) {
   // Build context
   const ctx = await buildCoachContext(user.id, user.email)
   const contextSnippet = contextToSystemSnippet(ctx)
-  const model = coachModel(tier)
+  // trial users get the plus model
+  const model = coachModel(tier === 'free' ? 'free' : 'plus')
   const openai = getOpenAI()
 
   const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL]

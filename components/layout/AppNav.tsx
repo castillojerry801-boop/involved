@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Sun, Utensils, Dumbbell, TrendingUp, User, Target } from 'lucide-react'
+import { Sun, Utensils, Dumbbell, TrendingUp, User, Target, Bot } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -11,6 +11,7 @@ const navItems = [
   { href: '/today',    label: 'Today',    icon: Sun },
   { href: '/nutrition',label: 'Nutrition', icon: Utensils },
   { href: '/training', label: 'Training',  icon: Dumbbell },
+  { href: '/coach',    label: 'Coach',     icon: Bot },
   { href: '/goals',    label: 'Goals',    icon: Target },
   { href: '/progress', label: 'Progress',  icon: TrendingUp },
   { href: '/profile',  label: 'Profile',   icon: User },

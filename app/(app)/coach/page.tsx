@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Bot, Send, Lock, Loader2, User, Dumbbell, ChevronRight } from 'lucide-react'
+import Link from 'next/link'
+import { Bot, Send, Lock, Loader2, User, Dumbbell, ChevronRight, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getGifUrl } from '@/lib/exercises'
 import { cn } from '@/lib/utils'
@@ -28,11 +29,12 @@ interface WorkoutMessage {
 type Message = TextMessage | WorkoutMessage
 
 interface Usage {
-  tier: 'free' | 'plus'
+  tier: 'free' | 'trial' | 'plus'
   count: number
   limit: number | null
   remaining: number | null
   resetsAt: string
+  trialDaysRemaining: number | null
 }
 
 const PROMPTS = [
@@ -256,14 +258,20 @@ export default function CoachPage() {
             {usage
               ? usage.tier === 'plus'
                 ? 'Unlimited coaching'
-                : `${usage.remaining ?? '—'} of ${usage.limit} messages this month`
+                : usage.tier === 'trial'
+                  ? `${usage.remaining ?? '—'} of ${usage.limit} messages · ${usage.trialDaysRemaining ?? '?'} trial days left`
+                  : `${usage.remaining ?? '—'} of ${usage.limit} messages this month`
               : 'Loading...'}
           </p>
         </div>
         {usage?.tier === 'free' && (
-          <button className="flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
-            Upgrade <ChevronRight className="size-3" />
-          </button>
+          <Link
+            href="/plus"
+            className="flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <Sparkles className="size-3" />
+            Upgrade
+          </Link>
         )}
       </div>
 
@@ -317,8 +325,8 @@ export default function CoachPage() {
               <div>
                 <p className="font-semibold text-amber-800 dark:text-amber-400 text-sm">Monthly coaching limit reached</p>
                 <p className="text-xs text-amber-700 dark:text-amber-500 mt-1">
-                  Your free plan includes {usage?.limit} coach messages per month. Resets {usage?.resetsAt}.
-                  Upgrade to Involved+ for unlimited coaching.
+                  Your {usage?.tier === 'trial' ? 'trial' : 'free'} plan includes {usage?.limit} coach messages per month. Resets {usage?.resetsAt}.{' '}
+                  <Link href="/plus" className="underline">Upgrade to Involved+</Link> for unlimited coaching.
                 </p>
               </div>
             </div>

@@ -35,6 +35,7 @@ model Profile {
   // Training relations
   goals            Goal[]
   aiUsageLogs      AiUsageLog[]
+  subscription     UserSubscription?
 
   // Nutrition relations
   createdFoods     FoodItem[]       @relation("FoodItemsCreated")
@@ -76,16 +77,17 @@ model Goal {
 // ═════════════════════════════════════════════════════════════════════
 
 model AiUsageLog {
-  id               String   @id @default(uuid()) @db.Uuid
-  userId           String   @map("user_id") @db.Uuid
-  billingPeriod    String   @map("billing_period") @db.VarChar(7) // "2026-09"
-  interactionCount Int      @default(0) @map("interaction_count")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  id               String     @id @default(uuid()) @db.Uuid
+  userId           String     @map("user_id") @db.Uuid
+  billingPeriod    String     @map("billing_period") @db.VarChar(7) // "2026-09"
+  feature          AiFeature  @default(coach_message)
+  interactionCount Int        @default(0) @map("interaction_count")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
 
-  profile          Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile          Profile    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, billingPeriod])
+  @@unique([userId, billingPeriod, feature])
   @@index([userId])
   @@map("ai_usage_logs")
 }
@@ -394,7 +396,64 @@ enum FitnessLevel {
 
 enum SubscriptionTier {
   free
+  trial
   plus
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// USER SUBSCRIPTION
+// Source of truth for subscription and trial state.
+// Profile.subscriptionTier is a denormalized cache — this model
+// is authoritative for entitlement decisions.
+// Designed to support Apple StoreKit, Google Play, and Stripe.
+// ═════════════════════════════════════════════════════════════════════
+
+model UserSubscription {
+  id                     String             @id @default(uuid()) @db.Uuid
+  userId                 String             @unique @map("user_id") @db.Uuid
+  tier                   SubscriptionTier   @default(free)
+  status                 SubscriptionStatus @default(active)
+  billingSource          BillingSource?     @map("billing_source")
+  // External ID from Apple/Google/Stripe for webhook reconciliation
+  externalSubscriptionId String?            @map("external_subscription_id") @db.VarChar(255)
+  // External price/product ID — preserves grandfathered pricing
+  externalPriceId        String?            @map("external_price_id") @db.VarChar(255)
+  trialStartedAt         DateTime?          @map("trial_started_at") @db.Timestamptz(3)
+  trialEndsAt            DateTime?          @map("trial_ends_at") @db.Timestamptz(3)
+  currentPeriodStart     DateTime?          @map("current_period_start") @db.Timestamptz(3)
+  currentPeriodEnd       DateTime?          @map("current_period_end") @db.Timestamptz(3)
+  cancelAtPeriodEnd      Boolean            @default(false) @map("cancel_at_period_end")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_subscriptions")
+}
+
+enum SubscriptionStatus {
+  active
+  trialing
+  expired
+  canceled
+  paused
+}
+
+enum BillingSource {
+  stripe
+  apple
+  google
+  manual
+}
+
+enum AiFeature {
+  coach_message
+  workout_generation
+  meal_photo
+  label_scan
+  progress_insight
+  weekly_review
 }
 
 enum GoalType {
