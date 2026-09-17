@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# exercise GIFs — large files, serve from Supabase Storage in production
+/public/exercises/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
