@@ -1,9 +1,10 @@
-import type { Metadata } from 'next'
-import { User, Settings, ChevronRight, Trophy, Target, LogOut } from 'lucide-react'
-import { Card, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+'use client'
 
-export const metadata: Metadata = { title: 'Profile' }
+import { useRouter } from 'next/navigation'
+import { User, Settings, ChevronRight, Trophy, Target, LogOut } from 'lucide-react'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { createClient } from '@/lib/supabase/client'
 
 const DEMO_STATS = [
   { label: 'Workouts', value: '47' },
@@ -29,6 +30,14 @@ const MENU_SECTIONS = [
 ]
 
 export default function ProfilePage() {
+  const router = useRouter()
+
+  const handleSignOut = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
       {/* Profile header */}
@@ -79,7 +88,10 @@ export default function ProfilePage() {
       ))}
 
       {/* Sign out */}
-      <button className="flex w-full items-center gap-3 rounded-xl border border-red-100 bg-white px-5 py-4 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/20 dark:bg-zinc-900 dark:hover:bg-red-900/10">
+      <button
+        onClick={handleSignOut}
+        className="flex w-full items-center gap-3 rounded-xl border border-red-100 bg-white px-5 py-4 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/20 dark:bg-zinc-900 dark:hover:bg-red-900/10"
+      >
         <LogOut className="size-5 shrink-0" />
         Sign out
       </button>
