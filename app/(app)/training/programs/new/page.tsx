@@ -45,15 +45,26 @@ function defaultSet(n: number): ProgramSet {
 
 function ExercisePickerModal({ onSelect, onClose }: { onSelect: (ex: ExerciseResult) => void; onClose: () => void }) {
   const [query, setQuery] = useState('')
+  const [equipment, setEquipment] = useState('')
   const [results, setResults] = useState<ExerciseResult[]>([])
   const [loading, setLoading] = useState(false)
+  const [equipmentOptions, setEquipmentOptions] = useState<Array<{ value: string; count: number }>>([])
 
-  const search = async (q: string) => {
-    setQuery(q)
-    if (q.length < 2) { setResults([]); return }
+  // Load equipment options once
+  useState(() => {
+    fetch('/api/training/exercises/equipment')
+      .then(r => r.json() as Promise<{ equipment: Array<{ value: string; count: number }> }>)
+      .then(d => setEquipmentOptions(d.equipment.filter(e => e.count >= 5)))
+      .catch(() => null)
+  })
+
+  const search = async (q: string, eq: string) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/exercises/search?q=${encodeURIComponent(q)}&limit=20`)
+      const params = new URLSearchParams({ limit: '30' })
+      if (q.trim()) params.set('q', q)
+      if (eq) params.set('equipment', eq)
+      const res = await fetch(`/api/training/exercises?${params}`)
       const data = await res.json() as { exercises: ExerciseResult[] }
       setResults(data.exercises ?? [])
     } finally {
@@ -61,38 +72,58 @@ function ExercisePickerModal({ onSelect, onClose }: { onSelect: (ex: ExerciseRes
     }
   }
 
+  const handleQuery = (q: string) => { setQuery(q); search(q, equipment) }
+  const handleEquipment = (eq: string) => { const next = eq === equipment ? '' : eq; setEquipment(next); search(query, next) }
+
+  // Load initial results on mount
+  useState(() => { search('', '') })
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 px-4 pb-4 sm:pb-0">
-      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 overflow-hidden shadow-2xl">
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
+      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-zinc-900 overflow-hidden shadow-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
           <Search className="size-4 text-zinc-400 shrink-0" />
           <input
             autoFocus
             type="text"
             value={query}
-            onChange={e => search(e.target.value)}
+            onChange={e => handleQuery(e.target.value)}
             placeholder="Search exercises…"
             className="flex-1 bg-transparent text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none"
           />
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+          {loading && <Loader2 className="size-4 text-zinc-400 animate-spin shrink-0" />}
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 shrink-0">
             <X className="size-4 text-zinc-400" />
           </button>
         </div>
-        <div className="max-h-80 overflow-y-auto">
-          {loading && (
-            <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-zinc-400" /></div>
-          )}
-          {!loading && results.length === 0 && query.length >= 2 && (
+        {/* Equipment filter pills */}
+        {equipmentOptions.length > 0 && (
+          <div className="flex gap-1.5 overflow-x-auto px-3 py-2 border-b border-zinc-50 dark:border-zinc-800 shrink-0">
+            {equipmentOptions.map(eq => (
+              <button
+                key={eq.value}
+                onClick={() => handleEquipment(eq.value)}
+                className={cn(
+                  'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize transition-colors',
+                  equipment === eq.value
+                    ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
+                )}
+              >
+                {eq.value}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto">
+          {!loading && results.length === 0 && (
             <p className="py-8 text-center text-sm text-zinc-400">No exercises found</p>
           )}
-          {!loading && query.length < 2 && (
-            <p className="py-8 text-center text-sm text-zinc-400">Type to search exercises</p>
-          )}
           {results.map(ex => (
-            <button key={ex.id} onClick={() => onSelect(ex)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-left">
+            <button key={ex.id} onClick={() => onSelect(ex)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-left border-b border-zinc-50 dark:border-zinc-800 last:border-0">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">{ex.name}</p>
-                <p className="text-xs text-zinc-400">{ex.bodyPart} · {ex.equipment}</p>
+                <p className="text-sm font-medium text-zinc-900 dark:text-white truncate capitalize">{ex.name}</p>
+                <p className="text-xs text-zinc-400 capitalize">{ex.bodyPart} · {ex.equipment}</p>
               </div>
             </button>
           ))}

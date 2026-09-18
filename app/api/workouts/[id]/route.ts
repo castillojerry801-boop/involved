@@ -18,7 +18,7 @@ async function getWorkoutForUser(workoutId: string, userId: string) {
   })
 }
 
-// ─── GET: workout detail + previous bests ─────────────────────────────────────
+// ─── GET: workout detail + per-set previous session ───────────────────────────
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const supabase = await createClient()
@@ -31,37 +31,58 @@ export async function GET(_req: NextRequest, { params }: Params) {
     const workout = await getWorkoutForUser(id, user.id)
     if (!workout) return Response.json({ error: 'Not found' }, { status: 404 })
 
-    // For each exercise in this workout, fetch the most recent prior session's sets
     const exerciseIds = workout.exercises.map(e => e.exerciseId)
-    const previousBests: Record<string, { reps: number | null; weightKg: number | null; setCount: number }> = {}
 
-    if (exerciseIds.length > 0) {
-      const priorSessions = await prisma.workoutExercise.findMany({
-        where: {
-          exerciseId: { in: exerciseIds },
-          workout: {
-            userId: user.id,
-            status: 'completed',
-            id: { not: id },
-          },
+    // Fetch the most recent completed session per exercise (excluding this workout)
+    const priorSessions = exerciseIds.length > 0 ? await prisma.workoutExercise.findMany({
+      where: {
+        exerciseId: { in: exerciseIds },
+        workout: {
+          userId: user.id,
+          status: 'completed',
+          id: { not: id },
         },
-        include: {
-          sets: { where: { completed: true }, orderBy: { setNumber: 'asc' } },
-        },
-        orderBy: { workout: { completedAt: 'desc' } },
-        distinct: ['exerciseId'],
-      })
+      },
+      include: {
+        sets: { where: { completed: true }, orderBy: { setNumber: 'asc' } },
+        workout: { select: { completedAt: true } },
+      },
+      orderBy: { workout: { completedAt: 'desc' } },
+      distinct: ['exerciseId'],
+    }) : []
 
-      for (const prior of priorSessions) {
-        const completedSets = prior.sets.filter(s => s.completed)
-        if (!completedSets.length) continue
-        const maxWeight = Math.max(...completedSets.map(s => Number(s.actualWeightKg ?? 0)))
-        const lastSet = completedSets[completedSets.length - 1]
-        previousBests[prior.exerciseId] = {
-          reps: lastSet?.actualReps ?? null,
-          weightKg: maxWeight > 0 ? maxWeight : null,
-          setCount: completedSets.length,
-        }
+    type PreviousSession = {
+      completedAt: string
+      notes: string | null
+      sets: Array<{
+        setNumber: number
+        setType: string
+        actualReps: number | null
+        actualWeightKg: number | null
+        actualDurationSeconds: number | null
+        actualDistanceM: number | null
+        rpe: number | null
+        rir: number | null
+      }>
+    }
+
+    const previousSessions: Record<string, PreviousSession> = {}
+
+    for (const prior of priorSessions) {
+      if (!prior.sets.length) continue
+      previousSessions[prior.exerciseId] = {
+        completedAt: prior.workout.completedAt?.toISOString() ?? '',
+        notes: prior.notes,
+        sets: prior.sets.map(s => ({
+          setNumber: s.setNumber,
+          setType: s.setType,
+          actualReps: s.actualReps,
+          actualWeightKg: s.actualWeightKg !== null ? Number(s.actualWeightKg) : null,
+          actualDurationSeconds: s.actualDurationSeconds,
+          actualDistanceM: s.actualDistanceM !== null ? Number(s.actualDistanceM) : null,
+          rpe: s.rpe,
+          rir: s.rir,
+        })),
       }
     }
 
@@ -70,7 +91,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       exercises: workout.exercises.map(ex => ({
         ...ex,
         exercise: getExerciseById(ex.exerciseId) ?? null,
-        previousBest: previousBests[ex.exerciseId] ?? null,
+        previousSession: previousSessions[ex.exerciseId] ?? null,
       })),
     }
 
@@ -80,13 +101,14 @@ export async function GET(_req: NextRequest, { params }: Params) {
   }
 }
 
-// ─── PATCH: update workout (start, complete, skip, edit) ──────────────────────
+// ─── PATCH: update workout ────────────────────────────────────────────────────
 
 interface PatchWorkoutBody {
   status?: 'in_progress' | 'completed' | 'skipped' | 'planned'
   title?: string
   notes?: string
   scheduledDate?: string
+  durationTargetMinutes?: number | null
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -107,6 +129,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (body.title !== undefined) updates.title = body.title.trim()
     if (body.notes !== undefined) updates.notes = body.notes.trim() || null
     if (body.scheduledDate !== undefined) updates.scheduledDate = new Date(body.scheduledDate)
+    if (body.durationTargetMinutes !== undefined) updates.durationTargetMinutes = body.durationTargetMinutes
 
     if (body.status === 'in_progress' && existing.status === 'planned') {
       updates.status = 'in_progress'
@@ -136,7 +159,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 }
 
-// ─── DELETE: remove workout ───────────────────────────────────────────────────
+// ─── DELETE ───────────────────────────────────────────────────────────────────
 
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const supabase = await createClient()

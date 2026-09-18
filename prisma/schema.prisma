@@ -33,15 +33,18 @@ model Profile {
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
   // Training relations
-  goals            Goal[]
-  aiUsageLogs      AiUsageLog[]
-  subscription     UserSubscription?
-  workouts         Workout[]
-  personalRecords  PersonalRecord[]
-  trainerProfile   TrainerProfile?
-  clientOf         TrainerClientRelationship[] @relation("ClientTrainers")
-  programs         Program[]
-  workoutTemplates WorkoutTemplate[]
+  goals               Goal[]
+  aiUsageLogs         AiUsageLog[]
+  subscription        UserSubscription?
+  workouts            Workout[]
+  personalRecords     PersonalRecord[]
+  trainerProfile      TrainerProfile?
+  clientOf            TrainerClientRelationship[] @relation("ClientTrainers")
+  programs            Program[]
+  workoutTemplates    WorkoutTemplate[]
+  exercisePreferences ExercisePreference[]
+  equipmentProfiles   EquipmentProfile[]
+  weeklyTargets       WeeklyTarget[]
 
   // Nutrition relations
   createdFoods     FoodItem[]       @relation("FoodItemsCreated")
@@ -439,8 +442,9 @@ model Workout {
   source          WorkoutSource @default(manual)
   startedAt       DateTime?     @map("started_at") @db.Timestamptz(3)
   completedAt     DateTime?     @map("completed_at") @db.Timestamptz(3)
-  durationSeconds Int?          @map("duration_seconds")
-  createdAt       DateTime      @default(now()) @map("created_at")
+  durationSeconds       Int?          @map("duration_seconds")
+  durationTargetMinutes Int?          @map("duration_target_minutes")
+  createdAt             DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
   profile         Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -604,6 +608,10 @@ enum AiFeature {
   label_scan
   progress_insight
   weekly_review
+  voice_transcription
+  voice_intent
+  workout_adjustment
+  substitution
 }
 
 // ─── Training ─────────────────────────────────────────────────────────
@@ -626,6 +634,8 @@ enum PRMetric {
   reps
   duration
   distance
+  estimated_1rm
+  volume_kg
 }
 
 // How performance is tracked for a given exercise.
@@ -655,6 +665,96 @@ enum TrainerClientStatus {
   active
   paused
   ended
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// EXERCISE PREFERENCES
+// User-specific preference state per exercise (separate from licensed
+// ExerciseDB source records — never modify those).
+// ═════════════════════════════════════════════════════════════════════
+
+enum ExercisePreferenceState {
+  favorite       // ♥ — shown first, quick access
+  more_often     // surface more frequently
+  normal         // default
+  less_often     // deprioritize
+  dont_recommend // exclude from suggestions
+}
+
+model ExercisePreference {
+  id         String                  @id @default(uuid()) @db.Uuid
+  userId     String                  @map("user_id") @db.Uuid
+  exerciseId String                  @map("exercise_id") @db.VarChar(100)
+  state      ExercisePreferenceState @default(normal)
+  createdAt  DateTime                @default(now()) @map("created_at")
+  updatedAt  DateTime                @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, exerciseId])
+  @@index([userId])
+  @@index([userId, state])
+  @@map("exercise_preferences")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// EQUIPMENT PROFILES
+// Named collections of available equipment per location.
+// Drives exercise filtering and (future) V workout generation.
+// ═════════════════════════════════════════════════════════════════════
+
+model EquipmentProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(false) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  profile Profile               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items   EquipmentProfileItem[]
+
+  @@index([userId])
+  @@map("equipment_profiles")
+}
+
+model EquipmentProfileItem {
+  id        String           @id @default(uuid()) @db.Uuid
+  profileId String           @map("profile_id") @db.Uuid
+  equipment String           @db.VarChar(100)
+
+  profile EquipmentProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, equipment])
+  @@index([profileId])
+  @@map("equipment_profile_items")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// WEEKLY TARGETS
+// Per-user configurable weekly volume/consistency targets.
+// ═════════════════════════════════════════════════════════════════════
+
+enum WeeklyTargetType {
+  workouts_per_week
+  training_days
+  nutrition_log_days
+  protein_target_days
+}
+
+model WeeklyTarget {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  targetType  WeeklyTargetType @map("target_type")
+  targetValue Int              @map("target_value")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType])
+  @@index([userId])
+  @@map("weekly_targets")
 }
 
 enum GoalType {

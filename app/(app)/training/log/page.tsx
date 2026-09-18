@@ -3,8 +3,9 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Search, Plus, X, Loader2, Calendar, Dumbbell } from 'lucide-react'
+import { ArrowLeft, Search, Plus, X, Loader2, Calendar, Dumbbell, Sparkles } from 'lucide-react'
 import { getGifUrl } from '@/lib/exercises'
+import { GenerateWorkoutModal } from '@/components/v/GenerateWorkoutModal'
 
 interface Exercise {
   id: string
@@ -39,6 +40,7 @@ function LogWorkoutForm() {
   const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [showGenerateModal, setShowGenerateModal] = useState(false)
 
   // Load exercises from static library
   useEffect(() => {
@@ -119,7 +121,17 @@ function LogWorkoutForm() {
         <h1 className="font-black text-xl text-zinc-900 dark:text-white">
           {isPlanMode ? 'Plan a Workout' : 'Log a Workout'}
         </h1>
+        {!isPlanMode && (
+          <button
+            onClick={() => setShowGenerateModal(true)}
+            className="ml-auto flex items-center gap-1.5 rounded-full bg-zinc-900 dark:bg-white px-3 py-1.5 text-xs font-semibold text-white dark:text-zinc-900 hover:opacity-90 transition-opacity"
+          >
+            <Sparkles className="size-3" />
+            Generate with V
+          </button>
+        )}
       </div>
+      <GenerateWorkoutModal open={showGenerateModal} onOpenChange={setShowGenerateModal} />
 
       {/* Workout title */}
       <div className="mb-4">

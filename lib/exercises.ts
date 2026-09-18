@@ -32,26 +32,118 @@ export function getGifUrl(id: string) {
   return `${base}/${id}.gif`
 }
 
-export function searchExercises(query: string, bodyPart: string, limit = 30, offset = 0): Exercise[] {
+// ─── Derived metadata (computed once from source data) ────────────────────────
+
+export interface EquipmentOption {
+  value: string
+  count: number
+}
+
+let _equipmentCache: EquipmentOption[] | null = null
+
+export function getDistinctEquipment(): EquipmentOption[] {
+  if (_equipmentCache) return _equipmentCache
+  const counts = new Map<string, number>()
+  for (const ex of exercises) {
+    counts.set(ex.equipment, (counts.get(ex.equipment) ?? 0) + 1)
+  }
+  _equipmentCache = Array.from(counts.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count)
+  return _equipmentCache
+}
+
+let _targetCache: string[] | null = null
+
+export function getDistinctTargets(): string[] {
+  if (_targetCache) return _targetCache
+  _targetCache = [...new Set(exercises.map(e => e.target))].sort()
+  return _targetCache
+}
+
+// ─── Stackable filter ─────────────────────────────────────────────────────────
+
+export interface FilterOptions {
+  q?: string
+  bodyPart?: string | null
+  equipment?: string | null
+  target?: string | null
+  allowedIds?: Set<string>       // restrict to this set (e.g. from equipment profile)
+  favoriteIds?: Set<string>      // used when favoritesOnly=true
+  favoritesOnly?: boolean
+  excludeIds?: Set<string>       // dont_recommend exercises
+  limit?: number
+  offset?: number
+}
+
+export function filterExercises(opts: FilterOptions): Exercise[] {
+  const {
+    q, bodyPart, equipment, target,
+    allowedIds, favoriteIds, favoritesOnly, excludeIds,
+    limit = 60, offset = 0,
+  } = opts
+
   let results = exercises
+
+  if (favoritesOnly && favoriteIds) {
+    results = results.filter(e => favoriteIds.has(e.id))
+  }
+
+  if (allowedIds) {
+    results = results.filter(e => allowedIds.has(e.id))
+  }
+
+  if (excludeIds?.size) {
+    results = results.filter(e => !excludeIds.has(e.id))
+  }
 
   if (bodyPart && bodyPart !== 'all') {
     results = results.filter(e => e.bodyPart === bodyPart)
   }
 
-  if (query.trim()) {
-    const q = query.toLowerCase()
+  if (equipment) {
+    results = results.filter(e => e.equipment === equipment)
+  }
+
+  if (target) {
+    results = results.filter(e => e.target === target)
+  }
+
+  if (q?.trim()) {
+    const lq = q.toLowerCase()
     results = results.filter(e =>
-      e.name.toLowerCase().includes(q) ||
-      e.target.toLowerCase().includes(q) ||
-      e.equipment.toLowerCase().includes(q) ||
-      e.bodyPart.toLowerCase().includes(q)
+      e.name.toLowerCase().includes(lq) ||
+      e.target.toLowerCase().includes(lq) ||
+      e.equipment.toLowerCase().includes(lq) ||
+      e.bodyPart.toLowerCase().includes(lq) ||
+      e.secondaryMuscles.some(m => m.toLowerCase().includes(lq))
     )
+  }
+
+  // Favorites float to the top when not in favoritesOnly mode
+  if (favoriteIds?.size && !favoritesOnly) {
+    results = [
+      ...results.filter(e => favoriteIds.has(e.id)),
+      ...results.filter(e => !favoriteIds.has(e.id)),
+    ]
   }
 
   return results.slice(offset, offset + limit)
 }
 
+// ─── Legacy wrapper kept for existing call sites ──────────────────────────────
+
+export function searchExercises(query: string, bodyPart: string, limit = 30, offset = 0): Exercise[] {
+  return filterExercises({ q: query, bodyPart, limit, offset })
+}
+
 export function getExerciseById(id: string): Exercise | undefined {
   return exercises.find(e => e.id === id)
+}
+
+// Returns compatible exercise IDs for a given list of equipment values.
+// Used by equipment profiles and (future) V workout generation.
+export function getExerciseIdsForEquipment(equipmentList: string[]): Set<string> {
+  const set = new Set(equipmentList)
+  return new Set(exercises.filter(e => set.has(e.equipment)).map(e => e.id))
 }

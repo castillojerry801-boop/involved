@@ -54,6 +54,8 @@ export type FeatureKey =
   | 'advanced_insights'
   | 'weekly_review'
   | 'premium_programs'
+  | 'voice_logging'
+  | 'shorten_workout'
 
 const ALL: readonly EffectiveTier[] = ['free', 'trial', 'plus']
 const PLUS_ONLY: readonly EffectiveTier[] = ['trial', 'plus']
@@ -70,6 +72,8 @@ export const FEATURE_ENTITLEMENTS: Record<FeatureKey, { tiers: readonly Effectiv
   advanced_insights:     { tiers: PLUS_ONLY },
   weekly_review:         { tiers: PLUS_ONLY },
   premium_programs:      { tiers: PLUS_ONLY },
+  voice_logging:         { tiers: PLUS_ONLY },
+  shorten_workout:       { tiers: PLUS_ONLY },
 }
 
 export function hasFeatureAccess(tier: EffectiveTier, feature: FeatureKey): boolean {
@@ -87,6 +91,10 @@ export type AiFeatureKey =
   | 'label_scan'
   | 'progress_insight'
   | 'weekly_review'
+  | 'voice_transcription'
+  | 'voice_intent'
+  | 'workout_adjustment'
+  | 'substitution'
 
 export type AiLimitRecord = Record<AiFeatureKey, number | null>
 
@@ -97,37 +105,46 @@ function envInt(key: string, fallback: number): number {
 
 export const AI_LIMITS: Record<EffectiveTier, AiLimitRecord> = {
   free: {
-    coach_message:      envInt('LIMIT_FREE_COACH',        25),
-    workout_generation: envInt('LIMIT_FREE_WORKOUT',       5),
-    meal_photo:         envInt('LIMIT_FREE_MEAL_PHOTO',    0),
-    label_scan:         envInt('LIMIT_FREE_LABEL_SCAN',    0),
-    progress_insight:   envInt('LIMIT_FREE_INSIGHT',       0),
-    weekly_review:      envInt('LIMIT_FREE_REVIEW',        0),
+    coach_message:       envInt('LIMIT_FREE_COACH',         25),
+    workout_generation:  envInt('LIMIT_FREE_WORKOUT',        5),
+    meal_photo:          envInt('LIMIT_FREE_MEAL_PHOTO',     0),
+    label_scan:          envInt('LIMIT_FREE_LABEL_SCAN',     0),
+    progress_insight:    envInt('LIMIT_FREE_INSIGHT',        0),
+    weekly_review:       envInt('LIMIT_FREE_REVIEW',         0),
+    voice_transcription: envInt('LIMIT_FREE_VOICE_TX',       0),
+    voice_intent:        envInt('LIMIT_FREE_VOICE_INTENT',   0),
+    workout_adjustment:  envInt('LIMIT_FREE_WO_ADJUST',      0),
+    substitution:        envInt('LIMIT_FREE_SUBSTITUTION',   5),
   },
   trial: {
-    coach_message:      envInt('LIMIT_TRIAL_COACH',      100),
-    workout_generation: envInt('LIMIT_TRIAL_WORKOUT',     20),
-    meal_photo:         envInt('LIMIT_TRIAL_MEAL_PHOTO',  15),
-    label_scan:         envInt('LIMIT_TRIAL_LABEL_SCAN',  20),
-    progress_insight:   envInt('LIMIT_TRIAL_INSIGHT',     10),
-    weekly_review:      envInt('LIMIT_TRIAL_REVIEW',       4),
+    coach_message:       envInt('LIMIT_TRIAL_COACH',       100),
+    workout_generation:  envInt('LIMIT_TRIAL_WORKOUT',      20),
+    meal_photo:          envInt('LIMIT_TRIAL_MEAL_PHOTO',   15),
+    label_scan:          envInt('LIMIT_TRIAL_LABEL_SCAN',   20),
+    progress_insight:    envInt('LIMIT_TRIAL_INSIGHT',      10),
+    weekly_review:       envInt('LIMIT_TRIAL_REVIEW',        4),
+    voice_transcription: envInt('LIMIT_TRIAL_VOICE_TX',     50),
+    voice_intent:        envInt('LIMIT_TRIAL_VOICE_INTENT', 50),
+    workout_adjustment:  envInt('LIMIT_TRIAL_WO_ADJUST',     5),
+    substitution:        envInt('LIMIT_TRIAL_SUBSTITUTION', 20),
   },
   plus: {
-    coach_message:      null,
-    workout_generation: null,
-    meal_photo:         null,
-    label_scan:         null,
-    progress_insight:   null,
-    weekly_review:      null,
+    coach_message:       null,
+    workout_generation:  null,
+    meal_photo:          null,
+    label_scan:          null,
+    progress_insight:    null,
+    weekly_review:       null,
+    voice_transcription: null,
+    voice_intent:        null,
+    workout_adjustment:  null,
+    substitution:        null,
   },
 }
 
 export function getAiLimit(tier: EffectiveTier, feature: AiFeatureKey): number | null {
   return AI_LIMITS[tier][feature]
 }
-
-// ─── Upgrade messaging ────────────────────────────────────────────────────────
-// Used by upgrade gates to describe what's included with Involved+.
 
 // ─── Trainer tier config ──────────────────────────────────────────────────────
 // Pricing is placeholder — finalize before launch.
@@ -146,6 +163,7 @@ export type TrainerTierKey = keyof typeof TRAINER_TIERS
 export const PLUS_HIGHLIGHTS = [
   'Unlimited AI Coach conversations',
   'Personalized AI workout generation',
+  'Voice workout logging',
   'Meal photo nutrition analysis',
   'Nutrition label scanning',
   'Advanced progress insights',

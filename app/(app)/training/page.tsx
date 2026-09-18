@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Dumbbell, Plus, ChevronRight, BookOpen, ClipboardList, Calendar, PlayCircle, CheckCircle2, Zap, LayoutTemplate } from 'lucide-react'
+import { Dumbbell, Plus, ChevronRight, BookOpen, ClipboardList, Calendar, PlayCircle, CheckCircle2, Zap, LayoutTemplate, BarChart2, Calculator, Target } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
@@ -128,7 +128,53 @@ export default async function TrainingPage() {
         </section>
       )}
 
-      {/* Exercise Library */}
+      {/* Tools grid */}
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Link href="/training/equipment" className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
+            <Zap className="size-5 text-zinc-500 dark:text-zinc-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm text-zinc-900 dark:text-white">Equipment profiles</p>
+            <p className="text-xs text-zinc-400">Filter by your available gear</p>
+          </div>
+          <ChevronRight className="size-4 text-zinc-300 shrink-0" />
+        </Link>
+
+        <Link href="/training/volume" className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
+            <BarChart2 className="size-5 text-zinc-500 dark:text-zinc-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm text-zinc-900 dark:text-white">Muscle volume</p>
+            <p className="text-xs text-zinc-400">Weekly sets per muscle group</p>
+          </div>
+          <ChevronRight className="size-4 text-zinc-300 shrink-0" />
+        </Link>
+
+        <Link href="/training/plate-calculator" className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
+            <Calculator className="size-5 text-zinc-500 dark:text-zinc-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm text-zinc-900 dark:text-white">Plate calculator</p>
+            <p className="text-xs text-zinc-400">Target weight → plates per side</p>
+          </div>
+          <ChevronRight className="size-4 text-zinc-300 shrink-0" />
+        </Link>
+
+        <Link href="/training/weekly-targets" className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
+            <Target className="size-5 text-zinc-500 dark:text-zinc-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm text-zinc-900 dark:text-white">Weekly targets</p>
+            <p className="text-xs text-zinc-400">Set your weekly training goals</p>
+          </div>
+          <ChevronRight className="size-4 text-zinc-300 shrink-0" />
+        </Link>
+      </div>
+
       <Link href="/training/exercises">
         <div className="mb-6 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm p-5 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-4">

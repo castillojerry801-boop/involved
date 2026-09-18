@@ -16,6 +16,10 @@ export const MODELS = {
   extraction: {
     default: process.env.AI_MODEL_EXTRACTION ?? 'gpt-4o-mini',
   },
+  voice: {
+    transcription: process.env.AI_MODEL_VOICE_TRANSCRIPTION ?? 'whisper-1',
+    intent:        process.env.AI_MODEL_VOICE_INTENT        ?? 'gpt-4o-mini',
+  },
 } as const
 
 export type SubscriptionTier = 'free' | 'plus'
