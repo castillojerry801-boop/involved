@@ -48,12 +48,12 @@ export default function SignupPage() {
       }
 
       const supabase = createClient()
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { display_name: name },
-          emailRedirectTo: `${location.origin}/api/auth/callback`,
+          emailRedirectTo: `${location.origin}/auth/confirm?next=/onboarding`,
         },
       })
 
@@ -62,6 +62,13 @@ export default function SignupPage() {
         return
       }
 
+      // Email confirmation off → session is returned immediately, go straight in
+      if (data.session) {
+        router.push('/onboarding')
+        return
+      }
+
+      // Email confirmation on → show "check your email"
       setSuccess(true)
     } finally {
       setLoading(false)
