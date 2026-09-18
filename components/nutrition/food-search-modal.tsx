@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
-import { Search, Barcode, Camera, X, Plus, ChevronRight, Loader2 } from 'lucide-react'
+import { Search, Barcode, Camera, X, Plus, Loader2, ChevronDown, ChevronUp, Minus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { BarcodeScanner } from './barcode-scanner'
@@ -11,9 +11,11 @@ type Tab = 'search' | 'barcode' | 'photo'
 type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 interface FoodResult {
+  provider?: string
   externalId: string
   name: string
   brand?: string
+  barcode?: string
   servingSize: number
   servingUnit: string
   coreNutrients: {
@@ -23,6 +25,9 @@ interface FoodResult {
     fatG: number
   }
   extendedNutrients?: Record<string, number>
+  nutriScore?: string
+  novaGroup?: number
+  incompleteData?: boolean
 }
 
 interface Props {
@@ -31,6 +36,174 @@ interface Props {
   onLogged: () => void
   onClose: () => void
 }
+
+function ProviderBadge({ provider }: { provider?: string }) {
+  if (!provider || provider === 'library') return (
+    <span className="rounded-full bg-zinc-100 dark:bg-zinc-700 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">Library</span>
+  )
+  if (provider === 'usda_fooddata') return (
+    <span className="rounded-full bg-sky-100 dark:bg-sky-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300 uppercase tracking-wide">USDA</span>
+  )
+  if (provider === 'open_food_facts') return (
+    <span className="rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">OFF</span>
+  )
+  return null
+}
+
+function NutriScoreBadge({ grade }: { grade?: string }) {
+  if (!grade) return null
+  const colors: Record<string, string> = {
+    A: 'bg-green-500', B: 'bg-lime-400 text-zinc-800', C: 'bg-yellow-400 text-zinc-800',
+    D: 'bg-orange-400', E: 'bg-red-500',
+  }
+  const cls = colors[grade.toUpperCase()] ?? 'bg-zinc-400'
+  return (
+    <span className={`${cls} text-white rounded px-1.5 py-0.5 text-[10px] font-black`}>
+      {grade.toUpperCase()}
+    </span>
+  )
+}
+
+// ─── Expanded food card ───────────────────────────────────────────────────────
+
+function FoodCard({
+  food,
+  onLog,
+  logging,
+}: {
+  food: FoodResult
+  onLog: (food: FoodResult, multiplier: number) => void
+  logging: boolean
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [servings, setServings] = useState(1)
+
+  const cal = Math.round(food.coreNutrients.calories * servings)
+  const pro = Math.round(food.coreNutrients.proteinG * servings * 10) / 10
+  const carb = Math.round(food.coreNutrients.carbohydrateG * servings * 10) / 10
+  const fat = Math.round(food.coreNutrients.fatG * servings * 10) / 10
+
+  return (
+    <div className="flex flex-col border-b border-zinc-100 dark:border-zinc-800 last:border-0">
+      {/* Row */}
+      <button
+        className="flex items-center gap-3 py-3 text-left w-full"
+        onClick={() => setExpanded(v => !v)}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">{food.name}</p>
+            <ProviderBadge provider={food.provider} />
+            {food.nutriScore && <NutriScoreBadge grade={food.nutriScore} />}
+          </div>
+          {food.brand && <p className="text-xs text-zinc-400 truncate">{food.brand}</p>}
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {food.coreNutrients.calories} cal · {food.servingSize}{food.servingUnit}
+            {' · '}P {food.coreNutrients.proteinG}g · C {food.coreNutrients.carbohydrateG}g · F {food.coreNutrients.fatG}g
+          </p>
+        </div>
+        {expanded
+          ? <ChevronUp className="size-4 text-zinc-300 shrink-0" />
+          : <ChevronDown className="size-4 text-zinc-300 shrink-0" />
+        }
+      </button>
+
+      {/* Expanded: serving editor + add button */}
+      {expanded && (
+        <div className="pb-3 pl-0">
+          {food.incompleteData && (
+            <p className="mb-2 text-[11px] text-amber-600 dark:text-amber-400">
+              Some nutrient data may be incomplete for this product.
+            </p>
+          )}
+
+          {/* Serving multiplier */}
+          <div className="mb-3 flex items-center gap-3">
+            <span className="text-xs font-medium text-zinc-500">Servings</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setServings(s => Math.max(0.5, Math.round((s - 0.5) * 10) / 10))}
+                className="flex size-7 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <Minus className="size-3" />
+              </button>
+              <input
+                type="number"
+                min={0.5}
+                max={20}
+                step={0.5}
+                value={servings}
+                onChange={e => {
+                  const v = parseFloat(e.target.value)
+                  if (!isNaN(v) && v > 0) setServings(Math.round(v * 10) / 10)
+                }}
+                className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1 text-center text-sm text-zinc-900 dark:text-white focus:outline-none"
+              />
+              <button
+                onClick={() => setServings(s => Math.round((s + 0.5) * 10) / 10)}
+                className="flex size-7 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <Plus className="size-3" />
+              </button>
+            </div>
+            <span className="text-xs text-zinc-400">
+              = {servings * food.servingSize}{food.servingUnit}
+            </span>
+          </div>
+
+          {/* Calculated macros */}
+          <div className="mb-3 flex items-center gap-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 px-3 py-2">
+            <div className="text-center">
+              <p className="text-base font-black text-zinc-900 dark:text-white">{cal}</p>
+              <p className="text-[10px] text-zinc-400">cal</p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-bold text-zinc-900 dark:text-white">{pro}g</p>
+              <p className="text-[10px] text-zinc-400">protein</p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-bold text-zinc-900 dark:text-white">{carb}g</p>
+              <p className="text-[10px] text-zinc-400">carbs</p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-bold text-zinc-900 dark:text-white">{fat}g</p>
+              <p className="text-[10px] text-zinc-400">fat</p>
+            </div>
+          </div>
+
+          {/* Quick serving presets */}
+          <div className="mb-3 flex gap-1.5">
+            {[0.5, 1, 1.5, 2, 3].map(n => (
+              <button
+                key={n}
+                onClick={() => setServings(n)}
+                className={cn(
+                  'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
+                  servings === n
+                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                )}
+              >
+                {n}x
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => onLog(food, servings)}
+            disabled={logging}
+            className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
+          >
+            {logging ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            Add {cal} cal to meal
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main modal ───────────────────────────────────────────────────────────────
 
 export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('search')
@@ -83,7 +256,9 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
         body: JSON.stringify({
           mealType,
           logDate,
-          foodName: food.brand ? `${food.name} (${food.brand})` : food.name,
+          foodName: food.name,
+          brand: food.brand,
+          barcode: food.barcode,
           servingMultiplier,
           servingSize: food.servingSize,
           servingUnit: food.servingUnit,
@@ -92,6 +267,8 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
           carbohydrateG: food.coreNutrients.carbohydrateG,
           fatG: food.coreNutrients.fatG,
           extendedNutrients: food.extendedNutrients,
+          sourceProvider: food.provider,
+          externalId: food.externalId,
         }),
       })
       onLogged()
@@ -157,7 +334,7 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
                     value={query}
                     onChange={e => handleQueryChange(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleNaturalSearch()}
-                    placeholder='e.g. "chicken breast" or "2 eggs and toast"'
+                    placeholder='e.g. "chicken breast" or "greek yogurt"'
                     className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 pl-9 pr-4 py-2.5 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
@@ -166,43 +343,42 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
                 </Button>
               </div>
 
-              {/* Results */}
               {searching && (
                 <div className="flex justify-center py-8">
                   <Loader2 className="size-5 animate-spin text-zinc-400" />
                 </div>
               )}
+
               {!searching && results.length > 0 && (
-                <div className="flex flex-col divide-y divide-zinc-100 dark:divide-zinc-800">
+                <div className="flex flex-col">
                   {results.map(food => (
-                    <div key={food.externalId} className="flex items-center gap-3 py-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">{food.name}</p>
-                        {food.brand && <p className="text-xs text-zinc-400 truncate">{food.brand}</p>}
-                        <p className="text-xs text-zinc-500 mt-0.5">
-                          {food.coreNutrients.calories} cal · {food.servingSize} {food.servingUnit}
-                          {' · '}P {food.coreNutrients.proteinG}g · C {food.coreNutrients.carbohydrateG}g · F {food.coreNutrients.fatG}g
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => logFood(food)}
-                        disabled={logging === food.externalId}
-                        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
-                      >
-                        {logging === food.externalId ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-                      </button>
-                    </div>
+                    <FoodCard
+                      key={`${food.provider}:${food.externalId}`}
+                      food={food}
+                      onLog={logFood}
+                      logging={logging === food.externalId}
+                    />
                   ))}
                 </div>
               )}
+
               {!searching && query.length >= 2 && results.length === 0 && (
-                <p className="text-center text-sm text-zinc-400 py-8">No results found. Try a different search.</p>
+                <div className="py-8 text-center">
+                  <p className="text-sm text-zinc-400 mb-1">No results found.</p>
+                  <p className="text-xs text-zinc-300">Try a different spelling or scan the barcode instead.</p>
+                </div>
+              )}
+
+              {!query && (
+                <div className="py-6 text-center">
+                  <p className="text-xs text-zinc-400">Results come from USDA FoodData Central + Open Food Facts</p>
+                </div>
               )}
             </div>
           )}
 
           {tab === 'barcode' && (
-            <BarcodeScanner onFound={food => logFood(food)} mealType={mealType} logDate={logDate} onLogged={onLogged} />
+            <BarcodeScanner onFound={food => { setTab('search'); logFood(food) }} mealType={mealType} logDate={logDate} onLogged={onLogged} />
           )}
 
           {tab === 'photo' && (

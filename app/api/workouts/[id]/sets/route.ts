@@ -10,11 +10,14 @@ type Params = { params: Promise<{ id: string }> }
 interface LogSetBody {
   workoutExerciseId: string
   setNumber: number
+  setType?: 'warmup' | 'working' | 'amrap' | 'drop' | 'failure'
   actualReps?: number
   actualWeightKg?: number
   actualDurationSeconds?: number
   actualDistanceM?: number
   rpe?: number
+  rir?: number
+  restSeconds?: number
   completed?: boolean
 }
 
@@ -50,11 +53,14 @@ export async function POST(req: NextRequest, { params }: Params) {
       data: {
         workoutExerciseId: body.workoutExerciseId,
         setNumber: body.setNumber,
+        setType:               body.setType ?? 'working',
         actualReps:            body.actualReps ?? null,
         actualWeightKg:        body.actualWeightKg ?? null,
         actualDurationSeconds: body.actualDurationSeconds ?? null,
         actualDistanceM:       body.actualDistanceM ?? null,
         rpe:                   body.rpe ?? null,
+        rir:                   body.rir ?? null,
+        restSeconds:           body.restSeconds ?? null,
         completed:             isCompleted,
         completedAt:           isCompleted ? now : null,
       },

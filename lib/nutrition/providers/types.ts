@@ -55,6 +55,11 @@ export interface ExternalFoodDetail extends ExternalFoodResult {
   servingsPerContainer?: number
   extendedNutrients?: ExtendedNutrients
   ingredientsText?: string
+  // Open Food Facts extras
+  nutriScore?: string        // A/B/C/D/E or null
+  novaGroup?: number         // 1–4
+  imageUrl?: string
+  incompleteData?: boolean   // true when core nutrients are partially missing
 }
 
 // ─────────────────────────────────────────────────────────────────────

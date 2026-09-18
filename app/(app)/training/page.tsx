@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { Dumbbell, Plus, ChevronRight, BookOpen, ClipboardList, Calendar, PlayCircle, CheckCircle2, Clock } from 'lucide-react'
+import { Dumbbell, Plus, ChevronRight, BookOpen, ClipboardList, Calendar, PlayCircle, CheckCircle2, Zap, LayoutTemplate } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
@@ -31,12 +31,12 @@ function WorkoutStatusBadge({ status }: { status: string }) {
   return null
 }
 
-async function getWorkouts(userId: string) {
+async function getTrainingData(userId: string) {
   try {
-    const [recent, planned] = await Promise.all([
+    const [recent, planned, activeProgram, templateCount] = await Promise.all([
       prisma.workout.findMany({
         where: { userId, status: { in: ['completed', 'in_progress'] } },
-        orderBy: { completedAt: 'desc' },
+        orderBy: [{ completedAt: 'desc' }, { startedAt: 'desc' }],
         take: 5,
         include: {
           exercises: { select: { exerciseId: true }, take: 3 },
@@ -50,19 +50,30 @@ async function getWorkouts(userId: string) {
           exercises: { select: { exerciseId: true }, take: 3 },
         },
       }),
+      prisma.program.findFirst({
+        where: { userId, isActive: true },
+        include: {
+          days: {
+            orderBy: { sortOrder: 'asc' },
+            include: { _count: { select: { exercises: true } } },
+          },
+        },
+      }),
+      prisma.workoutTemplate.count({ where: { userId } }),
     ])
-    return { recent, planned }
+    return { recent, planned, activeProgram, templateCount }
   } catch {
-    return { recent: [], planned: [] }
+    return { recent: [], planned: [], activeProgram: null, templateCount: 0 }
   }
 }
+
 
 export default async function TrainingPage() {
   const user = await getUser()
   if (!user) redirect('/login')
 
   const featured = searchExercises('', 'all', 6)
-  const { recent, planned } = await getWorkouts(user.id)
+  const { recent, planned, activeProgram, templateCount } = await getTrainingData(user.id)
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
@@ -173,8 +184,9 @@ export default async function TrainingPage() {
                 ? new Date((w.completedAt ?? w.startedAt ?? w.scheduledDate)!).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
                 : null
 
+              const href = isActive ? `/training/workout/${w.id}` : `/training/history/${w.id}`
               return (
-                <Link key={w.id} href={`/training/workout/${w.id}`}>
+                <Link key={w.id} href={href}>
                   <div className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
                     <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${isActive ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'bg-zinc-50 dark:bg-zinc-800'}`}>
                       {isActive
@@ -202,20 +214,79 @@ export default async function TrainingPage() {
         )}
       </section>
 
-      {/* Programs — future */}
-      <section>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-bold text-zinc-900 dark:text-white">Programs</h2>
+      {/* Programs */}
+      <section className="mb-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-bold text-zinc-900 dark:text-white">Program</h2>
+          <Link href="/training/programs" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+            View all
+          </Link>
         </div>
-        <Card className="flex flex-col items-center py-10 text-center">
-          <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800">
-            <ClipboardList className="size-6 text-zinc-400" />
+
+        {activeProgram ? (
+          <Link href={`/training/programs/${activeProgram.id}`}>
+            <div className="rounded-2xl border border-emerald-100 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-900/10 px-4 py-4 hover:border-emerald-200 dark:hover:border-emerald-800 transition-colors">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/40">
+                  <Zap className="size-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold text-sm text-zinc-900 dark:text-white truncate">{activeProgram.name}</p>
+                    <span className="shrink-0 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">Active</span>
+                  </div>
+                  <p className="text-xs text-zinc-500">{activeProgram.days.length} day{activeProgram.days.length !== 1 ? 's' : ''}</p>
+                </div>
+                <ChevronRight className="size-4 text-zinc-300 shrink-0" />
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {activeProgram.days.map(day => (
+                  <div key={day.id} className="shrink-0 rounded-xl border border-emerald-100 dark:border-emerald-900/40 bg-white dark:bg-zinc-900 px-3 py-2 text-center min-w-[72px]">
+                    <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 truncate">{day.name}</p>
+                    <p className="text-[11px] text-zinc-400">{day._count.exercises} ex</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Link>
+        ) : (
+          <Link href="/training/programs/new">
+            <div className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
+                <ClipboardList className="size-4 text-zinc-400" />
+              </div>
+              <div>
+                <p className="font-semibold text-sm text-zinc-700 dark:text-zinc-300">Build a program</p>
+                <p className="text-xs text-zinc-400">Structured multi-day training plan</p>
+              </div>
+              <Plus className="size-4 text-zinc-300 ml-auto shrink-0" />
+            </div>
+          </Link>
+        )}
+      </section>
+
+      {/* Templates */}
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-bold text-zinc-900 dark:text-white">Templates</h2>
+          <Link href="/training/templates" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+            View all
+          </Link>
+        </div>
+        <Link href="/training/templates">
+          <div className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
+              <LayoutTemplate className="size-4 text-zinc-400" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-sm text-zinc-900 dark:text-white">Saved templates</p>
+              <p className="text-xs text-zinc-400">
+                {templateCount === 0 ? 'No templates yet' : `${templateCount} saved`}
+              </p>
+            </div>
+            <ChevronRight className="size-4 text-zinc-300 shrink-0" />
           </div>
-          <p className="font-semibold text-zinc-900 dark:text-white mb-1">No programs yet</p>
-          <p className="text-sm text-zinc-400 max-w-xs">
-            Custom training programs are coming soon.
-          </p>
-        </Card>
+        </Link>
       </section>
     </div>
   )

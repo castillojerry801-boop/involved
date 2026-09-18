@@ -13,6 +13,9 @@ interface UpdateSetBody {
   actualDurationSeconds?: number | null
   actualDistanceM?: number | null
   rpe?: number | null
+  rir?: number | null
+  restSeconds?: number | null
+  setType?: 'warmup' | 'working' | 'amrap' | 'drop' | 'failure'
   completed?: boolean
 }
 
@@ -42,11 +45,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     const updated = await prisma.workoutSet.update({
       where: { id: setId },
       data: {
+        ...(body.setType !== undefined && { setType: body.setType }),
         actualReps:            body.actualReps ?? undefined,
         actualWeightKg:        body.actualWeightKg ?? undefined,
         actualDurationSeconds: body.actualDurationSeconds ?? undefined,
         actualDistanceM:       body.actualDistanceM ?? undefined,
         rpe:                   body.rpe ?? undefined,
+        rir:                   body.rir ?? undefined,
+        restSeconds:           body.restSeconds ?? undefined,
         completed:             isCompleted,
         completedAt:           isCompleted ? (set.completedAt ?? now) : null,
       },

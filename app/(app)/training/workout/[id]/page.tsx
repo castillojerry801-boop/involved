@@ -4,23 +4,29 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, CheckCircle2, Circle, Loader2, Trophy, ChevronDown, ChevronUp, Plus, Trash2, Dumbbell
+  ArrowLeft, CheckCircle2, Circle, Loader2, Trophy, ChevronDown, ChevronUp, Plus, Dumbbell
 } from 'lucide-react'
 import { getGifUrl } from '@/lib/exercises'
 import { cn } from '@/lib/utils'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type TrackingType = 'strength' | 'bodyweight' | 'assisted' | 'cardio' | 'carry' | 'isometric' | 'intervals'
+
 interface SetData {
   id: string
   setNumber: number
+  setType: string
   targetReps: number | null
+  targetRepsMin: number | null
+  targetRepsMax: number | null
   targetWeightKg: number | null
   targetDurationSeconds: number | null
   actualReps: number | null
   actualWeightKg: number | null
   actualDurationSeconds: number | null
   rpe: number | null
+  rir: number | null
   completed: boolean
 }
 
@@ -30,6 +36,7 @@ interface ExerciseData {
   order: number
   notes: string | null
   targetSets: number | null
+  trackingType: TrackingType
   sets: SetData[]
   exercise: { id: string; name: string; bodyPart: string; equipment: string; target: string } | null
   previousBest: { reps: number | null; weightKg: number | null; setCount: number } | null
@@ -50,16 +57,25 @@ interface WorkoutData {
 // ─── Set row ──────────────────────────────────────────────────────────────────
 
 function SetRow({
-  set, exerciseId, workoutId, onComplete, isBodyweight
+  set, exerciseId, workoutId, onComplete, trackingType
 }: {
   set: SetData
   exerciseId: string
   workoutId: string
-  onComplete: (setId: string, updates: { actualReps?: number; actualWeightKg?: number; completed: boolean }) => void
-  isBodyweight: boolean
+  onComplete: (setId: string, updates: Partial<SetData> & { completed: boolean }) => void
+  trackingType: TrackingType
 }) {
-  const [reps, setReps] = useState(String(set.actualReps ?? set.targetReps ?? ''))
-  const [weight, setWeight] = useState(String(set.actualWeightKg ?? set.targetWeightKg ?? ''))
+  const showWeight = trackingType === 'strength' || trackingType === 'assisted' || trackingType === 'carry'
+  const showReps = trackingType === 'strength' || trackingType === 'bodyweight' || trackingType === 'assisted'
+  const showDuration = trackingType === 'cardio' || trackingType === 'carry' || trackingType === 'isometric' || trackingType === 'intervals'
+
+  const targetRepsDisplay = set.targetRepsMin
+    ? set.targetRepsMax ? `${set.targetRepsMin}–${set.targetRepsMax}` : String(set.targetRepsMin)
+    : set.targetReps ? String(set.targetReps) : ''
+
+  const [reps, setReps] = useState(String(set.actualReps ?? ''))
+  const [weight, setWeight] = useState(String(set.actualWeightKg ?? ''))
+  const [duration, setDuration] = useState(String(set.actualDurationSeconds ?? ''))
   const [saving, setSaving] = useState(false)
   const [newPR, setNewPR] = useState(false)
   const [done, setDone] = useState(set.completed)
@@ -68,16 +84,18 @@ function SetRow({
     if (done) return
     const parsedReps = parseInt(reps)
     const parsedWeight = parseFloat(weight)
-    if (!parsedReps && !isBodyweight) return
+    const parsedDuration = parseInt(duration)
+    const hasValue = (showReps && parsedReps > 0) || (showDuration && parsedDuration > 0)
+    if (!hasValue) return
 
     setSaving(true)
     try {
       const body: Record<string, unknown> = { completed: true }
-      if (parsedReps > 0) body.actualReps = parsedReps
-      if (!isBodyweight && parsedWeight > 0) body.actualWeightKg = parsedWeight
+      if (showReps && parsedReps > 0) body.actualReps = parsedReps
+      if (showWeight && parsedWeight > 0) body.actualWeightKg = parsedWeight
+      if (showDuration && parsedDuration > 0) body.actualDurationSeconds = parsedDuration
 
       if (set.id.startsWith('pending-')) {
-        // New set — create via POST
         const res = await fetch(`/api/workouts/${workoutId}/sets`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -86,7 +104,6 @@ function SetRow({
         const data = await res.json() as { set: SetData; newPR?: boolean }
         if (data.newPR) setNewPR(true)
       } else {
-        // Existing set — update via PATCH
         const res = await fetch(`/api/workouts/${workoutId}/sets/${set.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -98,12 +115,13 @@ function SetRow({
 
       setDone(true)
       onComplete(set.id, {
-        actualReps: parsedReps || undefined,
-        actualWeightKg: (!isBodyweight && parsedWeight > 0) ? parsedWeight : undefined,
+        actualReps: (showReps && parsedReps > 0) ? parsedReps : undefined,
+        actualWeightKg: (showWeight && parsedWeight > 0) ? parsedWeight : undefined,
+        actualDurationSeconds: (showDuration && parsedDuration > 0) ? parsedDuration : undefined,
         completed: true,
       })
     } catch {
-      // swallow — user can retry
+      // swallow
     } finally {
       setSaving(false)
     }
@@ -116,7 +134,7 @@ function SetRow({
     )}>
       <span className="w-6 text-xs text-zinc-400 shrink-0 text-center">{set.setNumber}</span>
 
-      {!isBodyweight && (
+      {showWeight && (
         <input
           type="number"
           value={weight}
@@ -127,14 +145,27 @@ function SetRow({
         />
       )}
 
-      <input
-        type="number"
-        value={reps}
-        onChange={e => setReps(e.target.value)}
-        disabled={done}
-        placeholder={set.targetReps ? String(set.targetReps) : 'reps'}
-        className="w-16 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
-      />
+      {showReps && (
+        <input
+          type="number"
+          value={reps}
+          onChange={e => setReps(e.target.value)}
+          disabled={done}
+          placeholder={targetRepsDisplay || 'reps'}
+          className="w-16 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
+        />
+      )}
+
+      {showDuration && (
+        <input
+          type="number"
+          value={duration}
+          onChange={e => setDuration(e.target.value)}
+          disabled={done}
+          placeholder={set.targetDurationSeconds ? `${set.targetDurationSeconds}s` : 'sec'}
+          className="w-16 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
+        />
+      )}
 
       <button
         onClick={handleComplete}
@@ -166,33 +197,45 @@ function SetRow({
 
 // ─── Exercise card ────────────────────────────────────────────────────────────
 
+function makeBlankSet(setNumber: number, id: string): SetData {
+  return {
+    id,
+    setNumber,
+    setType: 'working',
+    targetReps: null, targetRepsMin: null, targetRepsMax: null,
+    targetWeightKg: null, targetDurationSeconds: null,
+    actualReps: null, actualWeightKg: null, actualDurationSeconds: null,
+    rpe: null, rir: null, completed: false,
+  }
+}
+
 function ExerciseCard({ ex, workoutId, onUpdate }: {
   ex: ExerciseData
   workoutId: string
   onUpdate: () => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
-  const [sets, setSets] = useState<SetData[]>(ex.sets.length > 0 ? ex.sets : [{
-    id: `pending-1`,
-    setNumber: 1,
-    targetReps: null, targetWeightKg: null, targetDurationSeconds: null,
-    actualReps: null, actualWeightKg: null, actualDurationSeconds: null,
-    rpe: null, completed: false,
-  }])
+  const addCounterRef = useRef(0)
 
-  const isBodyweight = ex.exercise?.equipment?.toLowerCase().includes('body weight') ?? false
+  const [sets, setSets] = useState<SetData[]>(() =>
+    ex.sets.length > 0 ? ex.sets : [makeBlankSet(1, 'pending-0')]
+  )
+
+  const trackingType = ex.trackingType ?? (
+    ex.exercise?.equipment?.toLowerCase().includes('body weight') ? 'bodyweight' : 'strength'
+  )
+
+  const showWeight = trackingType === 'strength' || trackingType === 'assisted' || trackingType === 'carry'
+  const showReps = trackingType === 'strength' || trackingType === 'bodyweight' || trackingType === 'assisted'
+  const showDuration = trackingType === 'cardio' || trackingType === 'carry' || trackingType === 'isometric' || trackingType === 'intervals'
 
   const addSet = () => {
-    setSets(prev => [...prev, {
-      id: `pending-${prev.length + 1}`,
-      setNumber: prev.length + 1,
-      targetReps: null, targetWeightKg: null, targetDurationSeconds: null,
-      actualReps: null, actualWeightKg: null, actualDurationSeconds: null,
-      rpe: null, completed: false,
-    }])
+    addCounterRef.current += 1
+    const c = addCounterRef.current
+    setSets(prev => [...prev, makeBlankSet(prev.length + 1, `pending-add-${c}`)])
   }
 
-  const handleComplete = (setId: string, updates: { actualReps?: number; actualWeightKg?: number; completed: boolean }) => {
+  const handleComplete = (setId: string, updates: Partial<SetData> & { completed: boolean }) => {
     setSets(prev => prev.map(s => s.id === setId ? { ...s, ...updates } : s))
     onUpdate()
   }
@@ -201,7 +244,6 @@ function ExerciseCard({ ex, workoutId, onUpdate }: {
 
   return (
     <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-      {/* Exercise header */}
       <button
         onClick={() => setCollapsed(c => !c)}
         className="w-full flex items-center gap-3 px-4 py-3"
@@ -222,8 +264,8 @@ function ExerciseCard({ ex, workoutId, onUpdate }: {
           {ex.previousBest && (
             <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
               Last: {ex.previousBest.setCount}×
-              {ex.previousBest.reps && `${ex.previousBest.reps} reps`}
-              {ex.previousBest.weightKg && ` @ ${ex.previousBest.weightKg}kg`}
+              {ex.previousBest.reps != null && ` ${ex.previousBest.reps} reps`}
+              {ex.previousBest.weightKg != null && ` @ ${ex.previousBest.weightKg}kg`}
             </p>
           )}
         </div>
@@ -237,11 +279,11 @@ function ExerciseCard({ ex, workoutId, onUpdate }: {
 
       {!collapsed && (
         <div className="px-4 pb-3 border-t border-zinc-50 dark:border-zinc-800">
-          {/* Column headers */}
           <div className="flex items-center gap-2 py-2">
             <span className="w-6 text-[10px] text-zinc-400 text-center">SET</span>
-            {!isBodyweight && <span className="w-16 text-[10px] text-zinc-400 text-center">KG</span>}
-            <span className="w-16 text-[10px] text-zinc-400 text-center">REPS</span>
+            {showWeight && <span className="w-16 text-[10px] text-zinc-400 text-center">KG</span>}
+            {showReps && <span className="w-16 text-[10px] text-zinc-400 text-center">REPS</span>}
+            {showDuration && <span className="w-16 text-[10px] text-zinc-400 text-center">SEC</span>}
           </div>
 
           {sets.map(s => (
@@ -251,7 +293,7 @@ function ExerciseCard({ ex, workoutId, onUpdate }: {
               exerciseId={ex.id}
               workoutId={workoutId}
               onComplete={handleComplete}
-              isBodyweight={isBodyweight}
+              trackingType={trackingType}
             />
           ))}
 
@@ -280,22 +322,22 @@ export default function WorkoutPage() {
   const [completedSets, setCompletedSets] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const fetchWorkout = useCallback(async () => {
-    const res = await fetch(`/api/workouts/${id}`)
-    if (res.ok) {
-      const data = await res.json() as { workout: WorkoutData }
-      setWorkout(data.workout)
-      if (data.workout.status === 'planned') {
-        // Auto-start
-        await fetch(`/api/workouts/${id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'in_progress' }),
-        })
-        setWorkout(w => w ? { ...w, status: 'in_progress', startedAt: new Date().toISOString() } : w)
-      }
-    }
-    setLoading(false)
+  const fetchWorkout = useCallback(() => {
+    fetch(`/api/workouts/${id}`)
+      .then(res => res.ok ? res.json() as Promise<{ workout: WorkoutData }> : null)
+      .then(async data => {
+        if (!data) return
+        setWorkout(data.workout)
+        if (data.workout.status === 'planned') {
+          await fetch(`/api/workouts/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'in_progress' }),
+          })
+          setWorkout(w => w ? { ...w, status: 'in_progress', startedAt: new Date().toISOString() } : w)
+        }
+      })
+      .finally(() => setLoading(false))
   }, [id])
 
   useEffect(() => { fetchWorkout() }, [fetchWorkout])

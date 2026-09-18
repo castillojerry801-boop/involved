@@ -6,20 +6,22 @@ export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get('q')?.trim()
   if (!query || query.length < 2) return NextResponse.json({ results: [] })
 
-  // 1. Own food library (fastest — community-cached items)
+  // 1. Own food library — community-cached items, fastest path
   const cached = await prisma.foodItem.findMany({
     where: {
       name: { contains: query, mode: 'insensitive' },
       visibility: { in: ['verified', 'community'] },
     },
+    orderBy: { name: 'asc' },
     take: 8,
-  })
+  }).catch(() => [])
 
   const cachedResults = cached.map(f => ({
     provider: f.sourceProvider ?? 'library',
     externalId: f.id,
     name: f.name,
     brand: f.brand ?? undefined,
+    barcode: f.barcode ?? undefined,
     servingSize: Number(f.servingSize),
     servingUnit: f.servingUnit,
     coreNutrients: {
@@ -32,12 +34,12 @@ export async function GET(req: NextRequest) {
   }))
 
   // 2. Fan out to all registered providers in parallel
-  const externalSearches = FOOD_PROVIDERS.map(p =>
-    p.search(query, { limit: 15 }).catch(() => [])
-  )
-  const providerResults = (await Promise.all(externalSearches)).flat()
+  // USDA (index 0) results come first in the merged list
+  const providerResults = (
+    await Promise.all(FOOD_PROVIDERS.map(p => p.search(query, { limit: 15 }).catch(() => [])))
+  ).flat()
 
-  // 3. Dedupe by name+brand — prefer USDA over Open Food Facts for same item
+  // 3. Dedupe by name+brand — prefer earlier providers (USDA before OFF)
   const seen = new Set<string>()
   const deduped = providerResults.filter(r => {
     const key = `${r.name.toLowerCase()}|${(r.brand ?? '').toLowerCase()}`
@@ -46,15 +48,22 @@ export async function GET(req: NextRequest) {
     return true
   })
 
+  // 4. Also skip items already covered by the local cache
+  const cachedNames = new Set(cachedResults.map(r => `${r.name.toLowerCase()}|${(r.brand ?? '').toLowerCase()}`))
+  const external = deduped.filter(r => {
+    const key = `${r.name.toLowerCase()}|${(r.brand ?? '').toLowerCase()}`
+    return !cachedNames.has(key)
+  })
+
   const results = [
     ...cachedResults,
-    ...deduped.map(r => ({ ...r, source: 'external' as const })),
+    ...external.map(r => ({ ...r, source: 'external' as const })),
   ]
 
   return NextResponse.json({ results })
 }
 
-// Natural language (for future Nutritionix integration)
+// Natural language query — POST form, could be wired to AI later
 export async function POST(req: NextRequest) {
   const { query } = await req.json() as { query: string }
   if (!query?.trim()) return NextResponse.json({ results: [] })

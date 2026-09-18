@@ -40,6 +40,8 @@ model Profile {
   personalRecords  PersonalRecord[]
   trainerProfile   TrainerProfile?
   clientOf         TrainerClientRelationship[] @relation("ClientTrainers")
+  programs         Program[]
+  workoutTemplates WorkoutTemplate[]
 
   // Nutrition relations
   createdFoods     FoodItem[]       @relation("FoodItemsCreated")
@@ -99,117 +101,44 @@ model AiUsageLog {
 // ═════════════════════════════════════════════════════════════════════
 // ─────────────────────────────────────────────────────────────────────
 // NUTRITION — FOOD LIBRARY
-//
-// Architecture notes:
-//
-// 1. HISTORICAL ACCURACY
-//    FoodLogEntry stores a full nutrition snapshot at time of logging.
-//    The snapshot never changes even if FoodItem data is later corrected.
-//    food_item_id is retained for traceability and optional re-sync,
-//    but daily totals are always derived from the snapshot values.
-//
-// 2. PROVIDER ABSTRACTION
-//    source_provider is a free-form string ("usda_fooddata_central",
-//    "open_food_facts", etc.). Adding a new provider requires no DB
-//    migration — only a new TypeScript class implementing FoodProvider
-//    (see lib/nutrition/providers/types.ts).
-//
-// 3. TRUST MODEL
-//    FoodVisibility controls who can read a food item.
-//    RLS enforces this at the database layer.
-//    AI-extracted nutrition data enters as a user-owned draft and
-//    must be explicitly confirmed before persisting.
-//
-// 4. NUTRIENT STORAGE
-//    Core macros (calories, protein, carbs, fat) are fixed columns for
-//    fast aggregation (SQL SUM). Extended nutrients (fiber, sugar,
-//    sodium, vitamins, etc.) live in nutrients_json (JSONB) so new
-//    nutrients can be added without schema migrations.
-// ─────────────────────────────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
-
-// ─────────────────────────────────────────────────────────────────────
-// FOOD ITEMS — The Involved Food Library
-//
-// A food item can originate from:
-//   - Involved team (system-curated)
-//   - An external API (USDA, Open Food Facts, etc.)
-//   - A user (private by default, can be elevated after moderation)
-//
-// External foods retain provenance (source_provider + external_id) so
-// we can re-sync or attribute data correctly.
-//
-// Visibility lifecycle:
-//   private → (user submits for sharing) → community → (admin verifies) → verified
-//
-// Do NOT automatically elevate user foods. A moderation step is required.
-// ─────────────────────────────────────────────────────────────────────
 
 model FoodItem {
   id          String @id @default(uuid()) @db.Uuid
 
-  // ── Identity ────────────────────────────────────────────────────────
   name        String  @db.VarChar(300)
   brand       String? @db.VarChar(200)
-  // barcode stores UPC-12, EAN-13, GTIN-14, or any barcode format.
-  // Stored as a string to preserve leading zeros and handle all formats.
   barcode     String? @db.VarChar(50)
 
-  // ── Source / Provenance ─────────────────────────────────────────────
-  // sourceCategory: broad classification of origin
-  // sourceProvider: specific named provider ("usda_fooddata_central", etc.)
-  // externalId:     the item's ID in the external system
-  // lastSyncedAt:   when we last fetched/refreshed from the external source
   sourceCategory  FoodSourceCategory @map("source_category")
   sourceProvider  String?            @map("source_provider") @db.VarChar(100)
   externalId      String?            @map("external_id") @db.VarChar(200)
   lastSyncedAt    DateTime?          @map("last_synced_at")
 
-  // ── Trust / Visibility ───────────────────────────────────────────────
   visibility    FoodVisibility @default(private_food)
   createdById   String?        @map("created_by_id") @db.Uuid
-  // Moderation — only set by admin/system, never directly by users
   verifiedAt    DateTime?      @map("verified_at")
   verifiedById  String?        @map("verified_by_id") @db.Uuid
-  // If this food is a known duplicate of another, link them.
-  // Allows search to de-duplicate without deleting user-created foods.
   duplicateOfId String?        @map("duplicate_of_id") @db.Uuid
 
-  // ── Serving ─────────────────────────────────────────────────────────
   servingSize          Decimal  @map("serving_size") @db.Decimal(10, 3)
-  servingUnit          String   @map("serving_unit") @db.VarChar(50) // "g", "oz", "cup", "piece", etc.
+  servingUnit          String   @map("serving_unit") @db.VarChar(50)
   servingsPerContainer Decimal? @map("servings_per_container") @db.Decimal(8, 2)
 
-  // ── Core Macros (per serving) ────────────────────────────────────────
-  // Fixed columns for fast SQL aggregation in daily total queries.
   calories      Decimal @db.Decimal(8, 2)
   proteinG      Decimal @map("protein_g") @db.Decimal(8, 3)
   carbohydrateG Decimal @map("carbohydrate_g") @db.Decimal(8, 3)
   fatG          Decimal @map("fat_g") @db.Decimal(8, 3)
 
-  // ── Extended Nutrients (per serving) ─────────────────────────────────
-  // JSONB allows adding new nutrients without schema migrations.
-  // Well-known keys: fiber_g, sugar_g, sodium_mg, saturated_fat_g,
-  //   polyunsaturated_fat_g, monounsaturated_fat_g, trans_fat_g,
-  //   cholesterol_mg, vitamin_a_iu, vitamin_c_mg, calcium_mg, iron_mg, ...
-  //
-  // Application code that reads this should handle missing keys gracefully.
   nutrientsJson Json? @map("nutrients_json")
 
-  // ── Ingredients ──────────────────────────────────────────────────────
   ingredientsText String? @map("ingredients_text") @db.Text
 
-  // ── AI-extracted draft flag ───────────────────────────────────────────
-  // True when this food was created from a nutrition label photo and has
-  // not yet been confirmed by the user. Draft foods are always private
-  // and excluded from search until confirmed.
   isDraft Boolean @default(false) @map("is_draft")
 
-  // ── Audit ────────────────────────────────────────────────────────────
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // ── Relations ────────────────────────────────────────────────────────
   createdBy      Profile?       @relation("FoodItemsCreated", fields: [createdById], references: [id], onDelete: SetNull)
   duplicateOf    FoodItem?      @relation("FoodDuplicates", fields: [duplicateOfId], references: [id])
   duplicatedBy   FoodItem[]     @relation("FoodDuplicates")
@@ -217,8 +146,6 @@ model FoodItem {
   foodFavorites  FoodFavorite[]
   savedMealItems SavedMealItem[]
 
-  // name index for text search; barcode index for O(1) barcode lookup;
-  // composite for deduplication queries across providers
   @@index([name])
   @@index([barcode])
   @@index([sourceCategory, sourceProvider, externalId])
@@ -226,46 +153,18 @@ model FoodItem {
   @@map("food_items")
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// FOOD LOG ENTRIES
-//
-// Each row represents a single food logged by a user for a meal.
-//
-// CRITICAL: The snapshot_* columns capture the food's nutrition data
-// at the exact moment it was logged. These values must NEVER be
-// overwritten by subsequent changes to FoodItem. If a food's recipe
-// changes, create a new FoodItem — do not update the existing one.
-// This guarantees that historical logs remain accurate forever.
-//
-// food_item_id is retained as a soft reference for traceability.
-// It is nullable (SET NULL on delete) because the source food item
-// may be deleted while we still want to keep the historical log.
-//
-// Daily totals are computed at query time:
-//   calories_total = snapshot_calories_per_serving * serving_multiplier
-// This is simple arithmetic — never AI.
-// ─────────────────────────────────────────────────────────────────────
-
 model FoodLogEntry {
   id                String   @id @default(uuid()) @db.Uuid
   userId            String   @map("user_id") @db.Uuid
-  // Nullable because the source food may be deleted; snapshot preserves the data.
   foodItemId        String?  @map("food_item_id") @db.Uuid
 
-  // log_date: the date the user is logging FOR (user-selected, timezone-aware)
-  // logged_at: the actual timestamp of the log action (server time)
-  // Storing both avoids timezone ambiguity in daily total queries.
   logDate           DateTime @map("log_date") @db.Date
   loggedAt          DateTime @default(now()) @map("logged_at") @db.Timestamptz(3)
 
   mealType          MealType @map("meal_type")
-  // How many servings. Can be fractional (e.g., 0.5 for half a serving).
   servingMultiplier Decimal  @map("serving_multiplier") @db.Decimal(8, 3)
   notes             String?  @db.VarChar(500)
 
-  // ── Nutrition Snapshot ────────────────────────────────────────────────
-  // All values are PER SERVING as of the time of logging.
-  // Multiply by serving_multiplier to get the actual amount consumed.
   snapshotFoodName                String   @map("snapshot_food_name") @db.VarChar(300)
   snapshotServingSize             Decimal  @map("snapshot_serving_size") @db.Decimal(10, 3)
   snapshotServingUnit             String   @map("snapshot_serving_unit") @db.VarChar(50)
@@ -273,47 +172,29 @@ model FoodLogEntry {
   snapshotProteinGPerServing      Decimal  @map("snapshot_protein_g_per_serving") @db.Decimal(8, 3)
   snapshotCarbohydrateGPerServing Decimal  @map("snapshot_carbohydrate_g_per_serving") @db.Decimal(8, 3)
   snapshotFatGPerServing          Decimal  @map("snapshot_fat_g_per_serving") @db.Decimal(8, 3)
-  // Extended nutrients at time of logging (nullable — only captured if available)
   snapshotNutrientsJson           Json?    @map("snapshot_nutrients_json")
 
-  // ── Audit ─────────────────────────────────────────────────────────────
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   profile  Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
   foodItem FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
 
-  // Primary access pattern: all entries for a user on a given date
   @@index([userId, logDate])
-  // Secondary: filter by meal type within a date range
   @@index([userId, mealType])
   @@map("food_log_entries")
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// NUTRITION TARGETS
-//
-// A user's daily nutrition goals. Multiple rows per user — one per
-// time period. Always use the most recent row where effective_date
-// is <= the query date.
-//
-// Storing history allows the AI Coach to understand target changes
-// over time (e.g., "my calories were 1,800 last month but now 2,200").
-// ─────────────────────────────────────────────────────────────────────
-
 model NutritionTarget {
   id            String   @id @default(uuid()) @db.Uuid
   userId        String   @map("user_id") @db.Uuid
-  // The date this target takes effect. Use latest where effective_date <= today.
   effectiveDate DateTime @map("effective_date") @db.Date
 
-  // Core targets (required)
   calories      Decimal @db.Decimal(8, 2)
   proteinG      Decimal @map("protein_g") @db.Decimal(8, 2)
   carbohydrateG Decimal @map("carbohydrate_g") @db.Decimal(8, 2)
   fatG          Decimal @map("fat_g") @db.Decimal(8, 2)
 
-  // Extended targets (optional — expand as features grow)
   fiberG        Decimal? @map("fiber_g") @db.Decimal(8, 2)
   sugarG        Decimal? @map("sugar_g") @db.Decimal(8, 2)
   sodiumMg      Decimal? @map("sodium_mg") @db.Decimal(10, 2)
@@ -325,14 +206,6 @@ model NutritionTarget {
   @@index([userId, effectiveDate])
   @@map("nutrition_targets")
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// FOOD FAVORITES
-//
-// Explicit user favorites. "Recent foods" are derived from
-// food_log_entries (ORDER BY logged_at DESC GROUP BY food_item_id)
-// and do not need a separate table.
-// ─────────────────────────────────────────────────────────────────────
 
 model FoodFavorite {
   id         String   @id @default(uuid()) @db.Uuid
@@ -347,15 +220,6 @@ model FoodFavorite {
   @@index([userId])
   @@map("food_favorites")
 }
-
-// ─────────────────────────────────────────────────────────────────────
-// SAVED MEALS
-//
-// A named collection of foods that can be logged as a group.
-// "Copy previous meal/day" is implemented at the application layer
-// by reading food_log_entries and creating new entries — no extra
-// table needed for that use case.
-// ─────────────────────────────────────────────────────────────────────
 
 model SavedMeal {
   id        String          @id @default(uuid()) @db.Uuid
@@ -387,29 +251,7 @@ model SavedMealItem {
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// ENUMS
-// ═════════════════════════════════════════════════════════════════════
-
-// ── Training ─────────────────────────────────────────────────────────
-
-enum FitnessLevel {
-  beginner
-  intermediate
-  advanced
-}
-
-enum SubscriptionTier {
-  free
-  trial
-  plus
-}
-
-// ═════════════════════════════════════════════════════════════════════
-// USER SUBSCRIPTION
-// Source of truth for subscription and trial state.
-// Profile.subscriptionTier is a denormalized cache — this model
-// is authoritative for entitlement decisions.
-// Designed to support Apple StoreKit, Google Play, and Stripe.
+// SUBSCRIPTION
 // ═════════════════════════════════════════════════════════════════════
 
 model UserSubscription {
@@ -418,9 +260,7 @@ model UserSubscription {
   tier                   SubscriptionTier   @default(free)
   status                 SubscriptionStatus @default(active)
   billingSource          BillingSource?     @map("billing_source")
-  // External ID from Apple/Google/Stripe for webhook reconciliation
   externalSubscriptionId String?            @map("external_subscription_id") @db.VarChar(255)
-  // External price/product ID — preserves grandfathered pricing
   externalPriceId        String?            @map("external_price_id") @db.VarChar(255)
   trialStartedAt         DateTime?          @map("trial_started_at") @db.Timestamptz(3)
   trialEndsAt            DateTime?          @map("trial_ends_at") @db.Timestamptz(3)
@@ -436,43 +276,162 @@ model UserSubscription {
   @@map("user_subscriptions")
 }
 
-enum SubscriptionStatus {
-  active
-  trialing
-  expired
-  canceled
-  paused
+// ═════════════════════════════════════════════════════════════════════
+// TRAINING PROGRAMS
+// A Program is a reusable multi-day training plan (e.g. PPL, 5/3/1).
+// Programs contain days; days contain exercises; exercises contain sets.
+// Activating a program schedules its days as planned workouts.
+// ═════════════════════════════════════════════════════════════════════
+
+model Program {
+  id          String      @id @default(uuid()) @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  name        String      @db.VarChar(200)
+  description String?     @db.VarChar(500)
+  isActive    Boolean     @default(false) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  profile     Profile     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  days        ProgramDay[]
+
+  @@index([userId])
+  @@map("programs")
 }
 
-enum BillingSource {
-  stripe
-  apple
-  google
-  manual
+model ProgramDay {
+  id        String            @id @default(uuid()) @db.Uuid
+  programId String            @map("program_id") @db.Uuid
+  name      String            @db.VarChar(200) // e.g. "Push", "Pull + Abs", "Legs"
+  sortOrder Int               @default(0) @map("sort_order")
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  program   Program           @relation(fields: [programId], references: [id], onDelete: Cascade)
+  exercises ProgramExercise[]
+  workouts  Workout[]
+
+  @@index([programId])
+  @@map("program_days")
 }
 
-enum AiFeature {
-  coach_message
-  workout_generation
-  meal_photo
-  label_scan
-  progress_insight
-  weekly_review
+model ProgramExercise {
+  id           String       @id @default(uuid()) @db.Uuid
+  programDayId String       @map("program_day_id") @db.Uuid
+  // References ExerciseDB static library by ID string
+  exerciseId   String       @map("exercise_id") @db.VarChar(100)
+  sortOrder    Int          @default(0) @map("sort_order")
+  trackingType TrackingType @default(strength) @map("tracking_type")
+  notes        String?      @db.VarChar(500)
+  // Default rest time between sets for this exercise (seconds)
+  restSeconds  Int?         @map("rest_seconds")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  programDay ProgramDay   @relation(fields: [programDayId], references: [id], onDelete: Cascade)
+  sets       ProgramSet[]
+
+  @@index([programDayId])
+  @@map("program_exercises")
+}
+
+// ProgramSet describes PRESCRIBED performance — the target for each set.
+// It supports rep ranges, percentage-based loading, and all advanced set types.
+model ProgramSet {
+  id                    String   @id @default(uuid()) @db.Uuid
+  programExerciseId     String   @map("program_exercise_id") @db.Uuid
+  setNumber             Int      @map("set_number")
+  setType               SetType  @default(working) @map("set_type")
+  // Rep range: if targetRepsMax is null, it's a fixed rep count (targetRepsMin = the count)
+  targetRepsMin         Int?     @map("target_reps_min")
+  targetRepsMax         Int?     @map("target_reps_max")
+  // Absolute weight OR percentage of 1RM (mutually exclusive in practice)
+  targetWeightKg        Decimal? @map("target_weight_kg") @db.Decimal(7, 2)
+  targetWeightPercent   Int?     @map("target_weight_percent") // e.g. 75 = 75% of 1RM
+  // Cardio / isometric / interval fields
+  targetDurationSeconds Int?     @map("target_duration_seconds")
+  targetDistanceM       Decimal? @map("target_distance_m") @db.Decimal(10, 2)
+  targetRir             Int?     @map("target_rir") // Reps in Reserve 0-5
+  restSeconds           Int?     @map("rest_seconds") // set-level rest override
+  notes                 String?  @db.VarChar(300)
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  programExercise ProgramExercise @relation(fields: [programExerciseId], references: [id], onDelete: Cascade)
+
+  @@index([programExerciseId])
+  @@map("program_sets")
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// WORKOUTS
-// A workout can be planned (future), in progress, or completed.
-// Exercises reference the static exercise library by string ID.
-// Sets store both target (planned) and actual (logged) values so
-// trainers can prescribe and athletes can track performance vs. plan.
+// WORKOUT TEMPLATES
+// Reusable one-off workout templates that are not part of a full program.
+// Examples: "Push Day", "Hotel Workout", "30-Minute Legs"
+// ═════════════════════════════════════════════════════════════════════
+
+model WorkoutTemplate {
+  id          String             @id @default(uuid()) @db.Uuid
+  userId      String             @map("user_id") @db.Uuid
+  name        String             @db.VarChar(200)
+  description String?            @db.VarChar(500)
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+
+  profile     Profile            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercises   TemplateExercise[]
+  workouts    Workout[]
+
+  @@index([userId])
+  @@map("workout_templates")
+}
+
+model TemplateExercise {
+  id           String          @id @default(uuid()) @db.Uuid
+  templateId   String          @map("template_id") @db.Uuid
+  exerciseId   String          @map("exercise_id") @db.VarChar(100)
+  sortOrder    Int             @default(0) @map("sort_order")
+  trackingType TrackingType    @default(strength) @map("tracking_type")
+  notes        String?         @db.VarChar(500)
+  restSeconds  Int?            @map("rest_seconds")
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  template WorkoutTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  sets     TemplateSet[]
+
+  @@index([templateId])
+  @@map("template_exercises")
+}
+
+model TemplateSet {
+  id                    String          @id @default(uuid()) @db.Uuid
+  templateExerciseId    String          @map("template_exercise_id") @db.Uuid
+  setNumber             Int             @map("set_number")
+  setType               SetType         @default(working) @map("set_type")
+  targetRepsMin         Int?            @map("target_reps_min")
+  targetRepsMax         Int?            @map("target_reps_max")
+  targetWeightKg        Decimal?        @map("target_weight_kg") @db.Decimal(7, 2)
+  targetDurationSeconds Int?            @map("target_duration_seconds")
+  targetDistanceM       Decimal?        @map("target_distance_m") @db.Decimal(10, 2)
+  restSeconds           Int?            @map("rest_seconds")
+  notes                 String?         @db.VarChar(300)
+  createdAt             DateTime        @default(now()) @map("created_at")
+
+  templateExercise TemplateExercise @relation(fields: [templateExerciseId], references: [id], onDelete: Cascade)
+
+  @@index([templateExerciseId])
+  @@map("template_sets")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// WORKOUTS — active/completed sessions
 // ═════════════════════════════════════════════════════════════════════
 
 model Workout {
   id              String        @id @default(uuid()) @db.Uuid
   userId          String        @map("user_id") @db.Uuid
-  // If set, this workout was assigned by a trainer
   assignedById    String?       @map("assigned_by_id") @db.Uuid
+  // Source template / program day (set when starting from one)
+  templateId      String?       @map("template_id") @db.Uuid
+  programDayId    String?       @map("program_day_id") @db.Uuid
   title           String        @db.VarChar(200)
   notes           String?       @db.Text
   scheduledDate   DateTime?     @map("scheduled_date") @db.Date
@@ -487,22 +446,28 @@ model Workout {
   profile         Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
   exercises       WorkoutExercise[]
   personalRecords PersonalRecord[]
+  template        WorkoutTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  programDay      ProgramDay?       @relation(fields: [programDayId], references: [id], onDelete: SetNull)
 
   @@index([userId, scheduledDate])
   @@index([userId, status])
   @@index([userId, completedAt])
+  @@index([templateId])
+  @@index([programDayId])
   @@map("workouts")
 }
 
 model WorkoutExercise {
-  id         String   @id @default(uuid()) @db.Uuid
-  workoutId  String   @map("workout_id") @db.Uuid
-  // References the static exercise library (lib/exercises.ts), not a DB table
-  exerciseId String   @map("exercise_id") @db.VarChar(100)
-  order      Int      @default(0)
-  notes      String?  @db.VarChar(500)
-  targetSets Int?     @map("target_sets")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id           String       @id @default(uuid()) @db.Uuid
+  workoutId    String       @map("workout_id") @db.Uuid
+  exerciseId   String       @map("exercise_id") @db.VarChar(100)
+  order        Int          @default(0)
+  notes        String?      @db.VarChar(500)
+  targetSets   Int?         @map("target_sets")
+  trackingType TrackingType @default(strength) @map("tracking_type")
+  // Default rest between sets for this exercise (seconds)
+  restSeconds  Int?         @map("rest_seconds")
+  createdAt    DateTime     @default(now()) @map("created_at")
 
   workout Workout      @relation(fields: [workoutId], references: [id], onDelete: Cascade)
   sets    WorkoutSet[]
@@ -515,8 +480,11 @@ model WorkoutSet {
   id                    String    @id @default(uuid()) @db.Uuid
   workoutExerciseId     String    @map("workout_exercise_id") @db.Uuid
   setNumber             Int       @map("set_number")
-  // Planned targets (prescribed by trainer or set when planning ahead)
+  setType               SetType   @default(working) @map("set_type")
+  // Planned targets
   targetReps            Int?      @map("target_reps")
+  targetRepsMin         Int?      @map("target_reps_min")
+  targetRepsMax         Int?      @map("target_reps_max")
   targetWeightKg        Decimal?  @map("target_weight_kg") @db.Decimal(7, 2)
   targetDurationSeconds Int?      @map("target_duration_seconds")
   targetDistanceM       Decimal?  @map("target_distance_m") @db.Decimal(10, 2)
@@ -525,8 +493,11 @@ model WorkoutSet {
   actualWeightKg        Decimal?  @map("actual_weight_kg") @db.Decimal(7, 2)
   actualDurationSeconds Int?      @map("actual_duration_seconds")
   actualDistanceM       Decimal?  @map("actual_distance_m") @db.Decimal(10, 2)
-  // Rate of perceived exertion 1–10 (optional)
-  rpe                   Int?
+  // Subjective effort
+  rpe                   Int?      // Rate of Perceived Exertion 1–10
+  rir                   Int?      // Reps in Reserve 0–5
+  // Rest after completing this set (seconds)
+  restSeconds           Int?      @map("rest_seconds")
   completed             Boolean   @default(false)
   completedAt           DateTime? @map("completed_at") @db.Timestamptz(3)
   createdAt             DateTime  @default(now()) @map("created_at")
@@ -539,17 +510,13 @@ model WorkoutSet {
   @@map("workout_sets")
 }
 
-// ─── Personal Records ─────────────────────────────────────────────────────────
-// One row per PR per exercise per metric. Auto-detected server-side when a
-// set is completed. Never deleted — historical record.
-
 model PersonalRecord {
   id           String   @id @default(uuid()) @db.Uuid
   userId       String   @map("user_id") @db.Uuid
   exerciseId   String   @map("exercise_id") @db.VarChar(100)
   metric       PRMetric
   value        Decimal  @db.Decimal(10, 3)
-  unit         String   @db.VarChar(20)  // "kg", "lbs", "reps", "seconds", "m"
+  unit         String   @db.VarChar(20)
   achievedAt   DateTime @map("achieved_at") @db.Timestamptz(3)
   workoutId    String?  @map("workout_id") @db.Uuid
   workoutSetId String?  @unique @map("workout_set_id") @db.Uuid
@@ -564,9 +531,6 @@ model PersonalRecord {
 
 // ═════════════════════════════════════════════════════════════════════
 // TRAINER FOUNDATION
-// Schema for the trainer tier. UI/billing comes in a later phase.
-// A user can be both an athlete (Profile) and a trainer (TrainerProfile).
-// Trainers assign workouts to clients; clients see them as "assigned".
 // ═════════════════════════════════════════════════════════════════════
 
 model TrainerProfile {
@@ -602,6 +566,48 @@ model TrainerClientRelationship {
   @@map("trainer_client_relationships")
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ENUMS
+// ═════════════════════════════════════════════════════════════════════
+
+enum FitnessLevel {
+  beginner
+  intermediate
+  advanced
+}
+
+enum SubscriptionTier {
+  free
+  trial
+  plus
+}
+
+enum SubscriptionStatus {
+  active
+  trialing
+  expired
+  canceled
+  paused
+}
+
+enum BillingSource {
+  stripe
+  apple
+  google
+  manual
+}
+
+enum AiFeature {
+  coach_message
+  workout_generation
+  meal_photo
+  label_scan
+  progress_insight
+  weekly_review
+}
+
+// ─── Training ─────────────────────────────────────────────────────────
+
 enum WorkoutStatus {
   planned
   in_progress
@@ -622,6 +628,28 @@ enum PRMetric {
   distance
 }
 
+// How performance is tracked for a given exercise.
+// Determines which fields are shown/required during a session.
+enum TrackingType {
+  strength     // weight × reps (barbell, dumbbell, cable, machine)
+  bodyweight   // reps only (push-up, pull-up, dip)
+  assisted     // assistance weight × reps (assisted pull-up machine)
+  cardio       // time + optional distance (treadmill, bike, row)
+  carry        // weight + distance and/or time (farmer carry, sled)
+  isometric    // time only (plank, wall sit)
+  intervals    // work_seconds + rest_seconds + rounds
+}
+
+// Set classification — enables volume/intensity analysis and
+// supports advanced programming like drop sets and AMRAP finishers.
+enum SetType {
+  warmup   // warm-up set — lighter, not counted in working volume
+  working  // standard working set
+  amrap    // as many reps as possible — upper bound not set
+  drop     // drop set — reduce weight and continue
+  failure  // trained to failure
+}
+
 enum TrainerClientStatus {
   invited
   active
@@ -630,12 +658,12 @@ enum TrainerClientStatus {
 }
 
 enum GoalType {
-  event      // Race or obstacle course event
-  strength   // Lifting milestone (e.g., 2x bodyweight squat)
-  endurance  // Running or cardio goal
-  body_comp  // Weight loss / body composition
-  habit      // Consistency goal (e.g., train 4x/week)
-  custom     // User-defined
+  event
+  strength
+  endurance
+  body_comp
+  habit
+  custom
 }
 
 enum GoalStatus {
@@ -647,16 +675,15 @@ enum GoalStatus {
 // ── Nutrition ─────────────────────────────────────────────────────────
 
 enum FoodSourceCategory {
-  system        // Added/curated by Involved team
-  external_api  // Imported from an external food database
-  user_created  // Created by an Involved user
+  system
+  external_api
+  user_created
 }
 
 enum FoodVisibility {
-  // Naming avoids reserved-word conflict; maps to clean DB values via @map
-  private_food @map("private")   // Only visible to the creator
-  community                      // Visible to all Involved users; not yet verified
-  verified                       // Reviewed and trusted by Involved team
+  private_food @map("private")
+  community
+  verified
 }
 
 enum MealType {
