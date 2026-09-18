@@ -44,6 +44,11 @@ function mapProduct(p: Record<string, unknown>): ExternalFoodDetail | null {
   const incompleteData = cal100g == null || protein100g == null ||
     carbs100g == null || fat100g == null
 
+  // Reject entries that have no useful nutrition at all — they'd only clutter results
+  const hasAnyNutrition = (cal100g ?? 0) > 0 || (protein100g ?? 0) > 0 ||
+    (carbs100g ?? 0) > 0 || (fat100g ?? 0) > 0
+  if (!hasAnyNutrition) return null
+
   // Extended nutrients — only include if the field actually has a value
   const fiber100g = num(n['fiber_100g']) ?? num(n['fibers_100g'])
   const sugars100g = num(n['sugars_100g'])

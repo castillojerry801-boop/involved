@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getDistinctEquipment, getExerciseIdsForEquipment, type Exercise } from '@/lib/exercises'
 import { filterExercises } from '@/lib/exercises'
+import type { EquipmentItemInput } from '@/app/api/equipment-profiles/route'
+import { Prisma } from '@prisma/client'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -18,7 +20,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   try {
     const profile = await prisma.equipmentProfile.findFirst({
       where: { id, userId: user.id },
-      include: { items: { select: { equipment: true }, orderBy: { equipment: 'asc' } } },
+      include: { items: { select: { equipment: true, availableWeights: true }, orderBy: { equipment: 'asc' } } },
     })
     if (!profile) return Response.json({ error: 'Not found' }, { status: 404 })
 
@@ -51,7 +53,10 @@ function groupByField(exercises: Exercise[], field: keyof Exercise): Record<stri
 
 interface PatchBody {
   name?: string
+  /** Legacy: simple string list replaces all items (no weights) */
   equipment?: string[]
+  /** Structured items with optional per-item weight config */
+  equipmentItems?: EquipmentItemInput[]
   isActive?: boolean
 }
 
@@ -73,19 +78,32 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
     const validEquipment = new Set(getDistinctEquipment().map(e => e.value))
 
+    // Prefer structured items; fall back to simple string list
+    let itemsUpdate: Prisma.EquipmentProfileUpdateInput['items'] | undefined
+    if (body.equipmentItems !== undefined) {
+      const filtered = body.equipmentItems.filter(i => validEquipment.has(i.equipment))
+      itemsUpdate = {
+        deleteMany: {},
+        create: filtered.map(i => ({
+          equipment: i.equipment,
+          availableWeights: i.availableWeights ?? Prisma.DbNull,
+        })),
+      }
+    } else if (body.equipment !== undefined) {
+      itemsUpdate = {
+        deleteMany: {},
+        create: body.equipment.filter(e => validEquipment.has(e)).map(e => ({ equipment: e })),
+      }
+    }
+
     const profile = await prisma.equipmentProfile.update({
       where: { id },
       data: {
         ...(body.name !== undefined && { name: body.name.trim() }),
         ...(body.isActive !== undefined && { isActive: body.isActive }),
-        ...(body.equipment !== undefined && {
-          items: {
-            deleteMany: {},
-            create: body.equipment.filter(e => validEquipment.has(e)).map(e => ({ equipment: e })),
-          },
-        }),
+        ...(itemsUpdate !== undefined && { items: itemsUpdate }),
       },
-      include: { items: { select: { equipment: true }, orderBy: { equipment: 'asc' } } },
+      include: { items: { select: { equipment: true, availableWeights: true }, orderBy: { equipment: 'asc' } } },
     })
 
     return Response.json({ profile })

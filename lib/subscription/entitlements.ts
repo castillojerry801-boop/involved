@@ -12,6 +12,9 @@ export interface Entitlement {
   isPlus: boolean
   isTrial: boolean
   isFree: boolean
+  isTrainer: boolean
+  // True if Plus access comes from a trainer sponsoring this user (not personal sub)
+  isTrainerSponsored: boolean
 }
 
 const FREE_ENTITLEMENT: Entitlement = {
@@ -24,92 +27,140 @@ const FREE_ENTITLEMENT: Entitlement = {
   isPlus: false,
   isTrial: false,
   isFree: true,
-}
-
-const PLUS_ENTITLEMENT: Entitlement = {
-  tier: 'plus',
-  status: 'active',
-  trialEndsAt: null,
-  trialDaysRemaining: null,
-  currentPeriodEnd: null,
-  cancelAtPeriodEnd: false,
-  isPlus: true,
-  isTrial: false,
-  isFree: false,
+  isTrainer: false,
+  isTrainerSponsored: false,
 }
 
 /**
  * Authoritative server-side entitlement check.
+ *
+ * Resolution order (highest wins):
+ *   1. trainer tier    — active TrainerSubscription
+ *   2. plus tier       — active personal UserSubscription
+ *   3. trial tier      — active UserSubscription in trial
+ *   4. trainer_sponsored — active UserEntitlement from a trainer
+ *   5. free            — fallback
+ *
  * Never trust client-supplied tier claims — always call this.
  */
 export async function getUserEntitlement(userId: string): Promise<Entitlement> {
-  // Owner/dev override — set PLUS_USER_IDS=uuid1,uuid2 in .env.local
+  // Dev override — PLUS_USER_IDS=uuid1,uuid2 in .env.local
   const overrides = (process.env.PLUS_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
-  if (overrides.includes(userId)) return PLUS_ENTITLEMENT
-
-  const sub = await prisma.userSubscription.findUnique({
-    where: { userId },
-  }).catch(() => null)
-
-  if (!sub) return FREE_ENTITLEMENT
+  if (overrides.includes(userId)) {
+    return { ...FREE_ENTITLEMENT, tier: 'plus', isPlus: true, isFree: false, status: 'active' }
+  }
 
   const now = new Date()
 
-  // Trial in progress
-  if (sub.status === 'trialing') {
-    if (sub.trialEndsAt && sub.trialEndsAt <= now) {
-      // Trial expired server-side — mark it and return free
-      await prisma.userSubscription.update({
-        where: { userId },
-        data: {
-          status: 'expired',
-          // Sync the denormalized cache on Profile
-        },
-      }).catch(() => null)
-      await prisma.profile.update({
-        where: { id: userId },
-        data: { subscriptionTier: 'free' },
-      }).catch(() => null)
-      return FREE_ENTITLEMENT
-    }
+  const [sub, trainerSub, sponsoredEntitlements] = await Promise.all([
+    prisma.userSubscription.findUnique({ where: { userId } }).catch(() => null),
+    prisma.trainerSubscription.findUnique({ where: { userId } }).catch(() => null),
+    prisma.userEntitlement.findMany({
+      where: {
+        userId,
+        source: 'trainer_sponsored',
+        status: 'active',
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+    }).catch(() => []),
+  ])
 
-    const msLeft = (sub.trialEndsAt?.getTime() ?? 0) - now.getTime()
-    const daysLeft = Math.max(0, Math.ceil(msLeft / 86_400_000))
-
+  // 1. Trainer tier — has an active trainer subscription
+  if (trainerSub && trainerSub.status === 'active') {
     return {
-      tier: 'trial',
-      status: 'trialing',
-      trialEndsAt: sub.trialEndsAt,
-      trialDaysRemaining: daysLeft,
-      currentPeriodEnd: sub.trialEndsAt,
-      cancelAtPeriodEnd: false,
-      isPlus: false,
-      isTrial: true,
+      tier: 'trainer',
+      status: 'active',
+      trialEndsAt: null,
+      trialDaysRemaining: null,
+      currentPeriodEnd: trainerSub.currentPeriodEnd,
+      cancelAtPeriodEnd: trainerSub.cancelAtPeriodEnd,
+      isPlus: true,
+      isTrial: false,
       isFree: false,
+      isTrainer: true,
+      isTrainerSponsored: false,
     }
   }
 
-  // Active paid subscription
-  if (sub.status === 'active' && sub.tier === 'plus') {
+  if (sub) {
+    // 2. Active paid Plus subscription
+    if (sub.status === 'active' && sub.tier === 'plus') {
+      return {
+        tier: 'plus',
+        status: 'active',
+        trialEndsAt: null,
+        trialDaysRemaining: null,
+        currentPeriodEnd: sub.currentPeriodEnd,
+        cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+        isPlus: true,
+        isTrial: false,
+        isFree: false,
+        isTrainer: false,
+        isTrainerSponsored: false,
+      }
+    }
+
+    // 3. Trial in progress
+    if (sub.status === 'trialing') {
+      if (sub.trialEndsAt && sub.trialEndsAt <= now) {
+        // Expire server-side
+        await Promise.all([
+          prisma.userSubscription.update({ where: { userId }, data: { status: 'expired' } }).catch(() => null),
+          prisma.profile.update({ where: { id: userId }, data: { subscriptionTier: 'free' } }).catch(() => null),
+        ])
+      } else {
+        const msLeft = (sub.trialEndsAt?.getTime() ?? 0) - now.getTime()
+        const daysLeft = Math.max(0, Math.ceil(msLeft / 86_400_000))
+        return {
+          tier: 'trial',
+          status: 'trialing',
+          trialEndsAt: sub.trialEndsAt,
+          trialDaysRemaining: daysLeft,
+          currentPeriodEnd: sub.trialEndsAt,
+          cancelAtPeriodEnd: false,
+          isPlus: false,
+          isTrial: true,
+          isFree: false,
+          isTrainer: false,
+          isTrainerSponsored: false,
+        }
+      }
+    }
+  }
+
+  // 4. Active trainer-sponsored entitlement
+  if (sponsoredEntitlements.length > 0) {
     return {
       tier: 'plus',
       status: 'active',
       trialEndsAt: null,
       trialDaysRemaining: null,
-      currentPeriodEnd: sub.currentPeriodEnd,
-      cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
       isPlus: true,
       isTrial: false,
       isFree: false,
+      isTrainer: false,
+      isTrainerSponsored: true,
     }
   }
 
   return FREE_ENTITLEMENT
 }
 
-/**
- * Quick tier-only lookup — use when the full Entitlement isn't needed.
- */
 export async function getEffectiveTier(userId: string): Promise<EffectiveTier> {
   return (await getUserEntitlement(userId)).tier
+}
+
+/**
+ * Check whether a user has an active trainer relationship with the given trainer.
+ * Used by API routes before allowing trainer access to client data.
+ */
+export async function assertTrainerClientAccess(trainerId: string, clientId: string): Promise<void> {
+  const rel = await prisma.trainerClientRelationship.findUnique({
+    where: { trainerId_clientId: { trainerId, clientId } },
+  })
+  if (!rel || rel.status !== 'active' || rel.revokedAt !== null) {
+    throw new Error('UNAUTHORIZED')
+  }
 }

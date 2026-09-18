@@ -32,34 +32,49 @@ model Profile {
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
-  // Training relations
+  // Core relations
   goals               Goal[]
   aiUsageLogs         AiUsageLog[]
   subscription        UserSubscription?
+  entitlements        UserEntitlement[]
+
+  // Training
   workouts            Workout[]
   personalRecords     PersonalRecord[]
-  trainerProfile      TrainerProfile?
-  clientOf            TrainerClientRelationship[] @relation("ClientTrainers")
   programs            Program[]
   workoutTemplates    WorkoutTemplate[]
-  exercisePreferences ExercisePreference[]
-  equipmentProfiles   EquipmentProfile[]
-  weeklyTargets       WeeklyTarget[]
-  customExercises     CustomExercise[]
+  exercisePreferences    ExercisePreference[]
+  equipmentProfiles      EquipmentProfile[]
+  weeklyTargets          WeeklyTarget[]
+  customExercises        CustomExercise[]
+  exerciseBehaviorEvents ExerciseBehaviorEvent[]
 
-  // Nutrition relations
+  // Trainer
+  trainerProfile      TrainerProfile?
+  trainerSubscription TrainerSubscription?
+  clientOf            TrainerClientRelationship[] @relation("ClientTrainers")
+  trainerNotes        TrainerNote[]               @relation("ClientNotes")
+  clientTargets       TrainerClientTarget[]       @relation("ClientTargets")
+  clientDrafts        VTrainerDraft[]             @relation("ClientDrafts")
+
+  // Nutrition
   createdFoods     FoodItem[]       @relation("FoodItemsCreated")
   foodLogEntries   FoodLogEntry[]
   nutritionTargets NutritionTarget[]
   foodFavorites    FoodFavorite[]
   savedMeals       SavedMeal[]
 
+  // Health / wearable
+  healthActivities HealthActivity[]
+  healthMetrics    HealthMetric[]
+  healthSyncCursors HealthSyncCursor[]
+  healthPermissions HealthPermission[]
+
   @@map("profiles")
 }
 
 // ═════════════════════════════════════════════════════════════════════
 // GOALS
-// User-defined fitness goals. Tied to optional events/races.
 // ═════════════════════════════════════════════════════════════════════
 
 model Goal {
@@ -73,7 +88,7 @@ model Goal {
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
-  profile     Profile    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("goals")
@@ -81,9 +96,6 @@ model Goal {
 
 // ═════════════════════════════════════════════════════════════════════
 // AI USAGE LOGS
-// Tracks AI Coach interactions per user per billing period.
-// Enables metering and subscription-tier enforcement.
-// Billing period format: "2026-09" (year-month)
 // ═════════════════════════════════════════════════════════════════════
 
 model AiUsageLog {
@@ -95,7 +107,7 @@ model AiUsageLog {
   createdAt        DateTime   @default(now()) @map("created_at")
   updatedAt        DateTime   @updatedAt @map("updated_at")
 
-  profile          Profile    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, billingPeriod, feature])
   @@index([userId])
@@ -103,7 +115,78 @@ model AiUsageLog {
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// ─────────────────────────────────────────────────────────────────────
+// SUBSCRIPTIONS & ENTITLEMENTS
+// ═════════════════════════════════════════════════════════════════════
+
+model UserSubscription {
+  id                     String             @id @default(uuid()) @db.Uuid
+  userId                 String             @unique @map("user_id") @db.Uuid
+  tier                   SubscriptionTier   @default(free)
+  status                 SubscriptionStatus @default(active)
+  billingSource          BillingSource?     @map("billing_source")
+  externalSubscriptionId String?            @map("external_subscription_id") @db.VarChar(255)
+  externalPriceId        String?            @map("external_price_id") @db.VarChar(255)
+  trialStartedAt         DateTime?          @map("trial_started_at") @db.Timestamptz(3)
+  trialEndsAt            DateTime?          @map("trial_ends_at") @db.Timestamptz(3)
+  currentPeriodStart     DateTime?          @map("current_period_start") @db.Timestamptz(3)
+  currentPeriodEnd       DateTime?          @map("current_period_end") @db.Timestamptz(3)
+  cancelAtPeriodEnd      Boolean            @default(false) @map("cancel_at_period_end")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_subscriptions")
+}
+
+// Multi-source entitlement records. A user may have overlapping entitlements
+// from personal Plus, trainer sponsorship, promos, etc.
+// Resolver in lib/subscription/entitlements.ts picks the effective tier.
+model UserEntitlement {
+  id        String                @id @default(uuid()) @db.Uuid
+  userId    String                @map("user_id") @db.Uuid
+  source    UserEntitlementSource
+  status    UserEntitlementStatus @default(active)
+  // Foreign reference to the granting entity (trainerId, subscriptionId, promoCode)
+  sourceRef String?               @map("source_ref") @db.VarChar(200)
+  grantedAt DateTime              @default(now()) @map("granted_at") @db.Timestamptz(3)
+  expiresAt DateTime?             @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime?             @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime              @default(now()) @map("created_at")
+  updatedAt DateTime              @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([userId, source])
+  @@index([sourceRef])
+  @@map("user_entitlements")
+}
+
+// Trainer-specific seat-based subscription — separate from UserSubscription
+model TrainerSubscription {
+  id                     String                    @id @default(uuid()) @db.Uuid
+  userId                 String                    @unique @map("user_id") @db.Uuid
+  tierKey                String                    @map("tier_key") @db.VarChar(50) // trainer_10|trainer_20|trainer_50
+  maxClients             Int                       @map("max_clients")
+  status                 TrainerSubscriptionStatus @default(active)
+  billingSource          BillingSource?            @map("billing_source")
+  externalSubscriptionId String?                   @map("external_subscription_id") @db.VarChar(255)
+  externalPriceId        String?                   @map("external_price_id") @db.VarChar(255)
+  currentPeriodStart     DateTime?                 @map("current_period_start") @db.Timestamptz(3)
+  currentPeriodEnd       DateTime?                 @map("current_period_end") @db.Timestamptz(3)
+  cancelAtPeriodEnd      Boolean                   @default(false) @map("cancel_at_period_end")
+  createdAt              DateTime                  @default(now()) @map("created_at")
+  updatedAt              DateTime                  @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("trainer_subscriptions")
+}
+
+// ═════════════════════════════════════════════════════════════════════
 // NUTRITION — FOOD LIBRARY
 // ═════════════════════════════════════════════════════════════════════
 
@@ -135,9 +218,7 @@ model FoodItem {
   fatG          Decimal @map("fat_g") @db.Decimal(8, 3)
 
   nutrientsJson Json? @map("nutrients_json")
-
   ingredientsText String? @map("ingredients_text") @db.Text
-
   isDraft Boolean @default(false) @map("is_draft")
 
   createdAt DateTime @default(now()) @map("created_at")
@@ -198,14 +279,13 @@ model NutritionTarget {
   proteinG      Decimal @map("protein_g") @db.Decimal(8, 2)
   carbohydrateG Decimal @map("carbohydrate_g") @db.Decimal(8, 2)
   fatG          Decimal @map("fat_g") @db.Decimal(8, 2)
-
   fiberG        Decimal? @map("fiber_g") @db.Decimal(8, 2)
   sugarG        Decimal? @map("sugar_g") @db.Decimal(8, 2)
   sodiumMg      Decimal? @map("sodium_mg") @db.Decimal(10, 2)
 
-  createdAt     DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
-  profile       Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, effectiveDate])
   @@map("nutrition_targets")
@@ -232,8 +312,8 @@ model SavedMeal {
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
 
-  profile   Profile         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items     SavedMealItem[]
+  profile Profile         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items   SavedMealItem[]
 
   @@index([userId])
   @@map("saved_meals")
@@ -247,44 +327,15 @@ model SavedMealItem {
   mealType          MealType  @map("meal_type")
   sortOrder         Int       @default(0) @map("sort_order")
 
-  savedMeal         SavedMeal @relation(fields: [savedMealId], references: [id], onDelete: Cascade)
-  foodItem          FoodItem  @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+  savedMeal SavedMeal @relation(fields: [savedMealId], references: [id], onDelete: Cascade)
+  foodItem  FoodItem  @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
 
   @@index([savedMealId])
   @@map("saved_meal_items")
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// SUBSCRIPTION
-// ═════════════════════════════════════════════════════════════════════
-
-model UserSubscription {
-  id                     String             @id @default(uuid()) @db.Uuid
-  userId                 String             @unique @map("user_id") @db.Uuid
-  tier                   SubscriptionTier   @default(free)
-  status                 SubscriptionStatus @default(active)
-  billingSource          BillingSource?     @map("billing_source")
-  externalSubscriptionId String?            @map("external_subscription_id") @db.VarChar(255)
-  externalPriceId        String?            @map("external_price_id") @db.VarChar(255)
-  trialStartedAt         DateTime?          @map("trial_started_at") @db.Timestamptz(3)
-  trialEndsAt            DateTime?          @map("trial_ends_at") @db.Timestamptz(3)
-  currentPeriodStart     DateTime?          @map("current_period_start") @db.Timestamptz(3)
-  currentPeriodEnd       DateTime?          @map("current_period_end") @db.Timestamptz(3)
-  cancelAtPeriodEnd      Boolean            @default(false) @map("cancel_at_period_end")
-  createdAt              DateTime           @default(now()) @map("created_at")
-  updatedAt              DateTime           @updatedAt @map("updated_at")
-
-  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@map("user_subscriptions")
-}
-
-// ═════════════════════════════════════════════════════════════════════
 // TRAINING PROGRAMS
-// A Program is a reusable multi-day training plan (e.g. PPL, 5/3/1).
-// Programs contain days; days contain exercises; exercises contain sets.
-// Activating a program schedules its days as planned workouts.
 // ═════════════════════════════════════════════════════════════════════
 
 model Program {
@@ -293,20 +344,25 @@ model Program {
   name        String      @db.VarChar(200)
   description String?     @db.VarChar(500)
   isActive    Boolean     @default(false) @map("is_active")
+  // Set when a trainer assigns this program to a client
+  trainerCreatedById    String?   @map("trainer_created_by_id") @db.Uuid
+  sourceTrainerProgramId String?  @map("source_trainer_program_id") @db.Uuid
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
-  profile     Profile     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  days        ProgramDay[]
+  profile             Profile        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceTrainerProgram TrainerProgram? @relation("AssignedFromTrainerProgram", fields: [sourceTrainerProgramId], references: [id], onDelete: SetNull)
+  days                ProgramDay[]
 
   @@index([userId])
+  @@index([trainerCreatedById])
   @@map("programs")
 }
 
 model ProgramDay {
   id        String            @id @default(uuid()) @db.Uuid
   programId String            @map("program_id") @db.Uuid
-  name      String            @db.VarChar(200) // e.g. "Push", "Pull + Abs", "Legs"
+  name      String            @db.VarChar(200)
   sortOrder Int               @default(0) @map("sort_order")
   createdAt DateTime          @default(now()) @map("created_at")
   updatedAt DateTime          @updatedAt @map("updated_at")
@@ -322,12 +378,10 @@ model ProgramDay {
 model ProgramExercise {
   id           String       @id @default(uuid()) @db.Uuid
   programDayId String       @map("program_day_id") @db.Uuid
-  // References ExerciseDB static library by ID string
   exerciseId   String       @map("exercise_id") @db.VarChar(100)
   sortOrder    Int          @default(0) @map("sort_order")
   trackingType TrackingType @default(strength) @map("tracking_type")
   notes        String?      @db.VarChar(500)
-  // Default rest time between sets for this exercise (seconds)
   restSeconds  Int?         @map("rest_seconds")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
@@ -339,24 +393,19 @@ model ProgramExercise {
   @@map("program_exercises")
 }
 
-// ProgramSet describes PRESCRIBED performance — the target for each set.
-// It supports rep ranges, percentage-based loading, and all advanced set types.
 model ProgramSet {
   id                    String   @id @default(uuid()) @db.Uuid
   programExerciseId     String   @map("program_exercise_id") @db.Uuid
   setNumber             Int      @map("set_number")
   setType               SetType  @default(working) @map("set_type")
-  // Rep range: if targetRepsMax is null, it's a fixed rep count (targetRepsMin = the count)
   targetRepsMin         Int?     @map("target_reps_min")
   targetRepsMax         Int?     @map("target_reps_max")
-  // Absolute weight OR percentage of 1RM (mutually exclusive in practice)
   targetWeightKg        Decimal? @map("target_weight_kg") @db.Decimal(7, 2)
-  targetWeightPercent   Int?     @map("target_weight_percent") // e.g. 75 = 75% of 1RM
-  // Cardio / isometric / interval fields
+  targetWeightPercent   Int?     @map("target_weight_percent")
   targetDurationSeconds Int?     @map("target_duration_seconds")
   targetDistanceM       Decimal? @map("target_distance_m") @db.Decimal(10, 2)
-  targetRir             Int?     @map("target_rir") // Reps in Reserve 0-5
-  restSeconds           Int?     @map("rest_seconds") // set-level rest override
+  targetRir             Int?     @map("target_rir")
+  restSeconds           Int?     @map("rest_seconds")
   notes                 String?  @db.VarChar(300)
   createdAt             DateTime @default(now()) @map("created_at")
 
@@ -368,8 +417,6 @@ model ProgramSet {
 
 // ═════════════════════════════════════════════════════════════════════
 // WORKOUT TEMPLATES
-// Reusable one-off workout templates that are not part of a full program.
-// Examples: "Push Day", "Hotel Workout", "30-Minute Legs"
 // ═════════════════════════════════════════════════════════════════════
 
 model WorkoutTemplate {
@@ -435,7 +482,6 @@ model Workout {
   id              String        @id @default(uuid()) @db.Uuid
   userId          String        @map("user_id") @db.Uuid
   assignedById    String?       @map("assigned_by_id") @db.Uuid
-  // Source template / program day (set when starting from one)
   templateId      String?       @map("template_id") @db.Uuid
   programDayId    String?       @map("program_day_id") @db.Uuid
   title           String        @db.VarChar(200)
@@ -445,9 +491,9 @@ model Workout {
   source          WorkoutSource @default(manual)
   startedAt       DateTime?     @map("started_at") @db.Timestamptz(3)
   completedAt     DateTime?     @map("completed_at") @db.Timestamptz(3)
-  durationSeconds       Int?          @map("duration_seconds")
-  durationTargetMinutes Int?          @map("duration_target_minutes")
-  createdAt             DateTime      @default(now()) @map("created_at")
+  durationSeconds       Int?    @map("duration_seconds")
+  durationTargetMinutes Int?    @map("duration_target_minutes")
+  createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
   profile         Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -455,6 +501,7 @@ model Workout {
   personalRecords PersonalRecord[]
   template        WorkoutTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
   programDay      ProgramDay?       @relation(fields: [programDayId], references: [id], onDelete: SetNull)
+  healthActivity  HealthActivity?   @relation("WorkoutHealthActivity")
 
   @@index([userId, scheduledDate])
   @@index([userId, status])
@@ -472,7 +519,6 @@ model WorkoutExercise {
   notes        String?      @db.VarChar(500)
   targetSets   Int?         @map("target_sets")
   trackingType TrackingType @default(strength) @map("tracking_type")
-  // Default rest between sets for this exercise (seconds)
   restSeconds  Int?         @map("rest_seconds")
   createdAt    DateTime     @default(now()) @map("created_at")
 
@@ -488,22 +534,18 @@ model WorkoutSet {
   workoutExerciseId     String    @map("workout_exercise_id") @db.Uuid
   setNumber             Int       @map("set_number")
   setType               SetType   @default(working) @map("set_type")
-  // Planned targets
   targetReps            Int?      @map("target_reps")
   targetRepsMin         Int?      @map("target_reps_min")
   targetRepsMax         Int?      @map("target_reps_max")
   targetWeightKg        Decimal?  @map("target_weight_kg") @db.Decimal(7, 2)
   targetDurationSeconds Int?      @map("target_duration_seconds")
   targetDistanceM       Decimal?  @map("target_distance_m") @db.Decimal(10, 2)
-  // Actual logged values
   actualReps            Int?      @map("actual_reps")
   actualWeightKg        Decimal?  @map("actual_weight_kg") @db.Decimal(7, 2)
   actualDurationSeconds Int?      @map("actual_duration_seconds")
   actualDistanceM       Decimal?  @map("actual_distance_m") @db.Decimal(10, 2)
-  // Subjective effort
-  rpe                   Int?      // Rate of Perceived Exertion 1–10
-  rir                   Int?      // Reps in Reserve 0–5
-  // Rest after completing this set (seconds)
+  rpe                   Int?
+  rir                   Int?
   restSeconds           Int?      @map("rest_seconds")
   completed             Boolean   @default(false)
   completedAt           DateTime? @map("completed_at") @db.Timestamptz(3)
@@ -528,16 +570,16 @@ model PersonalRecord {
   workoutId    String?  @map("workout_id") @db.Uuid
   workoutSetId String?  @unique @map("workout_set_id") @db.Uuid
 
-  profile      Profile     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workout      Workout?    @relation(fields: [workoutId], references: [id], onDelete: SetNull)
-  workoutSet   WorkoutSet? @relation(fields: [workoutSetId], references: [id], onDelete: SetNull)
+  profile    Profile     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workout    Workout?    @relation(fields: [workoutId], references: [id], onDelete: SetNull)
+  workoutSet WorkoutSet? @relation(fields: [workoutSetId], references: [id], onDelete: SetNull)
 
   @@index([userId, exerciseId, metric])
   @@map("personal_records")
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// TRAINER FOUNDATION
+// TRAINER SYSTEM
 // ═════════════════════════════════════════════════════════════════════
 
 model TrainerProfile {
@@ -548,21 +590,29 @@ model TrainerProfile {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  profile Profile                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clients TrainerClientRelationship[] @relation("TrainerClients")
+  profile     Profile                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clients     TrainerClientRelationship[] @relation("TrainerClients")
+  invitations TrainerInvitation[]         @relation("TrainerInvitations")
+  programs    TrainerProgram[]            @relation("TrainerPrograms")
+  notes       TrainerNote[]               @relation("TrainerNotes")
+  targets     TrainerClientTarget[]       @relation("TrainerTargets")
+  drafts      VTrainerDraft[]             @relation("TrainerDrafts")
 
   @@map("trainer_profiles")
 }
 
 model TrainerClientRelationship {
-  id         String              @id @default(uuid()) @db.Uuid
-  trainerId  String              @map("trainer_id") @db.Uuid
-  clientId   String              @map("client_id") @db.Uuid
-  status     TrainerClientStatus @default(invited)
-  invitedAt  DateTime            @default(now()) @map("invited_at")
-  acceptedAt DateTime?           @map("accepted_at")
-  createdAt  DateTime            @default(now()) @map("created_at")
-  updatedAt  DateTime            @updatedAt @map("updated_at")
+  id                   String              @id @default(uuid()) @db.Uuid
+  trainerId            String              @map("trainer_id") @db.Uuid
+  clientId             String              @map("client_id") @db.Uuid
+  status               TrainerClientStatus @default(invited)
+  // ID of the UserEntitlement granted to the client for this relationship
+  sponsoredEntitlementId String?           @map("sponsored_entitlement_id") @db.Uuid
+  invitedAt            DateTime            @default(now()) @map("invited_at")
+  acceptedAt           DateTime?           @map("accepted_at")
+  revokedAt            DateTime?           @map("revoked_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
 
   trainer TrainerProfile @relation("TrainerClients", fields: [trainerId], references: [userId], onDelete: Cascade)
   client  Profile        @relation("ClientTrainers", fields: [clientId], references: [id], onDelete: Cascade)
@@ -570,7 +620,395 @@ model TrainerClientRelationship {
   @@unique([trainerId, clientId])
   @@index([trainerId])
   @@index([clientId])
+  @@index([status])
   @@map("trainer_client_relationships")
+}
+
+// Pending invitations sent by email — no data access granted until accepted
+model TrainerInvitation {
+  id               String                  @id @default(uuid()) @db.Uuid
+  trainerId        String                  @map("trainer_id") @db.Uuid
+  invitedEmail     String                  @map("invited_email") @db.VarChar(255)
+  token            String                  @unique @db.VarChar(64)
+  status           TrainerInvitationStatus @default(pending)
+  sentAt           DateTime                @default(now()) @map("sent_at") @db.Timestamptz(3)
+  expiresAt        DateTime                @map("expires_at") @db.Timestamptz(3)
+  acceptedByUserId String?                 @map("accepted_by_user_id") @db.Uuid
+  acceptedAt       DateTime?               @map("accepted_at") @db.Timestamptz(3)
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+
+  trainer TrainerProfile @relation("TrainerInvitations", fields: [trainerId], references: [userId], onDelete: Cascade)
+
+  @@index([trainerId])
+  @@index([token])
+  @@index([invitedEmail])
+  @@map("trainer_invitations")
+}
+
+// Trainer's reusable program template library — never mutated by client assignment
+model TrainerProgram {
+  id              String       @id @default(uuid()) @db.Uuid
+  trainerId       String       @map("trainer_id") @db.Uuid
+  name            String       @db.VarChar(200)
+  description     String?      @db.VarChar(1000)
+  level           FitnessLevel?
+  durationWeeks   Int?         @map("duration_weeks")
+  sessionsPerWeek Int?         @map("sessions_per_week")
+  isArchived      Boolean      @default(false) @map("is_archived")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  trainer     TrainerProfile     @relation("TrainerPrograms", fields: [trainerId], references: [userId], onDelete: Cascade)
+  days        TrainerProgramDay[]
+  assignments Program[]          @relation("AssignedFromTrainerProgram")
+
+  @@index([trainerId])
+  @@map("trainer_programs")
+}
+
+model TrainerProgramDay {
+  id        String   @id @default(uuid()) @db.Uuid
+  programId String   @map("program_id") @db.Uuid
+  name      String   @db.VarChar(200)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  program   TrainerProgram          @relation(fields: [programId], references: [id], onDelete: Cascade)
+  exercises TrainerProgramExercise[]
+
+  @@index([programId])
+  @@map("trainer_program_days")
+}
+
+model TrainerProgramExercise {
+  id           String       @id @default(uuid()) @db.Uuid
+  programDayId String       @map("program_day_id") @db.Uuid
+  exerciseId   String       @map("exercise_id") @db.VarChar(100)
+  sortOrder    Int          @default(0) @map("sort_order")
+  trackingType TrackingType @default(strength) @map("tracking_type")
+  notes        String?      @db.VarChar(500)
+  restSeconds  Int?         @map("rest_seconds")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  programDay TrainerProgramDay    @relation(fields: [programDayId], references: [id], onDelete: Cascade)
+  sets       TrainerProgramSet[]
+
+  @@index([programDayId])
+  @@map("trainer_program_exercises")
+}
+
+model TrainerProgramSet {
+  id                    String   @id @default(uuid()) @db.Uuid
+  programExerciseId     String   @map("program_exercise_id") @db.Uuid
+  setNumber             Int      @map("set_number")
+  setType               SetType  @default(working) @map("set_type")
+  targetRepsMin         Int?     @map("target_reps_min")
+  targetRepsMax         Int?     @map("target_reps_max")
+  targetWeightKg        Decimal? @map("target_weight_kg") @db.Decimal(7, 2)
+  targetWeightPercent   Int?     @map("target_weight_percent")
+  targetDurationSeconds Int?     @map("target_duration_seconds")
+  targetDistanceM       Decimal? @map("target_distance_m") @db.Decimal(10, 2)
+  targetRir             Int?     @map("target_rir")
+  restSeconds           Int?     @map("rest_seconds")
+  notes                 String?  @db.VarChar(300)
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  programExercise TrainerProgramExercise @relation(fields: [programExerciseId], references: [id], onDelete: Cascade)
+
+  @@index([programExerciseId])
+  @@map("trainer_program_sets")
+}
+
+// Trainer notes on a client — isPrivate=true means client cannot see them
+model TrainerNote {
+  id        String   @id @default(uuid()) @db.Uuid
+  trainerId String   @map("trainer_id") @db.Uuid
+  clientId  String   @map("client_id") @db.Uuid
+  content   String   @db.Text
+  isPrivate Boolean  @default(true) @map("is_private")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  trainer TrainerProfile @relation("TrainerNotes", fields: [trainerId], references: [userId], onDelete: Cascade)
+  client  Profile        @relation("ClientNotes", fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([trainerId, clientId])
+  @@map("trainer_notes")
+}
+
+// Targets a trainer sets for a specific client
+model TrainerClientTarget {
+  id            String                  @id @default(uuid()) @db.Uuid
+  trainerId     String                  @map("trainer_id") @db.Uuid
+  clientId      String                  @map("client_id") @db.Uuid
+  targetType    TrainerClientTargetType @map("target_type")
+  targetValue   Decimal                 @map("target_value") @db.Decimal(10, 3)
+  unit          String                  @db.VarChar(50)
+  notes         String?                 @db.VarChar(500)
+  effectiveDate DateTime                @map("effective_date") @db.Date
+  createdAt     DateTime                @default(now()) @map("created_at")
+
+  trainer TrainerProfile @relation("TrainerTargets", fields: [trainerId], references: [userId], onDelete: Cascade)
+  client  Profile        @relation("ClientTargets", fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([trainerId, clientId])
+  @@index([clientId, targetType])
+  @@map("trainer_client_targets")
+}
+
+// V trainer drafts — pending approval queue for AI-generated changes
+// Trainer must approve, edit, or dismiss before any change is applied.
+model VTrainerDraft {
+  id          String       @id @default(uuid()) @db.Uuid
+  trainerId   String       @map("trainer_id") @db.Uuid
+  clientId    String       @map("client_id") @db.Uuid
+  draftType   VDraftType   @map("draft_type")
+  description String       @db.VarChar(500)
+  payload     Json
+  status      VDraftStatus @default(pending)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  reviewedAt  DateTime?    @map("reviewed_at") @db.Timestamptz(3)
+
+  trainer TrainerProfile @relation("TrainerDrafts", fields: [trainerId], references: [userId], onDelete: Cascade)
+  client  Profile        @relation("ClientDrafts", fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([trainerId, status])
+  @@index([clientId, status])
+  @@map("v_trainer_drafts")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// HEALTH / ACTIVITY LAYER
+// Normalized representation of data from wearables and health platforms.
+// Provider-agnostic: Apple Health, Android Health Connect, Garmin, etc.
+// Native platform bridges push data to these tables via the sync API.
+// ═════════════════════════════════════════════════════════════════════
+
+// A single workout/activity session recorded by a health platform.
+// externalId + provider dedup prevents duplicate imports.
+// PostgreSQL UNIQUE allows multiple NULLs, so manual records (externalId=null)
+// are always allowed; only non-null externalIds are deduplicated.
+model HealthActivity {
+  id               String             @id @default(uuid()) @db.Uuid
+  userId           String             @map("user_id") @db.Uuid
+  provider         HealthProvider
+  externalId       String?            @map("external_id") @db.VarChar(500)
+  activityType     HealthActivityType @map("activity_type")
+  title            String?            @db.VarChar(200)
+  startedAt        DateTime           @map("started_at") @db.Timestamptz(3)
+  endedAt          DateTime?          @map("ended_at") @db.Timestamptz(3)
+  durationSeconds  Int?               @map("duration_seconds")
+  activeEnergyKcal Decimal?           @map("active_energy_kcal") @db.Decimal(8, 2)
+  totalEnergyKcal  Decimal?           @map("total_energy_kcal") @db.Decimal(8, 2)
+  distanceM        Decimal?           @map("distance_m") @db.Decimal(10, 2)
+  stepCount        Int?               @map("step_count")
+  avgHeartRateBpm  Int?               @map("avg_heart_rate_bpm")
+  maxHeartRateBpm  Int?               @map("max_heart_rate_bpm")
+  // Link to an Involved workout if this activity was matched or written back (one-to-one)
+  involvedWorkoutId String?           @unique @map("involved_workout_id") @db.Uuid
+  syncState        HealthSyncState    @default(synced) @map("sync_state")
+  syncedAt         DateTime           @default(now()) @map("synced_at") @db.Timestamptz(3)
+  // Provider-specific extras stored without schema coupling
+  rawMetadataJson  Json?              @map("raw_metadata_json")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  profile         Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  involvedWorkout Workout? @relation("WorkoutHealthActivity", fields: [involvedWorkoutId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, provider, externalId])
+  @@index([userId, startedAt])
+  @@index([userId, provider])
+  @@index([involvedWorkoutId])
+  @@map("health_activities")
+}
+
+// Point-in-time or period-aggregate health metrics.
+// Separate from HealthActivity because steps/HR/weight are not activities.
+model HealthMetric {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  provider    HealthProvider
+  externalId  String?          @map("external_id") @db.VarChar(500)
+  metricType  HealthMetricType @map("metric_type")
+  value       Decimal          @db.Decimal(12, 4)
+  unit        String           @db.VarChar(20)
+  // For point-in-time readings (body weight, spot HR check)
+  recordedAt  DateTime         @map("recorded_at") @db.Timestamptz(3)
+  // For aggregated periods (daily steps, active energy total)
+  periodStart DateTime?        @map("period_start") @db.Timestamptz(3)
+  periodEnd   DateTime?        @map("period_end") @db.Timestamptz(3)
+  syncState   HealthSyncState  @default(synced) @map("sync_state")
+  syncedAt    DateTime         @default(now()) @map("synced_at") @db.Timestamptz(3)
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, metricType, recordedAt])
+  @@index([userId, metricType, recordedAt])
+  @@index([userId, provider])
+  @@map("health_metrics")
+}
+
+// Per-provider sync cursor — tracks where each data stream left off.
+// lastAnchor is provider-specific (ISO date string, opaque token, etc.)
+model HealthSyncCursor {
+  id           String         @id @default(uuid()) @db.Uuid
+  userId       String         @map("user_id") @db.Uuid
+  provider     HealthProvider
+  dataType     String         @map("data_type") @db.VarChar(100)
+  lastSyncedAt DateTime?      @map("last_synced_at") @db.Timestamptz(3)
+  lastAnchor   String?        @map("last_anchor") @db.VarChar(1000)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, dataType])
+  @@index([userId])
+  @@map("health_sync_cursors")
+}
+
+// Records which health data types the user has explicitly granted.
+// Permissions are opt-in, granular, and revocable.
+model HealthPermission {
+  id        String         @id @default(uuid()) @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
+  provider  HealthProvider
+  dataType  String         @map("data_type") @db.VarChar(100)
+  granted   Boolean        @default(false)
+  grantedAt DateTime?      @map("granted_at") @db.Timestamptz(3)
+  revokedAt DateTime?      @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, dataType])
+  @@index([userId])
+  @@map("health_permissions")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// EXERCISE PREFERENCES
+// ═════════════════════════════════════════════════════════════════════
+
+model ExercisePreference {
+  id         String                  @id @default(uuid()) @db.Uuid
+  userId     String                  @map("user_id") @db.Uuid
+  exerciseId String                  @map("exercise_id") @db.VarChar(100)
+  state      ExercisePreferenceState @default(normal)
+  createdAt  DateTime                @default(now()) @map("created_at")
+  updatedAt  DateTime                @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, exerciseId])
+  @@index([userId])
+  @@index([userId, state])
+  @@map("exercise_preferences")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// EQUIPMENT PROFILES
+// ═════════════════════════════════════════════════════════════════════
+
+model EquipmentProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(false) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  profile   Profile               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     EquipmentProfileItem[]
+  templates WorkoutTemplate[]
+
+  @@index([userId])
+  @@map("equipment_profiles")
+}
+
+model EquipmentProfileItem {
+  id               String           @id @default(uuid()) @db.Uuid
+  profileId        String           @map("profile_id") @db.Uuid
+  equipment        String           @db.VarChar(100)
+  // Stores available loads/increments for this equipment at this location.
+  // Shape: { unit: "lbs"|"kg", type: "fixed"|"range", values?: number[], min?: number, max?: number, increment?: number }
+  availableWeights Json?            @map("available_weights")
+
+  profile EquipmentProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, equipment])
+  @@index([profileId])
+  @@map("equipment_profile_items")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// EXERCISE BEHAVIOR EVENTS
+// ═════════════════════════════════════════════════════════════════════
+// Lightweight signals for future V logic. These are NOT automatically
+// converted into exercise preferences. Explicit preferences and
+// behavioral signals are separate concepts.
+
+model ExerciseBehaviorEvent {
+  id          String                    @id @default(uuid()) @db.Uuid
+  userId      String                    @map("user_id") @db.Uuid
+  exerciseId  String                    @map("exercise_id") @db.VarChar(100)
+  event       ExerciseBehaviorEventType
+  workoutId   String?                   @map("workout_id") @db.Uuid
+  programId   String?                   @map("program_id") @db.Uuid
+  replacedBy  String?                   @map("replaced_by") @db.VarChar(100)
+  createdAt   DateTime                  @default(now()) @map("created_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, exerciseId])
+  @@index([userId, createdAt])
+  @@map("exercise_behavior_events")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// WEEKLY TARGETS
+// ═════════════════════════════════════════════════════════════════════
+
+model WeeklyTarget {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @map("user_id") @db.Uuid
+  targetType  WeeklyTargetType @map("target_type")
+  targetValue Int              @map("target_value")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType])
+  @@index([userId])
+  @@map("weekly_targets")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// CUSTOM EXERCISES
+// ═════════════════════════════════════════════════════════════════════
+
+model CustomExercise {
+  id           String       @id @default(uuid()) @db.Uuid
+  userId       String       @map("user_id") @db.Uuid
+  name         String       @db.VarChar(200)
+  bodyPart     String?      @map("body_part") @db.VarChar(100)
+  targetMuscle String?      @map("target_muscle") @db.VarChar(100)
+  equipment    String?      @db.VarChar(100)
+  trackingType TrackingType @default(strength) @map("tracking_type")
+  instructions String?      @db.Text
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("custom_exercises")
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -587,6 +1025,7 @@ enum SubscriptionTier {
   free
   trial
   plus
+  trainer
 }
 
 enum SubscriptionStatus {
@@ -641,27 +1080,25 @@ enum PRMetric {
   volume_kg
 }
 
-// How performance is tracked for a given exercise.
-// Determines which fields are shown/required during a session.
 enum TrackingType {
-  strength     // weight × reps (barbell, dumbbell, cable, machine)
-  bodyweight   // reps only (push-up, pull-up, dip)
-  assisted     // assistance weight × reps (assisted pull-up machine)
-  cardio       // time + optional distance (treadmill, bike, row)
-  carry        // weight + distance and/or time (farmer carry, sled)
-  isometric    // time only (plank, wall sit)
-  intervals    // work_seconds + rest_seconds + rounds
+  strength
+  bodyweight
+  assisted
+  cardio
+  carry
+  isometric
+  intervals
 }
 
-// Set classification — enables volume/intensity analysis and
-// supports advanced programming like drop sets and AMRAP finishers.
 enum SetType {
-  warmup   // warm-up set — lighter, not counted in working volume
-  working  // standard working set
-  amrap    // as many reps as possible — upper bound not set
-  drop     // drop set — reduce weight and continue
-  failure  // trained to failure
+  warmup
+  working
+  amrap
+  drop
+  failure
 }
+
+// ─── Trainer ──────────────────────────────────────────────────────────
 
 enum TrainerClientStatus {
   invited
@@ -670,74 +1107,82 @@ enum TrainerClientStatus {
   ended
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// EXERCISE PREFERENCES
-// User-specific preference state per exercise (separate from licensed
-// ExerciseDB source records — never modify those).
-// ═════════════════════════════════════════════════════════════════════
+enum TrainerInvitationStatus {
+  pending
+  accepted
+  declined
+  expired
+  canceled
+}
+
+enum TrainerSubscriptionStatus {
+  active
+  canceled
+  paused
+  expired
+}
+
+enum TrainerClientTargetType {
+  daily_calories
+  daily_protein_g
+  daily_carbs_g
+  daily_fat_g
+  weekly_workouts
+  weekly_cardio_minutes
+  body_weight_kg
+  body_fat_pct
+  custom
+}
+
+enum VDraftType {
+  program_adjustment
+  workout_edit
+  target_update
+  trainer_note
+}
+
+enum VDraftStatus {
+  pending
+  approved
+  dismissed
+}
+
+// ─── Entitlements ─────────────────────────────────────────────────────
+
+enum UserEntitlementSource {
+  personal_plus
+  trainer_sponsored
+  trial
+  promo
+}
+
+enum UserEntitlementStatus {
+  active
+  expired
+  revoked
+}
+
+// ─── Exercise Preferences ─────────────────────────────────────────────
 
 enum ExercisePreferenceState {
-  favorite       // ♥ — shown first, quick access
-  more_often     // surface more frequently
-  normal         // default
-  less_often     // deprioritize
-  dont_recommend // exclude from suggestions
+  favorite
+  more_often
+  normal
+  less_often
+  dont_recommend
 }
 
-model ExercisePreference {
-  id         String                  @id @default(uuid()) @db.Uuid
-  userId     String                  @map("user_id") @db.Uuid
-  exerciseId String                  @map("exercise_id") @db.VarChar(100)
-  state      ExercisePreferenceState @default(normal)
-  createdAt  DateTime                @default(now()) @map("created_at")
-  updatedAt  DateTime                @updatedAt @map("updated_at")
+// ─── Exercise Behavior Events ─────────────────────────────────────────
 
-  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, exerciseId])
-  @@index([userId])
-  @@index([userId, state])
-  @@map("exercise_preferences")
+enum ExerciseBehaviorEventType {
+  exercise_added
+  exercise_removed
+  exercise_skipped
+  exercise_replaced
+  exercise_completed
 }
 
-// ═════════════════════════════════════════════════════════════════════
-// EQUIPMENT PROFILES
-// Named collections of available equipment per location.
-// Drives exercise filtering and (future) V workout generation.
-// ═════════════════════════════════════════════════════════════════════
-
-model EquipmentProfile {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  name      String   @db.VarChar(100)
-  isActive  Boolean  @default(false) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  profile    Profile               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items      EquipmentProfileItem[]
-  templates  WorkoutTemplate[]
-
-  @@index([userId])
-  @@map("equipment_profiles")
-}
-
-model EquipmentProfileItem {
-  id        String           @id @default(uuid()) @db.Uuid
-  profileId String           @map("profile_id") @db.Uuid
-  equipment String           @db.VarChar(100)
-
-  profile EquipmentProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
-
-  @@unique([profileId, equipment])
-  @@index([profileId])
-  @@map("equipment_profile_items")
-}
-
-// ═════════════════════════════════════════════════════════════════════
-// WEEKLY TARGETS
-// Per-user configurable weekly volume/consistency targets.
-// ═════════════════════════════════════════════════════════════════════
+// ─── Weekly Targets ───────────────────────────────────────────────────
 
 enum WeeklyTargetType {
   workouts_per_week
@@ -746,62 +1191,7 @@ enum WeeklyTargetType {
   protein_target_days
 }
 
-model WeeklyTarget {
-  id          String           @id @default(uuid()) @db.Uuid
-  userId      String           @map("user_id") @db.Uuid
-  targetType  WeeklyTargetType @map("target_type")
-  targetValue Int              @map("target_value")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
-
-  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, targetType])
-  @@index([userId])
-  @@map("weekly_targets")
-}
-
-// ═════════════════════════════════════════════════════════════════════
-// CUSTOM EXERCISES
-// User-created exercises stored separately from licensed ExerciseDB
-// records. Each user owns their own exercises; no cross-user sharing.
-// IDs are UUIDs and never conflict with ExerciseDB numeric IDs.
-// ═════════════════════════════════════════════════════════════════════
-
-model CustomExercise {
-  id           String       @id @default(uuid()) @db.Uuid
-  userId       String       @map("user_id") @db.Uuid
-  name         String       @db.VarChar(200)
-  bodyPart     String?      @map("body_part") @db.VarChar(100)
-  targetMuscle String?      @map("target_muscle") @db.VarChar(100)
-  equipment    String?      @db.VarChar(100)
-  trackingType TrackingType @default(strength) @map("tracking_type")
-  instructions String?      @db.Text
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
-
-  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@map("custom_exercises")
-}
-
-enum GoalType {
-  event
-  strength
-  endurance
-  body_comp
-  habit
-  custom
-}
-
-enum GoalStatus {
-  active
-  completed
-  paused
-}
-
-// ── Nutrition ─────────────────────────────────────────────────────────
+// ─── Nutrition ────────────────────────────────────────────────────────
 
 enum FoodSourceCategory {
   system
@@ -821,4 +1211,68 @@ enum MealType {
   dinner
   snack
   other
+}
+
+// ─── Goal ─────────────────────────────────────────────────────────────
+
+enum GoalType {
+  event
+  strength
+  endurance
+  body_comp
+  habit
+  custom
+}
+
+enum GoalStatus {
+  active
+  completed
+  paused
+}
+
+// ─── Health ───────────────────────────────────────────────────────────
+
+enum HealthProvider {
+  apple_health
+  health_connect
+  garmin
+  strava
+  polar
+  manual
+}
+
+enum HealthActivityType {
+  strength_training
+  running
+  cycling
+  walking
+  swimming
+  hiking
+  yoga
+  hiit
+  rowing
+  other
+}
+
+enum HealthMetricType {
+  steps
+  active_energy_kcal
+  resting_energy_kcal
+  heart_rate_avg_bpm
+  heart_rate_max_bpm
+  heart_rate_resting_bpm
+  distance_m
+  body_weight_kg
+  body_fat_pct
+  sleep_duration_s
+  vo2_max
+  hrv_ms
+  stand_hours
+  flights_climbed
+}
+
+enum HealthSyncState {
+  pending
+  synced
+  failed
 }

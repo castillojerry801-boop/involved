@@ -15,6 +15,19 @@ import RestTimer from '@/components/training/RestTimer'
 import ExercisePicker from '@/components/training/ExercisePicker'
 import type { ExerciseMeta } from '@/lib/exercises'
 
+// Fire-and-forget behavioral signal — never blocks the workout UI
+function recordBehaviorEvent(
+  exerciseId: string,
+  event: string,
+  opts?: { workoutId?: string; programId?: string; replacedBy?: string }
+) {
+  void fetch(`/api/training/exercises/${encodeURIComponent(exerciseId)}/behavior`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event, ...opts }),
+  })
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type TrackingType = 'strength' | 'bodyweight' | 'assisted' | 'cardio' | 'carry' | 'isometric' | 'intervals'
@@ -369,7 +382,12 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove, onRefresh }: {
   }
 
   const handleComplete = (setId: string, updates: Partial<SetData> & { completed: boolean }) => {
-    setSets(prev => prev.map(s => s.id === setId ? { ...s, ...updates } : s))
+    setSets(prev => {
+      const next = prev.map(s => s.id === setId ? { ...s, ...updates } : s)
+      const allDone = next.every(s => s.completed)
+      if (allDone) recordBehaviorEvent(ex.exerciseId, 'exercise_completed', { workoutId })
+      return next
+    })
     onUpdate(ex.restSeconds ?? 90)
   }
 
@@ -399,6 +417,7 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove, onRefresh }: {
         body: JSON.stringify({ newExerciseId }),
       })
       if (res.ok) {
+        recordBehaviorEvent(ex.exerciseId, 'exercise_replaced', { workoutId, replacedBy: newExerciseId })
         setSubstituteOptions(null)
         onRefresh()
       }
@@ -426,7 +445,10 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove, onRefresh }: {
     setRemoving(true)
     try {
       const res = await fetch(`/api/workouts/${workoutId}/exercises/${ex.id}`, { method: 'DELETE' })
-      if (res.ok) onRemove(ex.id)
+      if (res.ok) {
+        recordBehaviorEvent(ex.exerciseId, 'exercise_removed', { workoutId })
+        onRemove(ex.id)
+      }
     } finally {
       setRemoving(false)
     }
@@ -863,7 +885,10 @@ export default function WorkoutPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ exerciseId: ex.id }),
       })
-      if (res.ok) fetchWorkout()
+      if (res.ok) {
+        recordBehaviorEvent(ex.id, 'exercise_added', { workoutId: id })
+        fetchWorkout()
+      }
     } finally {
       setAddingExercise(false)
     }

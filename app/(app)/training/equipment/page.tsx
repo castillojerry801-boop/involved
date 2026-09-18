@@ -2,50 +2,210 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Zap, Trash2, Loader2, Pencil, Check, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Plus, Zap, Trash2, Loader2, Pencil, Check, ChevronRight, Weight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+interface WeightConfig {
+  unit: 'lbs' | 'kg'
+  type: 'fixed' | 'range'
+  values?: number[]
+  min?: number
+  max?: number
+  increment?: number
+}
+
 interface EquipmentOption { value: string; count: number }
+
+interface EquipmentItem {
+  equipment: string
+  availableWeights?: WeightConfig | null
+}
 
 interface EquipmentProfile {
   id: string
   name: string
   isActive: boolean
-  items: { equipment: string }[]
+  items: EquipmentItem[]
   updatedAt: string
+}
+
+// Equipment types that commonly have trackable weights
+const WEIGHTED_EQUIPMENT = new Set([
+  'barbell', 'dumbbell', 'cable', 'kettlebell', 'medicine ball',
+  'ez barbell', 'band', 'weighted', 'smith machine',
+])
+
+function isWeightable(equipment: string) {
+  const lower = equipment.toLowerCase()
+  return [...WEIGHTED_EQUIPMENT].some(w => lower.includes(w))
+}
+
+// ─── Weight Config Input ──────────────────────────────────────────────────────
+
+function WeightConfigInput({
+  equipment, value, onChange,
+}: { equipment: string; value: WeightConfig | null | undefined; onChange: (v: WeightConfig | null) => void }) {
+  const [open, setOpen] = useState(!!value)
+  const unit = value?.unit ?? 'lbs'
+  const type = value?.type ?? 'fixed'
+
+  if (!isWeightable(equipment)) return null
+
+  const update = (patch: Partial<WeightConfig>) => {
+    onChange({ unit, type, ...value, ...patch } as WeightConfig)
+  }
+
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={() => {
+          if (open) { onChange(null); setOpen(false) }
+          else { setOpen(true); if (!value) onChange({ unit: 'lbs', type: 'fixed', values: [] }) }
+        }}
+        className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+      >
+        <Weight className="size-3" />
+        {open ? 'Remove weight config' : 'Add weight config'}
+      </button>
+
+      {open && value && (
+        <div className="mt-2 rounded-xl border border-zinc-100 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 p-3 space-y-2.5">
+          {/* Unit + type */}
+          <div className="flex gap-2">
+            <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-xs">
+              {(['lbs', 'kg'] as const).map(u => (
+                <button key={u} type="button"
+                  onClick={() => update({ unit: u })}
+                  className={cn('px-2.5 py-1 font-medium transition-colors',
+                    unit === u ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                  )}>
+                  {u}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-xs">
+              {(['fixed', 'range'] as const).map(t => (
+                <button key={t} type="button"
+                  onClick={() => update({ type: t })}
+                  className={cn('px-2.5 py-1 font-medium capitalize transition-colors',
+                    type === t ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                  )}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {type === 'fixed' ? (
+            <div>
+              <label className="text-[10px] text-zinc-400 block mb-1">Weights ({unit}) — comma separated</label>
+              <input
+                type="text"
+                placeholder={`e.g. 5, 10, 15, 20, 25, 30, 35`}
+                defaultValue={value.values?.join(', ') ?? ''}
+                onBlur={e => {
+                  const nums = e.target.value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0)
+                  update({ values: nums })
+                }}
+                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-1.5">
+              {([['min', 'Min'], ['max', 'Max'], ['increment', 'Step']] as const).map(([field, label]) => (
+                <div key={field}>
+                  <label className="text-[10px] text-zinc-400 block mb-1">{label} ({unit})</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    defaultValue={value[field as keyof WeightConfig] as number | undefined}
+                    onBlur={e => {
+                      const n = parseFloat(e.target.value)
+                      update({ [field]: isNaN(n) ? undefined : n })
+                    }}
+                    className="w-full rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-2 py-1.5 text-xs text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ─── Equipment picker checklist ───────────────────────────────────────────────
 
 function EquipmentChecklist({
-  options, selected, onChange,
-}: { options: EquipmentOption[]; selected: string[]; onChange: (v: string[]) => void }) {
-  const set = new Set(selected)
-  const toggle = (v: string) => onChange(set.has(v) ? selected.filter(s => s !== v) : [...selected, v])
+  options, selectedItems, onChange,
+}: {
+  options: EquipmentOption[]
+  selectedItems: EquipmentItem[]
+  onChange: (items: EquipmentItem[]) => void
+}) {
+  const selectedMap = new Map(selectedItems.map(i => [i.equipment, i]))
+
+  const toggle = (v: string) => {
+    if (selectedMap.has(v)) {
+      onChange(selectedItems.filter(i => i.equipment !== v))
+    } else {
+      onChange([...selectedItems, { equipment: v }])
+    }
+  }
+
+  const updateWeights = (equipment: string, weights: WeightConfig | null) => {
+    onChange(selectedItems.map(i => i.equipment === equipment ? { ...i, availableWeights: weights } : i))
+  }
 
   return (
-    <div className="grid grid-cols-2 gap-1.5 max-h-64 overflow-y-auto">
-      {options.map(eq => (
-        <button
-          key={eq.value}
-          onClick={() => toggle(eq.value)}
-          className={cn(
-            'flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-medium capitalize transition-colors',
-            set.has(eq.value)
-              ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-          )}
-        >
-          <span className={cn(
-            'flex size-4 shrink-0 items-center justify-center rounded',
-            set.has(eq.value) ? 'bg-emerald-500 text-white' : 'border border-zinc-300 dark:border-zinc-600'
-          )}>
-            {set.has(eq.value) && <Check className="size-2.5" />}
-          </span>
-          <span className="truncate">{eq.value}</span>
-          <span className="ml-auto text-zinc-300 dark:text-zinc-600 shrink-0">{eq.count}</span>
-        </button>
-      ))}
+    <div className="space-y-1">
+      <div className="grid grid-cols-2 gap-1.5 max-h-64 overflow-y-auto">
+        {options.map(eq => {
+          const selected = selectedMap.has(eq.value)
+          return (
+            <button
+              key={eq.value}
+              type="button"
+              onClick={() => toggle(eq.value)}
+              className={cn(
+                'flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-medium capitalize transition-colors',
+                selected
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                  : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+              )}
+            >
+              <span className={cn(
+                'flex size-4 shrink-0 items-center justify-center rounded',
+                selected ? 'bg-emerald-500 text-white' : 'border border-zinc-300 dark:border-zinc-600'
+              )}>
+                {selected && <Check className="size-2.5" />}
+              </span>
+              <span className="truncate">{eq.value}</span>
+              <span className="ml-auto text-zinc-300 dark:text-zinc-600 shrink-0">{eq.count}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Weight config for selected weightable items */}
+      {selectedItems.filter(i => isWeightable(i.equipment)).length > 0 && (
+        <div className="mt-3 space-y-2">
+          <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wide">Weight configuration (optional)</p>
+          {selectedItems.filter(i => isWeightable(i.equipment)).map(item => (
+            <div key={item.equipment} className="rounded-xl border border-zinc-100 dark:border-zinc-800 px-3 pt-2.5 pb-3">
+              <p className="text-xs font-semibold capitalize text-zinc-700 dark:text-zinc-300">{item.equipment}</p>
+              <WeightConfigInput
+                equipment={item.equipment}
+                value={item.availableWeights}
+                onChange={w => updateWeights(item.equipment, w)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -56,12 +216,12 @@ function ProfileForm({
   options, initial, onSave, onCancel,
 }: {
   options: EquipmentOption[]
-  initial?: { name: string; equipment: string[] }
-  onSave: (name: string, equipment: string[], isActive: boolean) => Promise<void>
+  initial?: { name: string; items: EquipmentItem[] }
+  onSave: (name: string, items: EquipmentItem[], isActive: boolean) => Promise<void>
   onCancel: () => void
 }) {
   const [name, setName] = useState(initial?.name ?? '')
-  const [selected, setSelected] = useState<string[]>(initial?.equipment ?? [])
+  const [selectedItems, setSelectedItems] = useState<EquipmentItem[]>(initial?.items ?? [])
   const [setActive, setSetActive] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -71,7 +231,7 @@ function ProfileForm({
     setSaving(true)
     setError('')
     try {
-      await onSave(name.trim(), selected, setActive)
+      await onSave(name.trim(), selectedItems, setActive)
     } catch {
       setError('Failed to save. Try again.')
     } finally {
@@ -95,9 +255,9 @@ function ProfileForm({
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="text-xs font-semibold text-zinc-500">Available equipment</label>
-          <span className="text-xs text-zinc-400">{selected.length} selected</span>
+          <span className="text-xs text-zinc-400">{selectedItems.length} selected</span>
         </div>
-        <EquipmentChecklist options={options} selected={selected} onChange={setSelected} />
+        <EquipmentChecklist options={options} selectedItems={selectedItems} onChange={setSelectedItems} />
       </div>
 
       {!initial && (
@@ -112,6 +272,7 @@ function ProfileForm({
 
       <div className="flex gap-2">
         <button
+          type="button"
           onClick={handleSave}
           disabled={saving}
           className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-2.5 text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-50"
@@ -120,6 +281,7 @@ function ProfileForm({
           Save
         </button>
         <button
+          type="button"
           onClick={onCancel}
           className="rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
         >
@@ -139,12 +301,11 @@ function ProfileCard({
   options: EquipmentOption[]
   onActivate: () => void
   onDelete: () => void
-  onEdit: (name: string, equipment: string[]) => Promise<void>
+  onEdit: (name: string, items: EquipmentItem[]) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [activating, setActivating] = useState(false)
-  const equipment = profile.items.map(i => i.equipment)
 
   const handleDelete = async () => {
     if (!confirm(`Delete "${profile.name}"?`)) return
@@ -162,12 +323,14 @@ function ProfileCard({
     return (
       <ProfileForm
         options={options}
-        initial={{ name: profile.name, equipment }}
-        onSave={async (name, eq) => { await onEdit(name, eq); setEditing(false) }}
+        initial={{ name: profile.name, items: profile.items }}
+        onSave={async (name, items) => { await onEdit(name, items); setEditing(false) }}
         onCancel={() => setEditing(false)}
       />
     )
   }
+
+  const weightedCount = profile.items.filter(i => i.availableWeights).length
 
   return (
     <div className={cn(
@@ -186,7 +349,10 @@ function ProfileCard({
           </div>
           <div className="min-w-0">
             <p className="font-bold text-sm text-zinc-900 dark:text-white truncate">{profile.name}</p>
-            <p className="text-xs text-zinc-400">{equipment.length} equipment type{equipment.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-zinc-400">
+              {profile.items.length} equipment type{profile.items.length !== 1 ? 's' : ''}
+              {weightedCount > 0 && ` · ${weightedCount} with weights`}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -202,16 +368,24 @@ function ProfileCard({
       </div>
 
       {/* Equipment chips */}
-      {equipment.length > 0 && (
+      {profile.items.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">
-          {equipment.slice(0, 8).map(e => (
-            <span key={e} className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-500 dark:text-zinc-400 capitalize">
-              {e}
+          {profile.items.slice(0, 8).map(item => (
+            <span key={item.equipment}
+              className={cn(
+                'rounded-full px-2 py-0.5 text-[11px] capitalize',
+                item.availableWeights
+                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
+              )}
+            >
+              {item.equipment}
+              {item.availableWeights && ' ⚖'}
             </span>
           ))}
-          {equipment.length > 8 && (
+          {profile.items.length > 8 && (
             <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-[11px] text-zinc-400">
-              +{equipment.length - 8} more
+              +{profile.items.length - 8} more
             </span>
           )}
         </div>
@@ -234,10 +408,10 @@ function ProfileCard({
           </button>
         )}
         <Link
-          href={`/training/exercises?equipment=${encodeURIComponent(equipment[0] ?? '')}`}
+          href={`/training/exercises?profileId=${profile.id}`}
           className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
         >
-          Browse exercises <ChevronRight className="size-3" />
+          Exercises I can do here <ChevronRight className="size-3" />
         </Link>
       </div>
     </div>
@@ -262,11 +436,11 @@ export default function EquipmentProfilesPage() {
     }).finally(() => setLoading(false))
   }, [])
 
-  const handleCreate = async (name: string, equipment: string[], isActive: boolean) => {
+  const handleCreate = async (name: string, items: EquipmentItem[], isActive: boolean) => {
     const res = await fetch('/api/equipment-profiles', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, equipment, isActive }),
+      body: JSON.stringify({ name, equipmentItems: items, isActive }),
     })
     const data = await res.json() as { profile: EquipmentProfile }
     if (isActive) {
@@ -291,11 +465,11 @@ export default function EquipmentProfilesPage() {
     setProfiles(prev => prev.filter(p => p.id !== profileId))
   }
 
-  const handleEdit = async (profileId: string, name: string, equipment: string[]) => {
+  const handleEdit = async (profileId: string, name: string, items: EquipmentItem[]) => {
     const res = await fetch(`/api/equipment-profiles/${profileId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, equipment }),
+      body: JSON.stringify({ name, equipmentItems: items }),
     })
     const data = await res.json() as { profile: EquipmentProfile }
     setProfiles(prev => prev.map(p => p.id === profileId ? { ...p, ...data.profile } : p))
@@ -358,7 +532,7 @@ export default function EquipmentProfilesPage() {
               options={equipmentOptions}
               onActivate={() => handleActivate(profile.id)}
               onDelete={() => handleDelete(profile.id)}
-              onEdit={(name, eq) => handleEdit(profile.id, name, eq)}
+              onEdit={(name, items) => handleEdit(profile.id, name, items)}
             />
           ))}
         </div>

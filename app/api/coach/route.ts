@@ -44,7 +44,7 @@ function billingPeriod() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-async function checkAndIncrementUsage(userId: string, tier: 'free' | 'trial' | 'plus') {
+async function checkAndIncrementUsage(userId: string, tier: 'free' | 'trial' | 'plus' | 'trainer') {
   const limit = getAiLimit(tier, 'coach_message')
   const period = billingPeriod()
 

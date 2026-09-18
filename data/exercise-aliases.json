@@ -1,0 +1,137 @@
+{
+  "_comment": "Search aliases for ExerciseDB exercises. Each entry maps common user-facing terms to exercise IDs. Aliases do NOT modify ExerciseDB source records. They expand search results when the alias term matches the query.",
+  "aliases": [
+    {
+      "terms": ["chest press machine", "machine chest press", "plate loaded chest press", "chest press plate", "plate loaded press", "chest press lever"],
+      "exerciseIds": ["0577", "0576", "1300"]
+    },
+    {
+      "terms": ["lat pulldown", "lat pull down", "pull down", "pulldown machine", "cable pulldown", "overhead pulldown"],
+      "exerciseIds": ["0579", "0580"]
+    },
+    {
+      "terms": ["leg press machine", "machine leg press", "plate loaded leg press"],
+      "exerciseIds": ["2287"]
+    },
+    {
+      "terms": ["seated row machine", "machine row", "cable row seated", "low row machine", "low cable row"],
+      "exerciseIds": ["0571", "3200"]
+    },
+    {
+      "terms": ["shoulder press machine", "overhead press machine", "machine overhead press", "plate loaded shoulder press"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["pec deck", "fly machine", "chest fly machine", "butterfly machine"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["pull up", "pullup", "pull-up", "chin up", "chinup"],
+      "exerciseIds": ["0572"]
+    },
+    {
+      "terms": ["assisted pull up", "assisted chin up", "assisted pullup", "machine assisted pull up"],
+      "exerciseIds": ["0572"]
+    },
+    {
+      "terms": ["tricep pushdown", "triceps pushdown", "tricep push down", "cable pushdown", "rope pushdown"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["bicep curl machine", "machine curl", "preacher curl machine", "lever curl"],
+      "exerciseIds": ["0575"]
+    },
+    {
+      "terms": ["glute kickback", "donkey kick", "cable kickback", "glute kickback machine"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["hamstring curl", "leg curl", "lying leg curl", "seated leg curl", "leg curl machine"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["quad extension", "leg extension", "leg extension machine", "quad machine"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["calf press machine", "calf raise machine", "seated calf raise machine"],
+      "exerciseIds": ["2289", "1253"]
+    },
+    {
+      "terms": ["smith machine squat", "squat smith machine", "smith squat"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["bench press", "flat bench"],
+      "exerciseIds": ["0025", "0151", "0577", "0576"]
+    },
+    {
+      "terms": ["incline bench", "incline press", "incline bench press"],
+      "exerciseIds": ["0047", "0169", "1300"]
+    },
+    {
+      "terms": ["decline bench", "decline press", "decline bench press"],
+      "exerciseIds": ["0033", "1261"]
+    },
+    {
+      "terms": ["deadlift", "dead lift"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["back extension machine", "hyperextension machine"],
+      "exerciseIds": ["0573"]
+    },
+    {
+      "terms": ["jump rope", "jumping rope", "skipping rope"],
+      "exerciseIds": ["2612"]
+    },
+    {
+      "terms": ["air bike", "assault bike", "airdyne"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["rowing machine", "row machine", "concept 2", "concept2", "erg"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["stair climber", "stairmaster", "stepmill"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["elliptical", "elliptical machine", "cross trainer"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["stationary bike", "spin bike", "exercise bike", "indoor bike", "cycling machine"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["treadmill", "tread mill", "running machine"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["ski erg", "ski machine"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["overhead press", "ohp", "military press", "shoulder press"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["goblet squat"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["farmer carry", "farmer walk", "farmers carry"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["battle rope", "battle ropes"],
+      "exerciseIds": []
+    },
+    {
+      "terms": ["sled push", "prowler", "sled drag"],
+      "exerciseIds": []
+    }
+  ]
+}

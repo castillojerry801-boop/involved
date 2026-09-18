@@ -1,6 +1,6 @@
 'use client'
 
-import { X, Heart } from 'lucide-react'
+import { X, Heart, Info } from 'lucide-react'
 import { type Exercise, getGifUrl } from '@/lib/exercises'
 import { type PreferenceState } from './exercise-browser'
 import { cn } from '@/lib/utils'
@@ -62,7 +62,7 @@ export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleF
                 preference === 'less_often' && 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800',
                 preference === 'dont_recommend' && 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400',
               )}>
-                {preference === 'more_often' ? 'More often' : preference === 'less_often' ? 'Less often' : 'Hidden'}
+                {preference === 'more_often' ? 'More Often' : preference === 'less_often' ? 'Less Often' : "Don't Recommend"}
               </span>
             )}
           </div>
@@ -83,14 +83,19 @@ export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleF
           {/* Preference picker */}
           {onToggleFav && (
             <div className="mb-4">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Preference</p>
+              <div className="flex items-center gap-1.5 mb-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Preference</p>
+                <span title="'Don't Recommend' keeps the exercise searchable and selectable, but signals future smart features to avoid automatically suggesting it.">
+                  <Info className="size-3 text-zinc-300 dark:text-zinc-600" />
+                </span>
+              </div>
               <div className="flex gap-1.5 flex-wrap">
                 {([
                   ['favorite', '♥ Favorite'],
-                  ['more_often', 'More often'],
+                  ['more_often', 'More Often'],
                   ['normal', 'Normal'],
-                  ['less_often', 'Less often'],
-                  ['dont_recommend', 'Hide'],
+                  ['less_often', 'Less Often'],
+                  ['dont_recommend', "Don't Recommend"],
                 ] as [PreferenceState, string][]).map(([state, label]) => (
                   <button
                     key={state}
@@ -98,7 +103,11 @@ export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleF
                     className={cn(
                       'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
                       preference === state
-                        ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                        ? state === 'dont_recommend'
+                          ? 'bg-red-500 text-white'
+                          : state === 'favorite'
+                            ? 'bg-red-500 text-white'
+                            : 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
                         : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
                     )}
                   >
@@ -106,6 +115,11 @@ export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleF
                   </button>
                 ))}
               </div>
+              {preference === 'dont_recommend' && (
+                <p className="text-[11px] text-zinc-400 mt-2">
+                  Still searchable and selectable — not automatically suggested by smart features.
+                </p>
+              )}
             </div>
           )}
 

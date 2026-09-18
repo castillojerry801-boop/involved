@@ -1,7 +1,8 @@
 import { Metadata } from 'next'
-import { filterExercises, getDistinctEquipment, getDistinctTargets } from '@/lib/exercises'
+import { filterExercises, getDistinctEquipment, getDistinctTargets, getExerciseIdsForEquipment } from '@/lib/exercises'
 import { ExerciseBrowser, type BrowserFilterState } from '@/components/training/exercise-browser'
 import { getUser } from '@/lib/supabase/server'
+import { prisma } from '@/lib/prisma'
 import {
   getUserPreferenceMap,
   getAllowedExerciseIds,
@@ -39,13 +40,46 @@ async function search(filters: BrowserFilterState) {
   })
 }
 
-export default async function ExerciseLibraryPage() {
-  const user = await getUser()
+interface PageProps {
+  searchParams: Promise<{ profileId?: string }>
+}
 
-  const [preferences, allowedIds, activeEquipmentList] = await Promise.all([
+export default async function ExerciseLibraryPage({ searchParams }: PageProps) {
+  const user = await getUser()
+  const { profileId } = await searchParams
+
+  // Determine which equipment constraint to apply:
+  // 1. Explicit profileId in URL (from "Exercises I Can Do Here" on a specific profile)
+  // 2. User's active equipment profile
+  // 3. No constraint
+  let allowedIds: Set<string> | null = null
+  let profileName: string | null = null
+  let profileEquipmentList: string[] | null = null
+
+  if (user && profileId) {
+    // Load the specific profile they're browsing from
+    const profile = await prisma.equipmentProfile.findFirst({
+      where: { id: profileId, userId: user.id },
+      include: { items: { select: { equipment: true } } },
+    }).catch(() => null)
+
+    if (profile) {
+      profileEquipmentList = profile.items.map(i => i.equipment)
+      allowedIds = getExerciseIdsForEquipment(profileEquipmentList)
+      profileName = profile.name
+    }
+  } else if (user) {
+    const [ids, equipList] = await Promise.all([
+      getAllowedExerciseIds(user.id),
+      getActiveEquipmentList(user.id),
+    ])
+    allowedIds = ids
+    profileEquipmentList = equipList
+    if (equipList) profileName = 'Active profile'
+  }
+
+  const [preferences] = await Promise.all([
     user ? getUserPreferenceMap(user.id).then(m => Object.fromEntries(m)) : Promise.resolve({}),
-    user ? getAllowedExerciseIds(user.id) : Promise.resolve(null),
-    user ? getActiveEquipmentList(user.id) : Promise.resolve(null),
   ])
 
   const favoriteIds = new Set(
@@ -72,15 +106,21 @@ export default async function ExerciseLibraryPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Exercise Library</h1>
-        <p className="text-sm text-zinc-500">1,394 exercises with animated guides</p>
+        <h1 className="text-2xl font-black text-zinc-900 dark:text-white">
+          {profileName && profileId ? `Exercises at ${profileName}` : 'Exercise Library'}
+        </h1>
+        <p className="text-sm text-zinc-500">
+          {allowedIds
+            ? `${initial.length} exercises with your available equipment`
+            : '1,394 exercises with animated guides'}
+        </p>
       </div>
       <ExerciseBrowser
         initialExercises={initial}
         equipmentOptions={equipmentOptions}
         targetOptions={targetOptions}
         initialPreferences={preferences as Record<string, import('@/components/training/exercise-browser').PreferenceState>}
-        activeEquipmentProfile={activeEquipmentList ? { name: 'Active profile', equipment: activeEquipmentList } : null}
+        activeEquipmentProfile={profileEquipmentList ? { name: profileName ?? 'Profile', equipment: profileEquipmentList } : null}
         onSearch={search}
         showFavoriteToggle
       />

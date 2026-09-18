@@ -1,28 +1,39 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Search, X, Plus, Loader2, Dumbbell } from 'lucide-react'
+import { Search, X, Plus, Loader2, Dumbbell, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ExerciseMeta } from '@/lib/exercises'
 
 const BODY_PARTS = ['all', 'back', 'chest', 'shoulders', 'upper arms', 'lower arms', 'upper legs', 'lower legs', 'waist', 'neck', 'cardio']
+
+// Equipment options with >= 5 exercises shown as individual pills
+const PRIMARY_EQUIPMENT = [
+  'body weight', 'dumbbell', 'cable', 'barbell', 'leverage machine',
+  'band', 'smith machine', 'weighted', 'kettlebell', 'stability ball',
+  'ez barbell', 'medicine ball', 'sled machine', 'resistance band',
+]
 
 interface Props {
   onSelect: (exercise: ExerciseMeta) => void
   onClose: () => void
   selectedIds?: Set<string>
   title?: string
+  /** Pre-restrict to exercises available in the given equipment profile */
+  equipmentProfileIds?: Set<string>
 }
 
-export default function ExercisePicker({ onSelect, onClose, selectedIds, title = 'Add exercise' }: Props) {
+export default function ExercisePicker({ onSelect, onClose, selectedIds, title = 'Add exercise', equipmentProfileIds }: Props) {
   const [q, setQ] = useState('')
   const [bodyPart, setBodyPart] = useState('all')
+  const [equipment, setEquipment] = useState<string | null>(null)
+  const [showEquipment, setShowEquipment] = useState(false)
   const [exercises, setExercises] = useState<ExerciseMeta[]>([])
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const search = useCallback(async (query: string, bp: string) => {
+  const search = useCallback(async (query: string, bp: string, eq: string | null) => {
     setLoading(true)
     try {
       const params = new URLSearchParams({
@@ -30,32 +41,43 @@ export default function ExercisePicker({ onSelect, onClose, selectedIds, title =
         includeCustom: 'true',
         limit: '60',
         ...(bp !== 'all' && { bodyPart: bp }),
+        ...(eq && { equipment: eq }),
       })
       const res = await fetch(`/api/training/exercises?${params}`)
       const data = await res.json() as { exercises: ExerciseMeta[] }
-      setExercises(data.exercises ?? [])
+      let results = data.exercises ?? []
+      // Client-side restrict to profile equipment if provided
+      if (equipmentProfileIds) {
+        results = results.filter(e => equipmentProfileIds.has(e.id) || e.isCustom)
+      }
+      setExercises(results)
     } catch {
       setExercises([])
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [equipmentProfileIds])
 
   useEffect(() => {
     inputRef.current?.focus()
-    search('', 'all')
+    search('', 'all', null)
   }, [search])
 
   const handleQueryChange = (val: string) => {
     setQ(val)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => search(val, bodyPart), 250)
+    debounceRef.current = setTimeout(() => search(val, bodyPart, equipment), 250)
   }
 
   const handleBodyPart = (bp: string) => {
     setBodyPart(bp)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    search(q, bp)
+    search(q, bp, equipment)
+  }
+
+  const handleEquipment = (eq: string | null) => {
+    setEquipment(eq)
+    search(q, bodyPart, eq)
   }
 
   return (
@@ -89,7 +111,7 @@ export default function ExercisePicker({ onSelect, onClose, selectedIds, title =
       </div>
 
       {/* Body part pills */}
-      <div className="px-4 pb-2 shrink-0 overflow-x-auto scrollbar-none">
+      <div className="px-4 pb-1 shrink-0 overflow-x-auto scrollbar-none">
         <div className="flex gap-1.5 w-max">
           {BODY_PARTS.map(bp => (
             <button
@@ -106,6 +128,61 @@ export default function ExercisePicker({ onSelect, onClose, selectedIds, title =
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Equipment filter toggle + pills */}
+      <div className="px-4 pb-2 shrink-0">
+        <button
+          onClick={() => setShowEquipment(v => !v)}
+          className={cn(
+            'flex items-center gap-1 text-xs font-medium transition-colors mb-1',
+            equipment
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+          )}
+        >
+          <ChevronDown className={cn('size-3 transition-transform', showEquipment && 'rotate-180')} />
+          {equipment ? `Equipment: ${equipment}` : 'Filter by equipment'}
+          {equipment && (
+            <button
+              onClick={e => { e.stopPropagation(); handleEquipment(null) }}
+              className="ml-1 text-zinc-400 hover:text-zinc-600"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </button>
+        {showEquipment && (
+          <div className="overflow-x-auto scrollbar-none">
+            <div className="flex gap-1.5 w-max">
+              <button
+                onClick={() => { handleEquipment(null); setShowEquipment(false) }}
+                className={cn(
+                  'px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors',
+                  !equipment
+                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                )}
+              >
+                All
+              </button>
+              {PRIMARY_EQUIPMENT.map(eq => (
+                <button
+                  key={eq}
+                  onClick={() => { handleEquipment(equipment === eq ? null : eq); setShowEquipment(false) }}
+                  className={cn(
+                    'px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors capitalize',
+                    equipment === eq
+                      ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                  )}
+                >
+                  {eq}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Results */}

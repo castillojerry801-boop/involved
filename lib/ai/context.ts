@@ -1,5 +1,6 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
+import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training-context'
 
 // Compact structured context sent to the Coach.
 // AI receives summaries — not raw database records.
@@ -24,12 +25,13 @@ export interface CoachContext {
   user: { name: string; tier: 'free' | 'plus' }
   goals: GoalSummary[]
   nutrition: NutritionContext
+  trainingSnippet: string
 }
 
 export async function buildCoachContext(userId: string, userEmail?: string): Promise<CoachContext> {
   const today = new Date().toISOString().slice(0, 10)
 
-  const [profile, goals, target, entries] = await Promise.all([
+  const [profile, goals, target, entries, trainingCtx] = await Promise.all([
     prisma.profile.findUnique({
       where: { id: userId },
       select: { displayName: true, subscriptionTier: true },
@@ -57,16 +59,13 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
         snapshotFatGPerServing: true,
       },
     }).catch(() => []),
+
+    buildVTrainingContext(userId).catch(() => null),
   ])
 
-  const name =
-    profile?.displayName ||
-    userEmail?.split('@')[0] ||
-    'Athlete'
-
+  const name = profile?.displayName || userEmail?.split('@')[0] || 'Athlete'
   const tier = (profile?.subscriptionTier ?? 'free') as 'free' | 'plus'
 
-  // Compact goal summaries
   const goalSummaries: GoalSummary[] = goals.map(g => ({
     type: g.type,
     title: g.title,
@@ -76,15 +75,15 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
       : undefined,
   }))
 
-  // Deterministic nutrition totals — math done here, not by AI
+  // Math done here — never by AI
   const todayTotals = entries.reduce(
     (acc, e) => {
       const m = Number(e.servingMultiplier)
       return {
         calories: acc.calories + Math.round(Number(e.snapshotCaloriesPerServing) * m),
-        protein:  acc.protein  + Math.round(Number(e.snapshotProteinGPerServing) * m * 10) / 10,
+        protein:  acc.protein  + Math.round(Number(e.snapshotProteinGPerServing)  * m * 10) / 10,
         carbs:    acc.carbs    + Math.round(Number(e.snapshotCarbohydrateGPerServing) * m * 10) / 10,
-        fat:      acc.fat      + Math.round(Number(e.snapshotFatGPerServing) * m * 10) / 10,
+        fat:      acc.fat      + Math.round(Number(e.snapshotFatGPerServing)       * m * 10) / 10,
         count:    acc.count    + 1,
       }
     },
@@ -111,11 +110,16 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
       }
     : { targetsSet: false }
 
-  return { user: { name, tier }, goals: goalSummaries, nutrition }
+  return {
+    user: { name, tier },
+    goals: goalSummaries,
+    nutrition,
+    trainingSnippet: trainingCtx ? trainingContextToPrompt(trainingCtx) : 'TRAINING: No data available.',
+  }
 }
 
 export function contextToSystemSnippet(ctx: CoachContext): string {
-  const { user, goals, nutrition } = ctx
+  const { goals, nutrition, trainingSnippet } = ctx
   const lines: string[] = []
 
   if (goals.length > 0) {
@@ -142,6 +146,9 @@ export function contextToSystemSnippet(ctx: CoachContext): string {
   } else {
     lines.push('NUTRITION: No targets set.')
   }
+
+  lines.push('')
+  lines.push(trainingSnippet)
 
   return lines.join('\n')
 }

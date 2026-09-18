@@ -81,6 +81,24 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ entry }, { status: 201 })
 }
 
+export async function PATCH(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id, servingMultiplier } = await req.json() as { id: string; servingMultiplier: number }
+  if (!id || typeof servingMultiplier !== 'number' || servingMultiplier <= 0) {
+    return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
+  }
+
+  const entry = await prisma.foodLogEntry.updateMany({
+    where: { id, userId: user.id },
+    data: { servingMultiplier },
+  })
+  if (entry.count === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  return NextResponse.json({ ok: true })
+}
+
 export async function DELETE(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

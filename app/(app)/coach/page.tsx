@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Bot, Send, Lock, Loader2, User, Dumbbell, ChevronRight, Sparkles } from 'lucide-react'
+import { Bot, Send, Lock, Loader2, User, Dumbbell, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getGifUrl } from '@/lib/exercises'
 import { cn } from '@/lib/utils'
@@ -46,7 +47,117 @@ const PROMPTS = [
   'What should I eat to hit my protein target?',
 ]
 
+// ─── Inline markdown renderer ─────────────────────────────────────────────────
+// Handles bold, italic, bullet lists, numbered lists, and paragraphs.
+// No external dependency — keeps the bundle small.
+
+function MarkdownText({ text }: { text: string }) {
+  const lines = text.split('\n')
+  const elements: React.ReactNode[] = []
+  let i = 0
+
+  const renderInline = (raw: string): React.ReactNode[] => {
+    // Bold + italic: **text** or *text*
+    const parts = raw.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g)
+    return parts.map((part, j) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={j}>{part.slice(2, -2)}</strong>
+      }
+      if (part.startsWith('*') && part.endsWith('*')) {
+        return <em key={j}>{part.slice(1, -1)}</em>
+      }
+      return part
+    })
+  }
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // Bullet list item
+    if (/^[-•]\s/.test(line)) {
+      const items: string[] = []
+      while (i < lines.length && /^[-•]\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^[-•]\s/, ''))
+        i++
+      }
+      elements.push(
+        <ul key={elements.length} className="my-1.5 space-y-0.5 pl-4 list-disc">
+          {items.map((item, j) => <li key={j}>{renderInline(item)}</li>)}
+        </ul>
+      )
+      continue
+    }
+
+    // Numbered list
+    if (/^\d+\.\s/.test(line)) {
+      const items: string[] = []
+      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+        items.push(lines[i].replace(/^\d+\.\s/, ''))
+        i++
+      }
+      elements.push(
+        <ol key={elements.length} className="my-1.5 space-y-0.5 pl-4 list-decimal">
+          {items.map((item, j) => <li key={j}>{renderInline(item)}</li>)}
+        </ol>
+      )
+      continue
+    }
+
+    // Blank line — paragraph break
+    if (line.trim() === '') {
+      i++
+      continue
+    }
+
+    // Regular paragraph line
+    elements.push(<p key={elements.length} className="mb-1">{renderInline(line)}</p>)
+    i++
+  }
+
+  return <>{elements}</>
+}
+
+// ─── Workout card ─────────────────────────────────────────────────────────────
+
 function WorkoutCard({ data }: { data: WorkoutMessage['data'] }) {
+  const router = useRouter()
+  const [starting, setStarting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleStart = async () => {
+    setStarting(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/workouts/from-proposal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workout_name: data.workout_name,
+          description: data.description,
+          estimated_duration_minutes: data.estimated_duration_minutes,
+          exercises: data.exercises.map(ex => ({
+            exercise_id: ex.exercise_id,
+            sets: ex.sets,
+            reps: ex.reps,
+            duration_seconds: ex.duration_seconds,
+            rest_seconds: ex.rest_seconds,
+            notes: ex.notes,
+          })),
+        }),
+      })
+      const json = await res.json() as { workoutId?: string; error?: string }
+      if (!res.ok || !json.workoutId) {
+        setError(json.error ?? 'Failed to start workout')
+        return
+      }
+      router.push(`/training/workout/${json.workoutId}`)
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setStarting(false)
+    }
+  }
+
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
       <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-start justify-between gap-2">
@@ -62,7 +173,6 @@ function WorkoutCard({ data }: { data: WorkoutMessage['data'] }) {
         {data.exercises.map((ex, i) => (
           <div key={i} className="flex items-center gap-3 px-4 py-3">
             <div className="size-12 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
-              {/* GIF served from our storage — never sent to OpenAI */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={getGifUrl(ex.exercise_id)} alt={ex.exercise.name} className="h-full w-auto object-contain" />
             </div>
@@ -81,15 +191,22 @@ function WorkoutCard({ data }: { data: WorkoutMessage['data'] }) {
           </div>
         ))}
       </div>
-      <div className="px-4 py-3 border-t border-zinc-100 dark:border-zinc-800">
-        <button className="w-full rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-2.5 text-sm font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
-          <Dumbbell className="size-4" />
-          Start this workout
+      <div className="px-4 py-3 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        <button
+          onClick={handleStart}
+          disabled={starting}
+          className="w-full rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-2.5 text-sm font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {starting ? <Loader2 className="size-4 animate-spin" /> : <Dumbbell className="size-4" />}
+          {starting ? 'Starting...' : 'Start this workout'}
         </button>
       </div>
     </div>
   )
 }
+
+// ─── Message bubble ───────────────────────────────────────────────────────────
 
 function MessageBubble({ msg }: { msg: Message }) {
   if (msg.type === 'workout') return (
@@ -113,16 +230,21 @@ function MessageBubble({ msg }: { msg: Message }) {
         {isUser ? <User className="size-4" /> : <Bot className="size-4" />}
       </div>
       <div className={cn(
-        'max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap',
+        'max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
         isUser
           ? 'rounded-tr-sm bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
           : 'rounded-tl-sm bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100'
       )}>
-        {msg.content}
+        {isUser
+          ? <p className="whitespace-pre-wrap">{msg.content}</p>
+          : <MarkdownText text={msg.content} />
+        }
       </div>
     </div>
   )
 }
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CoachPage() {
   const [messages, setMessages] = useState<Message[]>([])
@@ -141,7 +263,6 @@ export default function CoachPage() {
   useEffect(() => { fetchUsage() }, [fetchUsage])
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
-  // Build the conversation history for the API (text messages only)
   const apiMessages = () =>
     messages
       .filter(m => m.type === 'text')
@@ -152,13 +273,10 @@ export default function CoachPage() {
     if (!trimmed || streaming || limitReached) return
 
     const userMsg: TextMessage = { role: 'user', content: trimmed, type: 'text' }
-    setMessages(prev => [...prev, userMsg])
     setInput('')
     setStreaming(true)
 
-    // Add streaming placeholder
     let assistantText = ''
-    const placeholderIdx = messages.length + 1
     setMessages(prev => [...prev, userMsg, { role: 'assistant', content: '', type: 'text' }])
 
     try {
@@ -170,12 +288,11 @@ export default function CoachPage() {
 
       if (res.status === 429) {
         setLimitReached(true)
-        setMessages(prev => prev.slice(0, -1))
+        setMessages(prev => prev.slice(0, -2))
         return
       }
       if (!res.ok || !res.body) throw new Error('Request failed')
 
-      // Update usage from headers
       const usageCount = res.headers.get('X-Usage-Count')
       const usageLimit = res.headers.get('X-Usage-Limit')
       if (usageCount && usage) {
@@ -189,7 +306,6 @@ export default function CoachPage() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
-      void placeholderIdx
 
       while (true) {
         const { done, value } = await reader.read()
@@ -215,12 +331,9 @@ export default function CoachPage() {
                 return updated
               })
             } else if (event.type === 'workout' && event.data) {
-              setMessages(prev => [
-                ...prev,
-                { role: 'assistant', type: 'workout', data: event.data! },
-              ])
+              setMessages(prev => [...prev, { role: 'assistant', type: 'workout', data: event.data! }])
             }
-          } catch { /* malformed event, skip */ }
+          } catch { /* malformed event */ }
         }
       }
     } catch {
@@ -239,7 +352,7 @@ export default function CoachPage() {
   }
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input) }
   }
 
   const usedPct = usage?.limit ? Math.min((usage.count / usage.limit) * 100, 100) : 0
@@ -284,13 +397,13 @@ export default function CoachPage() {
             </div>
             <p className="font-bold text-zinc-800 dark:text-zinc-200 mb-1">Your AI fitness coach</p>
             <p className="text-sm text-zinc-400 mb-6 max-w-xs">
-              Ask about training, nutrition, or how to reach your goals. I have your targets and goals on hand.
+              Ask about training, nutrition, or how to reach your goals. I know your goals, recent workouts, and equipment.
             </p>
             <div className="flex flex-col gap-2 w-full max-w-sm">
               {PROMPTS.map(p => (
                 <button
                   key={p}
-                  onClick={() => send(p)}
+                  onClick={() => void send(p)}
                   disabled={streaming || limitReached}
                   className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-2.5 text-left text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white transition-colors disabled:opacity-50"
                 >
@@ -305,18 +418,21 @@ export default function CoachPage() {
           <MessageBubble key={i} msg={msg} />
         ))}
 
-        {streaming && messages[messages.length - 1]?.type === 'text' && (messages[messages.length - 1] as TextMessage).content === '' && (
-          <div className="flex gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-              <Bot className="size-4 text-zinc-500" />
+        {streaming && (() => {
+          const last = messages[messages.length - 1]
+          return last?.role === 'assistant' && last.type === 'text' && last.content === '' ? (
+            <div className="flex gap-3">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
+                <Bot className="size-4 text-zinc-500" />
+              </div>
+              <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm bg-zinc-100 dark:bg-zinc-800 px-4 py-3">
+                <span className="size-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:0ms]" />
+                <span className="size-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:150ms]" />
+                <span className="size-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:300ms]" />
+              </div>
             </div>
-            <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm bg-zinc-100 dark:bg-zinc-800 px-4 py-3">
-              <span className="size-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:0ms]" />
-              <span className="size-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:150ms]" />
-              <span className="size-1.5 rounded-full bg-zinc-400 animate-bounce [animation-delay:300ms]" />
-            </div>
-          </div>
-        )}
+          ) : null
+        })()}
 
         {limitReached && (
           <div className="mx-2 rounded-2xl border border-amber-200 bg-amber-50 dark:border-amber-800/30 dark:bg-amber-900/10 p-4">
@@ -369,7 +485,7 @@ export default function CoachPage() {
           />
           <Button
             size="sm"
-            onClick={() => send(input)}
+            onClick={() => void send(input)}
             disabled={!input.trim() || streaming || limitReached}
             className="shrink-0 size-8 p-0 rounded-xl"
           >

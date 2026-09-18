@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
-import { Search, Barcode, Camera, X, Plus, Loader2, ChevronDown, ChevronUp, Minus } from 'lucide-react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import { Search, Barcode, Camera, X, Plus, Loader2, ChevronDown, ChevronUp, Minus, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { BarcodeScanner } from './barcode-scanner'
@@ -209,9 +209,17 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
   const [tab, setTab] = useState<Tab>('search')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<FoodResult[]>([])
+  const [recentFoods, setRecentFoods] = useState<FoodResult[]>([])
   const [searching, setSearching] = useState(false)
   const [logging, setLogging] = useState<string | null>(null)
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    fetch('/api/nutrition/recent')
+      .then(r => r.ok ? r.json() as Promise<{ foods: FoodResult[] }> : null)
+      .then(d => { if (d) setRecentFoods(d.foods) })
+      .catch(() => {})
+  }, [])
 
   const search = useCallback(async (q: string) => {
     if (q.trim().length < 2) { setResults([]); return }
@@ -369,7 +377,26 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
                 </div>
               )}
 
-              {!query && (
+              {!query && recentFoods.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Clock className="size-3.5 text-zinc-400" />
+                    <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Recently logged</p>
+                  </div>
+                  <div className="flex flex-col">
+                    {recentFoods.map((food, i) => (
+                      <FoodCard
+                        key={`recent-${i}`}
+                        food={food}
+                        onLog={logFood}
+                        logging={logging === food.externalId}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!query && recentFoods.length === 0 && (
                 <div className="py-6 text-center">
                   <p className="text-xs text-zinc-400">Results come from USDA FoodData Central + Open Food Facts</p>
                 </div>

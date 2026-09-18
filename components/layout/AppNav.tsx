@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Sun, Utensils, Dumbbell, TrendingUp, User, Target, Bot } from 'lucide-react'
+import { Sun, Utensils, Dumbbell, TrendingUp, User, Target, Bot, Activity, Users } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -11,9 +11,20 @@ const navItems = [
   { href: '/today',    label: 'Today',    icon: Sun },
   { href: '/nutrition',label: 'Nutrition', icon: Utensils },
   { href: '/training', label: 'Training',  icon: Dumbbell },
+  { href: '/health',   label: 'Health',    icon: Activity },
   { href: '/coach',    label: 'Coach',     icon: Bot },
-  { href: '/goals',    label: 'Goals',    icon: Target },
+  { href: '/trainer',  label: 'Trainer',   icon: Users },
+  { href: '/goals',    label: 'Goals',     icon: Target },
   { href: '/progress', label: 'Progress',  icon: TrendingUp },
+  { href: '/profile',  label: 'Profile',   icon: User },
+]
+
+// Subset shown in the mobile bottom bar — keep to 5 to avoid crowding
+const mobileNavItems = [
+  { href: '/today',    label: 'Today',    icon: Sun },
+  { href: '/training', label: 'Training',  icon: Dumbbell },
+  { href: '/health',   label: 'Health',    icon: Activity },
+  { href: '/coach',    label: 'Coach',     icon: Bot },
   { href: '/profile',  label: 'Profile',   icon: User },
 ]
 
@@ -69,7 +80,7 @@ export function AppNav() {
 
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex border-t border-zinc-200/50 bg-white/80 backdrop-blur-md dark:border-zinc-700/50 dark:bg-zinc-950/80">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {mobileNavItems.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href)
           return (
             <Link

@@ -1,4 +1,5 @@
 import exercisesRaw from '@/data/exercises.json'
+import aliasesRaw from '@/data/exercise-aliases.json'
 
 export interface Exercise {
   id: string
@@ -61,6 +62,45 @@ export function getDistinctTargets(): string[] {
   return _targetCache
 }
 
+// ─── Alias / synonym expansion ────────────────────────────────────────────────
+// Aliases map common user-facing search terms to ExerciseDB exercise IDs.
+// Stored in data/exercise-aliases.json — separate from ExerciseDB source data.
+// Returns a Set of exercise IDs that match any alias for the given query.
+
+interface AliasEntry {
+  terms: string[]
+  exerciseIds: string[]
+}
+
+let _aliasIndex: Map<string, Set<string>> | null = null
+
+function getAliasIndex(): Map<string, Set<string>> {
+  if (_aliasIndex) return _aliasIndex
+  _aliasIndex = new Map()
+  for (const entry of (aliasesRaw as { aliases: AliasEntry[] }).aliases) {
+    if (!entry.exerciseIds.length) continue
+    for (const term of entry.terms) {
+      const existing = _aliasIndex.get(term.toLowerCase()) ?? new Set()
+      for (const id of entry.exerciseIds) existing.add(id)
+      _aliasIndex.set(term.toLowerCase(), existing)
+    }
+  }
+  return _aliasIndex
+}
+
+export function getAliasMatchIds(query: string): Set<string> {
+  if (!query.trim()) return new Set()
+  const lq = query.toLowerCase().trim()
+  const index = getAliasIndex()
+  const matched = new Set<string>()
+  for (const [term, ids] of index) {
+    if (term.includes(lq) || lq.includes(term)) {
+      for (const id of ids) matched.add(id)
+    }
+  }
+  return matched
+}
+
 // ─── Stackable filter ─────────────────────────────────────────────────────────
 
 export interface FilterOptions {
@@ -111,13 +151,26 @@ export function filterExercises(opts: FilterOptions): Exercise[] {
 
   if (q?.trim()) {
     const lq = q.toLowerCase()
-    results = results.filter(e =>
+    // Text match against exercise fields
+    const textMatches = results.filter(e =>
       e.name.toLowerCase().includes(lq) ||
       e.target.toLowerCase().includes(lq) ||
       e.equipment.toLowerCase().includes(lq) ||
       e.bodyPart.toLowerCase().includes(lq) ||
       e.secondaryMuscles.some(m => m.toLowerCase().includes(lq))
     )
+
+    // Alias expansion — exercises matched via synonym/alias file
+    const aliasIds = getAliasMatchIds(q)
+    if (aliasIds.size > 0) {
+      const textMatchIds = new Set(textMatches.map(e => e.id))
+      // Alias matches that survived the other active filters (allowedIds, bodyPart, equipment, target)
+      const aliasMatches = results.filter(e => aliasIds.has(e.id) && !textMatchIds.has(e.id))
+      // Text matches first, then alias-only matches
+      results = [...textMatches, ...aliasMatches]
+    } else {
+      results = textMatches
+    }
   }
 
   // Favorites float to the top when not in favoritesOnly mode

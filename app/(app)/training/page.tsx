@@ -215,6 +215,9 @@ export default async function TrainingPage() {
       <section className="mb-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-bold text-zinc-900 dark:text-white">Recent workouts</h2>
+          <Link href="/training/history" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+            View all
+          </Link>
         </div>
 
         {recent.length === 0 ? (

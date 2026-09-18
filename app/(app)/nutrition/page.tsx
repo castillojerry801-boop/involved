@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Search, ChevronLeft, ChevronRight, Pencil } from 'lucide-react'
+import { Plus, Trash2, Search, ChevronLeft, ChevronRight, Pencil, Minus, Loader2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { FoodSearchModal } from '@/components/nutrition/food-search-modal'
@@ -61,6 +61,78 @@ function formatDisplayDate(dateStr: string) {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
+// ─── Inline serving editor ────────────────────────────────────────────────────
+
+function ServingEditor({ entry, onSaved, onCancel }: {
+  entry: LogEntry
+  onSaved: () => void
+  onCancel: () => void
+}) {
+  const [servings, setServings] = useState(entry.servingMultiplier)
+  const [saving, setSaving] = useState(false)
+
+  const cal = Math.round(entry.calories / entry.servingMultiplier * servings)
+  const pro = Math.round(entry.proteinG / entry.servingMultiplier * servings * 10) / 10
+  const carb = Math.round(entry.carbohydrateG / entry.servingMultiplier * servings * 10) / 10
+  const fat = Math.round(entry.fatG / entry.servingMultiplier * servings * 10) / 10
+
+  const handleSave = async () => {
+    setSaving(true)
+    await fetch('/api/nutrition/log', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: entry.id, servingMultiplier: servings }),
+    })
+    onSaved()
+  }
+
+  return (
+    <div className="py-2.5 border-b border-zinc-50 dark:border-zinc-800/50">
+      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">{entry.foodName}</p>
+      <div className="flex items-center gap-3 mb-2">
+        <span className="text-xs text-zinc-500">Servings</span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setServings(s => Math.max(0.5, Math.round((s - 0.5) * 10) / 10))}
+            className="flex size-6 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          >
+            <Minus className="size-3" />
+          </button>
+          <input
+            type="number"
+            min={0.5} max={20} step={0.5}
+            value={servings}
+            onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) setServings(Math.round(v * 10) / 10) }}
+            className="w-12 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1 text-center text-sm text-zinc-900 dark:text-white focus:outline-none"
+          />
+          <button
+            onClick={() => setServings(s => Math.round((s + 0.5) * 10) / 10)}
+            className="flex size-6 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          >
+            <Plus className="size-3" />
+          </button>
+        </div>
+        <span className="text-xs text-zinc-400">{cal} cal · P {pro}g · C {carb}g · F {fat}g</span>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-1 rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-3 py-1 text-xs font-bold hover:opacity-90 disabled:opacity-50"
+        >
+          {saving && <Loader2 className="size-3 animate-spin" />}
+          Save
+        </button>
+        <button onClick={onCancel} className="rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-xs text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800">
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function NutritionPage() {
   const [logDate, setLogDate] = useState(toDateString(new Date()))
   const [entries, setEntries] = useState<LogEntry[]>([])
@@ -70,8 +142,12 @@ export default function NutritionPage() {
   const [addingTo, setAddingTo] = useState<MealType | null>(null)
   const [editingGoals, setEditingGoals] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [editingEntry, setEditingEntry] = useState<string | null>(null)
 
   const isToday = logDate === toDateString(new Date())
+  // Allow editing up to 7 days back
+  const daysDiff = Math.floor((Date.now() - new Date(logDate + 'T12:00:00').getTime()) / 86400000)
+  const canEdit = daysDiff <= 7
 
   const fetchDaily = useCallback(async () => {
     setLoading(true)
@@ -93,6 +169,7 @@ export default function NutritionPage() {
   }
 
   const goForward = () => {
+    if (isToday) return
     const d = new Date(logDate + 'T12:00:00')
     d.setDate(d.getDate() + 1)
     setLogDate(toDateString(d))
@@ -117,7 +194,7 @@ export default function NutritionPage() {
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Nutrition</h1>
-        {isToday && (
+        {canEdit && (
           <Button size="sm" onClick={() => setAddingTo('breakfast')}>
             <Plus className="size-4" />
             Add food
@@ -211,8 +288,8 @@ export default function NutritionPage() {
         </div>
       </Card>
 
-      {/* Quick add — only on current day */}
-      {isToday && (
+      {/* Quick add */}
+      {canEdit && (
         <button
           onClick={() => setAddingTo('breakfast')}
           className="mb-6 flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/80 px-4 py-3 text-left text-sm text-zinc-400 shadow-sm transition-colors hover:border-zinc-300 backdrop-blur-sm"
@@ -238,7 +315,7 @@ export default function NutritionPage() {
                   {mealCals > 0 && (
                     <span className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">{mealCals} cal</span>
                   )}
-                  {isToday && (
+                  {canEdit && (
                     <button
                       onClick={() => setAddingTo(id)}
                       className="flex size-7 items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 transition-colors"
@@ -252,28 +329,48 @@ export default function NutritionPage() {
               {mealEntries.length > 0 ? (
                 <div className="px-5 py-1">
                   {mealEntries.map(entry => (
-                    <div key={entry.id} className="flex items-center justify-between py-2.5 border-b border-zinc-50 dark:border-zinc-800/50 last:border-0">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-zinc-700 dark:text-zinc-300 truncate">{entry.foodName}</p>
-                        <p className="text-xs text-zinc-400">
-                          {entry.calories} cal · P {entry.proteinG}g · C {entry.carbohydrateG}g · F {entry.fatG}g
-                        </p>
+                    editingEntry === entry.id ? (
+                      <ServingEditor
+                        key={entry.id}
+                        entry={entry}
+                        onSaved={async () => { setEditingEntry(null); await fetchDaily() }}
+                        onCancel={() => setEditingEntry(null)}
+                      />
+                    ) : (
+                      <div key={entry.id} className="flex items-center justify-between py-2.5 border-b border-zinc-50 dark:border-zinc-800/50 last:border-0">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-zinc-700 dark:text-zinc-300 truncate">{entry.foodName}</p>
+                          <p className="text-xs text-zinc-400">
+                            {entry.calories} cal · P {entry.proteinG}g · C {entry.carbohydrateG}g · F {entry.fatG}g
+                            {entry.servingMultiplier !== 1 && (
+                              <span className="text-zinc-300 dark:text-zinc-600"> · {entry.servingMultiplier}×</span>
+                            )}
+                          </p>
+                        </div>
+                        {canEdit && (
+                          <div className="flex items-center gap-0.5 ml-3 shrink-0">
+                            <button
+                              onClick={() => setEditingEntry(entry.id)}
+                              className="flex size-7 items-center justify-center rounded-lg text-zinc-300 hover:bg-zinc-100 hover:text-zinc-500 dark:hover:bg-zinc-800 transition-colors"
+                            >
+                              <Pencil className="size-3" />
+                            </button>
+                            <button
+                              onClick={() => deleteEntry(entry.id)}
+                              disabled={deleting === entry.id}
+                              className="flex size-7 shrink-0 items-center justify-center rounded-lg text-zinc-300 hover:bg-red-50 hover:text-red-400 dark:hover:bg-red-950/30 transition-colors disabled:opacity-40"
+                            >
+                              {deleting === entry.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      {isToday && (
-                        <button
-                          onClick={() => deleteEntry(entry.id)}
-                          disabled={deleting === entry.id}
-                          className="ml-3 flex size-7 shrink-0 items-center justify-center rounded-lg text-zinc-300 hover:bg-red-50 hover:text-red-400 dark:hover:bg-red-950/30 transition-colors disabled:opacity-40"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      )}
-                    </div>
+                    )
                   ))}
                 </div>
               ) : (
                 <div className="px-5 py-4">
-                  <p className="text-sm text-zinc-400">{isToday ? 'No foods logged yet' : 'Nothing logged'}</p>
+                  <p className="text-sm text-zinc-400">{canEdit ? 'No foods logged yet' : 'Nothing logged'}</p>
                 </div>
               )}
             </Card>

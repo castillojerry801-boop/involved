@@ -71,6 +71,8 @@ async function getTodayNutrition(userId: string) {
 export default async function TodayPage() {
   const user = await getUser()
   if (!user) redirect('/login')
+  // New users who haven't completed onboarding get redirected there first.
+  // We check after fetching the profile below.
 
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
@@ -79,7 +81,7 @@ export default async function TodayPage() {
 
   const [nutrition, profile, todayWorkout] = await Promise.all([
     getTodayNutrition(user.id),
-    prisma.profile.findUnique({ where: { id: user.id }, select: { displayName: true } }).catch(() => null),
+    prisma.profile.findUnique({ where: { id: user.id }, select: { displayName: true, fitnessLevel: true } }).catch(() => null),
     prisma.workout.findFirst({
       where: {
         userId: user.id,
@@ -102,6 +104,8 @@ export default async function TodayPage() {
       include: { exercises: { select: { exerciseId: true }, take: 5 } },
     }).catch(() => null),
   ])
+
+  if (!profile?.fitnessLevel) redirect('/onboarding')
 
   const displayName =
     profile?.displayName ||

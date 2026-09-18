@@ -33,22 +33,30 @@ export async function GET(req: NextRequest) {
     source: 'library' as const,
   }))
 
-  // 2. Fan out to all registered providers in parallel
-  // USDA (index 0) results come first in the merged list
+  // 2. Fan out to all registered providers in parallel.
+  // USDA (index 0) comes first — Foundation/SR Legacy results are ranked highest within USDA.
   const providerResults = (
-    await Promise.all(FOOD_PROVIDERS.map(p => p.search(query, { limit: 15 }).catch(() => [])))
+    await Promise.all(FOOD_PROVIDERS.map(p => p.search(query, { limit: 20 }).catch(() => [])))
   ).flat()
 
-  // 3. Dedupe by name+brand — prefer earlier providers (USDA before OFF)
+  // 3. Drop results with zero usable nutrition (avoids polluting list with empty entries)
+  const withNutrition = providerResults.filter(r =>
+    r.coreNutrients.calories > 0 ||
+    r.coreNutrients.proteinG > 0 ||
+    r.coreNutrients.carbohydrateG > 0 ||
+    r.coreNutrients.fatG > 0
+  )
+
+  // 4. Dedupe by name+brand — prefer earlier providers (USDA before OFF)
   const seen = new Set<string>()
-  const deduped = providerResults.filter(r => {
+  const deduped = withNutrition.filter(r => {
     const key = `${r.name.toLowerCase()}|${(r.brand ?? '').toLowerCase()}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
 
-  // 4. Also skip items already covered by the local cache
+  // 5. Also skip items already covered by the local cache
   const cachedNames = new Set(cachedResults.map(r => `${r.name.toLowerCase()}|${(r.brand ?? '').toLowerCase()}`))
   const external = deduped.filter(r => {
     const key = `${r.name.toLowerCase()}|${(r.brand ?? '').toLowerCase()}`
