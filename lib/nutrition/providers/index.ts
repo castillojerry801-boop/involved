@@ -12,11 +12,17 @@ import type { FoodProvider } from './types'
 import { FatSecretProvider } from './fatsecret'
 import { OpenFoodFactsProvider } from './open-food-facts'
 import { UsdaFoodDataProvider } from './usda-fooddata'
+import { NihDsldProvider } from './nih-dsld'
 
-// Priority order: FatSecret (best global DB + barcode) → USDA (authoritative whole foods) → Open Food Facts (fallback)
+// Priority order:
+//   FatSecret   — best global food DB + barcode coverage
+//   USDA        — authoritative whole foods (chicken, rice, eggs)
+//   NIH DSLD    — supplement-specific (protein powder, vitamins, creatine)
+//   Open Food Facts — catch-all barcode fallback
 export const FOOD_PROVIDERS: FoodProvider[] = [
   new FatSecretProvider(),
   new UsdaFoodDataProvider(),
+  new NihDsldProvider(),
   new OpenFoodFactsProvider(),
 ]
 
