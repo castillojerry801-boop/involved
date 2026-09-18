@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Loader2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BodyStatsInput } from '@/components/ui/body-stats-input'
 
 type FitnessLevel = 'beginner' | 'intermediate' | 'advanced'
 
@@ -35,8 +36,8 @@ export default function ProfileEditPage() {
     username:     '',
     bio:          '',
     fitnessLevel: null as FitnessLevel | null,
-    heightCm:     '',
-    weightKg:     '',
+    heightCm:     null as number | null,
+    weightKg:     null as number | null,
   })
 
   useEffect(() => {
@@ -48,8 +49,8 @@ export default function ProfileEditPage() {
           username:     profile.username     ?? '',
           bio:          profile.bio          ?? '',
           fitnessLevel: profile.fitnessLevel ?? null,
-          heightCm:     profile.heightCm != null ? String(profile.heightCm)  : '',
-          weightKg:     profile.weightKg != null ? String(profile.weightKg)  : '',
+          heightCm:     profile.heightCm != null ? Number(profile.heightCm) : null,
+          weightKg:     profile.weightKg != null ? Number(profile.weightKg) : null,
         })
       })
       .finally(() => setLoading(false))
@@ -68,8 +69,8 @@ export default function ProfileEditPage() {
         username:     form.username,
         bio:          form.bio,
         fitnessLevel: form.fitnessLevel,
-        heightCm:     form.heightCm  ? parseFloat(form.heightCm)  : null,
-        weightKg:     form.weightKg  ? parseFloat(form.weightKg)  : null,
+        heightCm:     form.heightCm,
+        weightKg:     form.weightKg,
       }),
     })
 
@@ -167,30 +168,12 @@ export default function ProfileEditPage() {
         </div>
 
         {/* Body stats */}
-        <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-4">
-          <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Body stats</p>
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="text-xs text-zinc-500 block mb-1.5">Weight (kg)</label>
-              <input
-                type="number"
-                value={form.weightKg}
-                onChange={e => setForm(f => ({ ...f, weightKg: e.target.value }))}
-                placeholder="75"
-                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2.5 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="text-xs text-zinc-500 block mb-1.5">Height (cm)</label>
-              <input
-                type="number"
-                value={form.heightCm}
-                onChange={e => setForm(f => ({ ...f, heightCm: e.target.value }))}
-                placeholder="178"
-                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2.5 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400"
-              />
-            </div>
-          </div>
+        <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+          <BodyStatsInput
+            weightKg={form.weightKg}
+            heightCm={form.heightCm}
+            onChange={(wkg, hcm) => setForm(f => ({ ...f, weightKg: wkg, heightCm: hcm }))}
+          />
         </div>
 
         {/* Error */}

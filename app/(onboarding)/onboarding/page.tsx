@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, ChevronRight, Loader2, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { BodyStatsInput } from '@/components/ui/body-stats-input'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -56,8 +57,8 @@ interface FormState {
   goalTitle:      string
   equipment:      Set<string>
   weeklyWorkouts: number
-  weightKg:       string
-  heightCm:       string
+  weightKg:       number | null
+  heightCm:       number | null
 }
 
 const TOTAL_STEPS = 5
@@ -116,8 +117,8 @@ export default function OnboardingPage() {
     goalTitle:      '',
     equipment:      new Set(),
     weeklyWorkouts: 3,
-    weightKg:       '',
-    heightCm:       '',
+    weightKg:       null,
+    heightCm:       null,
   })
 
   function next() { setStep(s => s + 1) }
@@ -143,8 +144,8 @@ export default function OnboardingPage() {
           goalTitle:      form.goalTitle.trim(),
           equipment:      Array.from(form.equipment),
           weeklyWorkouts: form.weeklyWorkouts,
-          weightKg:       form.weightKg ? parseFloat(form.weightKg) : undefined,
-          heightCm:       form.heightCm ? parseFloat(form.heightCm) : undefined,
+          weightKg:       form.weightKg ?? undefined,
+          heightCm:       form.heightCm ?? undefined,
         }),
       })
       router.push('/today')
@@ -319,30 +320,12 @@ export default function OnboardingPage() {
 
           {/* Optional body stats */}
           <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 mb-1">
-            <p className="text-sm font-bold text-zinc-900 dark:text-white mb-1">Body stats <span className="font-normal text-zinc-400">(optional)</span></p>
             <p className="text-xs text-zinc-400 mb-3">Used to personalise nutrition estimates and progress tracking.</p>
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <label className="text-xs text-zinc-400 block mb-1">Weight (kg)</label>
-                <input
-                  type="number"
-                  value={form.weightKg}
-                  onChange={e => setForm(f => ({ ...f, weightKg: e.target.value }))}
-                  placeholder="75"
-                  className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="text-xs text-zinc-400 block mb-1">Height (cm)</label>
-                <input
-                  type="number"
-                  value={form.heightCm}
-                  onChange={e => setForm(f => ({ ...f, heightCm: e.target.value }))}
-                  placeholder="178"
-                  className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
-                />
-              </div>
-            </div>
+            <BodyStatsInput
+              weightKg={form.weightKg}
+              heightCm={form.heightCm}
+              onChange={(wkg, hcm) => setForm(f => ({ ...f, weightKg: wkg, heightCm: hcm }))}
+            />
           </div>
 
           <button
