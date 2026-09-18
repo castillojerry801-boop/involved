@@ -141,6 +141,19 @@ export function getExerciseById(id: string): Exercise | undefined {
   return exercises.find(e => e.id === id)
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export function isCustomExerciseId(id: string): boolean {
+  return UUID_RE.test(id)
+}
+
+// ExerciseMeta unifies ExerciseDB exercises and custom exercises
+// into one shape safe to use across the UI.
+export interface ExerciseMeta extends Exercise {
+  isCustom?: boolean
+  trackingType?: string
+}
+
 // Returns compatible exercise IDs for a given list of equipment values.
 // Used by equipment profiles and (future) V workout generation.
 export function getExerciseIdsForEquipment(equipmentList: string[]): Set<string> {

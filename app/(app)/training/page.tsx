@@ -173,6 +173,17 @@ export default async function TrainingPage() {
           </div>
           <ChevronRight className="size-4 text-zinc-300 shrink-0" />
         </Link>
+
+        <Link href="/training/exercises/custom" className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
+            <Plus className="size-5 text-zinc-500 dark:text-zinc-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm text-zinc-900 dark:text-white">Custom exercises</p>
+            <p className="text-xs text-zinc-400">Create exercises not in the library</p>
+          </div>
+          <ChevronRight className="size-4 text-zinc-300 shrink-0" />
+        </Link>
       </div>
 
       <Link href="/training/exercises">

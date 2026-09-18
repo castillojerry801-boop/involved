@@ -3,6 +3,8 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { filterExercises } from '@/lib/exercises'
 import { getUserFavoriteIds, getUserExcludedIds } from '@/lib/training/exercise-queries'
+import { getUserCustomExercises } from '@/lib/training/custom-exercises'
+import type { ExerciseMeta } from '@/lib/exercises'
 
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams
@@ -11,12 +13,13 @@ export async function GET(req: NextRequest) {
   const equipment = sp.get('equipment') ?? undefined
   const target = sp.get('target') ?? undefined
   const favoritesOnly = sp.get('favoritesOnly') === 'true'
+  const includeCustom = sp.get('includeCustom') === 'true'
   const limit = Math.min(parseInt(sp.get('limit') ?? '60'), 200)
   const offset = parseInt(sp.get('offset') ?? '0')
 
-  // Load user preferences when needed
   let favoriteIds: Set<string> | undefined
   let excludeIds: Set<string> | undefined
+  let customExercises: ExerciseMeta[] = []
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -28,6 +31,14 @@ export async function GET(req: NextRequest) {
     ])
     favoriteIds = favs
     excludeIds = excl
+  }
+
+  if (includeCustom && user) {
+    const allCustom = await getUserCustomExercises(user.id)
+    const lq = q.toLowerCase()
+    customExercises = allCustom.filter(c =>
+      !q || c.name.toLowerCase().includes(lq) || (c.target ?? '').toLowerCase().includes(lq)
+    )
   }
 
   const exercises = filterExercises({
@@ -42,5 +53,8 @@ export async function GET(req: NextRequest) {
     offset,
   })
 
-  return Response.json({ exercises, total: exercises.length })
+  return Response.json({
+    exercises: [...customExercises, ...exercises],
+    total: customExercises.length + exercises.length,
+  })
 }

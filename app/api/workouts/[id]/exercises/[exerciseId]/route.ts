@@ -2,10 +2,12 @@ import 'server-only'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
+import { getExerciseById, isCustomExerciseId } from '@/lib/exercises'
+import { verifyCustomExerciseIds } from '@/lib/training/custom-exercises'
 
 type Params = { params: Promise<{ id: string; exerciseId: string }> }
 
-// ─── PATCH: update exercise notes ────────────────────────────────────────────
+// ─── PATCH: update exercise notes or substitute (change exerciseId) ───────────
 
 export async function PATCH(req: NextRequest, { params }: Params) {
   const supabase = await createClient()
@@ -13,7 +15,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id: workoutId, exerciseId } = await params
-  const body = await req.json() as { notes?: string }
+  const body = await req.json() as { notes?: string; newExerciseId?: string }
 
   try {
     const exercise = await prisma.workoutExercise.findFirst({
@@ -21,9 +23,21 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     })
     if (!exercise) return Response.json({ error: 'Not found' }, { status: 404 })
 
+    if (body.newExerciseId !== undefined) {
+      if (!isCustomExerciseId(body.newExerciseId) && !getExerciseById(body.newExerciseId)) {
+        return Response.json({ error: 'Exercise not found' }, { status: 400 })
+      }
+      if (!(await verifyCustomExerciseIds([body.newExerciseId], user.id))) {
+        return Response.json({ error: 'Custom exercise not found' }, { status: 400 })
+      }
+    }
+
     const updated = await prisma.workoutExercise.update({
       where: { id: exerciseId },
-      data: { notes: body.notes !== undefined ? (body.notes.trim() || null) : undefined },
+      data: {
+        ...(body.notes !== undefined && { notes: body.notes.trim() || null }),
+        ...(body.newExerciseId !== undefined && { exerciseId: body.newExerciseId }),
+      },
     })
 
     return Response.json({ exercise: updated })

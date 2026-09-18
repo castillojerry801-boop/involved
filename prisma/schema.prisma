@@ -45,6 +45,7 @@ model Profile {
   exercisePreferences ExercisePreference[]
   equipmentProfiles   EquipmentProfile[]
   weeklyTargets       WeeklyTarget[]
+  customExercises     CustomExercise[]
 
   // Nutrition relations
   createdFoods     FoodItem[]       @relation("FoodItemsCreated")
@@ -372,16 +373,18 @@ model ProgramSet {
 // ═════════════════════════════════════════════════════════════════════
 
 model WorkoutTemplate {
-  id          String             @id @default(uuid()) @db.Uuid
-  userId      String             @map("user_id") @db.Uuid
-  name        String             @db.VarChar(200)
-  description String?            @db.VarChar(500)
-  createdAt   DateTime           @default(now()) @map("created_at")
-  updatedAt   DateTime           @updatedAt @map("updated_at")
+  id                 String             @id @default(uuid()) @db.Uuid
+  userId             String             @map("user_id") @db.Uuid
+  name               String             @db.VarChar(200)
+  description        String?            @db.VarChar(500)
+  equipmentProfileId String?            @map("equipment_profile_id") @db.Uuid
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
 
-  profile     Profile            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  exercises   TemplateExercise[]
-  workouts    Workout[]
+  profile          Profile            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  equipmentProfile EquipmentProfile?  @relation(fields: [equipmentProfileId], references: [id], onDelete: SetNull)
+  exercises        TemplateExercise[]
+  workouts         Workout[]
 
   @@index([userId])
   @@map("workout_templates")
@@ -711,8 +714,9 @@ model EquipmentProfile {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  profile Profile               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items   EquipmentProfileItem[]
+  profile    Profile               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items      EquipmentProfileItem[]
+  templates  WorkoutTemplate[]
 
   @@index([userId])
   @@map("equipment_profiles")
@@ -755,6 +759,31 @@ model WeeklyTarget {
   @@unique([userId, targetType])
   @@index([userId])
   @@map("weekly_targets")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// CUSTOM EXERCISES
+// User-created exercises stored separately from licensed ExerciseDB
+// records. Each user owns their own exercises; no cross-user sharing.
+// IDs are UUIDs and never conflict with ExerciseDB numeric IDs.
+// ═════════════════════════════════════════════════════════════════════
+
+model CustomExercise {
+  id           String       @id @default(uuid()) @db.Uuid
+  userId       String       @map("user_id") @db.Uuid
+  name         String       @db.VarChar(200)
+  bodyPart     String?      @map("body_part") @db.VarChar(100)
+  targetMuscle String?      @map("target_muscle") @db.VarChar(100)
+  equipment    String?      @db.VarChar(100)
+  trackingType TrackingType @default(strength) @map("tracking_type")
+  instructions String?      @db.Text
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("custom_exercises")
 }
 
 enum GoalType {

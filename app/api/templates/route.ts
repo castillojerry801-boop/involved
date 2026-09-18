@@ -2,7 +2,8 @@ import 'server-only'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
-import { getExerciseById } from '@/lib/exercises'
+import { getExerciseById, isCustomExerciseId } from '@/lib/exercises'
+import { verifyCustomExerciseIds } from '@/lib/training/custom-exercises'
 
 // ─── GET: list user's templates ───────────────────────────────────────────────
 
@@ -19,6 +20,7 @@ export async function GET() {
           orderBy: { sortOrder: 'asc' },
           select: { exerciseId: true, trackingType: true },
         },
+        equipmentProfile: { select: { id: true, name: true } },
       },
       orderBy: { updatedAt: 'desc' },
     })
@@ -30,27 +32,30 @@ export async function GET() {
 
 // ─── POST: create a template ──────────────────────────────────────────────────
 
+interface ExerciseInput {
+  exerciseId: string
+  sortOrder?: number
+  trackingType?: string
+  notes?: string
+  restSeconds?: number
+  sets?: Array<{
+    setNumber: number
+    setType?: string
+    targetRepsMin?: number
+    targetRepsMax?: number
+    targetWeightKg?: number
+    targetDurationSeconds?: number
+    targetDistanceM?: number
+    restSeconds?: number
+    notes?: string
+  }>
+}
+
 interface CreateTemplateBody {
   name: string
   description?: string
-  exercises?: Array<{
-    exerciseId: string
-    sortOrder?: number
-    trackingType?: string
-    notes?: string
-    restSeconds?: number
-    sets?: Array<{
-      setNumber: number
-      setType?: string
-      targetRepsMin?: number
-      targetRepsMax?: number
-      targetWeightKg?: number
-      targetDurationSeconds?: number
-      targetDistanceM?: number
-      restSeconds?: number
-      notes?: string
-    }>
-  }>
+  equipmentProfileId?: string
+  exercises?: ExerciseInput[]
 }
 
 export async function POST(req: NextRequest) {
@@ -61,10 +66,14 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as CreateTemplateBody
   if (!body.name?.trim()) return Response.json({ error: 'Name is required' }, { status: 400 })
 
-  for (const ex of body.exercises ?? []) {
-    if (!getExerciseById(ex.exerciseId)) {
-      return Response.json({ error: `Exercise "${ex.exerciseId}" not found` }, { status: 400 })
+  const exerciseIds = (body.exercises ?? []).map(e => e.exerciseId)
+  for (const id of exerciseIds) {
+    if (!isCustomExerciseId(id) && !getExerciseById(id)) {
+      return Response.json({ error: `Exercise "${id}" not found` }, { status: 400 })
     }
+  }
+  if (!(await verifyCustomExerciseIds(exerciseIds, user.id))) {
+    return Response.json({ error: 'One or more custom exercises not found' }, { status: 400 })
   }
 
   try {
@@ -73,6 +82,7 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         name: body.name.trim(),
         description: body.description?.trim() ?? null,
+        equipmentProfileId: body.equipmentProfileId ?? null,
         exercises: {
           create: (body.exercises ?? []).map((ex, ei) => ({
             exerciseId: ex.exerciseId,

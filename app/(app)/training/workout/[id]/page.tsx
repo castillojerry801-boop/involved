@@ -5,12 +5,15 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, CheckCircle2, Circle, Loader2, Trophy, ChevronDown, ChevronUp,
-  Plus, Dumbbell, MessageSquare, Trash2, Timer, X, Scissors,
+  Plus, Dumbbell, MessageSquare, Trash2, Timer, X, Scissors, Shuffle,
 } from 'lucide-react'
-import { getGifUrl } from '@/lib/exercises'
+import { getGifUrl, isCustomExerciseId } from '@/lib/exercises'
 import { cn } from '@/lib/utils'
 import { VoiceMic } from '@/components/v/VoiceMic'
 import { ShortenModal } from '@/components/v/ShortenModal'
+import RestTimer from '@/components/training/RestTimer'
+import ExercisePicker from '@/components/training/ExercisePicker'
+import type { ExerciseMeta } from '@/lib/exercises'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +60,7 @@ interface ExerciseData {
   notes: string | null
   targetSets: number | null
   trackingType: TrackingType
+  restSeconds: number | null
   sets: SetData[]
   exercise: { id: string; name: string; bodyPart: string; equipment: string; target: string } | null
   previousSession: PreviousSession | null
@@ -322,17 +326,29 @@ function SetRow({
 
 // ─── Exercise card ────────────────────────────────────────────────────────────
 
-function ExerciseCard({ ex, workoutId, onUpdate, onRemove }: {
+interface SubstituteOption {
+  exerciseId: string
+  name: string
+  target: string
+  equipment: string
+  reason: string
+}
+
+function ExerciseCard({ ex, workoutId, onUpdate, onRemove, onRefresh }: {
   ex: ExerciseData
   workoutId: string
-  onUpdate: () => void
+  onUpdate: (restSeconds?: number) => void
   onRemove: (id: string) => void
+  onRefresh: () => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
   const [notes, setNotes] = useState(ex.notes ?? '')
   const [savingNotes, setSavingNotes] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [substituting, setSubstituting] = useState(false)
+  const [substituteOptions, setSubstituteOptions] = useState<SubstituteOption[] | null>(null)
+  const [applyingSubId, setApplyingSubId] = useState<string | null>(null)
   const addCounterRef = useRef(0)
 
   const [sets, setSets] = useState<SetData[]>(() =>
@@ -354,7 +370,41 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove }: {
 
   const handleComplete = (setId: string, updates: Partial<SetData> & { completed: boolean }) => {
     setSets(prev => prev.map(s => s.id === setId ? { ...s, ...updates } : s))
-    onUpdate()
+    onUpdate(ex.restSeconds ?? 90)
+  }
+
+  const handleSubstitute = async () => {
+    if (isCustomExerciseId(ex.exerciseId)) return
+    setSubstituting(true)
+    setSubstituteOptions(null)
+    try {
+      const res = await fetch('/api/v/substitute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exerciseId: ex.exerciseId }),
+      })
+      const data = await res.json() as { substitutes?: SubstituteOption[]; error?: string }
+      if (res.ok && data.substitutes) setSubstituteOptions(data.substitutes)
+    } finally {
+      setSubstituting(false)
+    }
+  }
+
+  const applySubstitute = async (newExerciseId: string) => {
+    setApplyingSubId(newExerciseId)
+    try {
+      const res = await fetch(`/api/workouts/${workoutId}/exercises/${ex.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newExerciseId }),
+      })
+      if (res.ok) {
+        setSubstituteOptions(null)
+        onRefresh()
+      }
+    } finally {
+      setApplyingSubId(null)
+    }
   }
 
   const handleSaveNotes = async () => {
@@ -391,10 +441,12 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove }: {
       {/* Exercise header */}
       <div className="flex items-center gap-0 px-4 py-3">
         <button onClick={() => setCollapsed(c => !c)} className="flex items-center gap-3 flex-1 text-left min-w-0">
-          <div className="size-12 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden">
-            {ex.exercise && (
+          <div className="size-12 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
+            {ex.exercise && !isCustomExerciseId(ex.exerciseId) ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={getGifUrl(ex.exerciseId)} alt={ex.exercise.name} className="h-full w-auto object-contain" />
+            ) : (
+              <Dumbbell className="size-5 text-zinc-300" />
             )}
           </div>
           <div className="flex-1 min-w-0">
@@ -427,6 +479,16 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove }: {
           >
             <MessageSquare className="size-3.5" />
           </button>
+          {!isCustomExerciseId(ex.exerciseId) && (
+            <button
+              onClick={handleSubstitute}
+              disabled={substituting}
+              className="flex size-7 items-center justify-center rounded-full text-zinc-300 dark:text-zinc-600 hover:text-indigo-400 transition-colors"
+              title="Find substitute"
+            >
+              {substituting ? <Loader2 className="size-3.5 animate-spin" /> : <Shuffle className="size-3.5" />}
+            </button>
+          )}
           <button
             onClick={handleRemove}
             disabled={removing}
@@ -468,6 +530,35 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove }: {
                 <X className="size-3.5" />
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Substitute options panel */}
+      {substituteOptions && substituteOptions.length > 0 && (
+        <div className="px-4 pb-3 border-t border-zinc-50 dark:border-zinc-800">
+          <div className="mt-2 flex items-center justify-between mb-2">
+            <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wide">Substitutes</p>
+            <button onClick={() => setSubstituteOptions(null)} className="text-zinc-300 hover:text-zinc-500">
+              <X className="size-3.5" />
+            </button>
+          </div>
+          <div className="space-y-1.5">
+            {substituteOptions.map(opt => (
+              <button
+                key={opt.exerciseId}
+                onClick={() => applySubstitute(opt.exerciseId)}
+                disabled={applyingSubId !== null}
+                className="w-full text-left rounded-xl border border-zinc-100 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2.5 hover:border-indigo-300 dark:hover:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors disabled:opacity-50"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-zinc-900 dark:text-white">{opt.name}</p>
+                  {applyingSubId === opt.exerciseId && <Loader2 className="size-3.5 animate-spin text-indigo-400 shrink-0" />}
+                </div>
+                <p className="text-[11px] text-zinc-400 mt-0.5 capitalize">{opt.target} · {opt.equipment}</p>
+                <p className="text-[11px] text-zinc-400 mt-0.5 italic">{opt.reason}</p>
+              </button>
+            ))}
           </div>
         </div>
       )}
@@ -639,6 +730,58 @@ function WorkoutNotes({ workoutId, initial }: { workoutId: string; initial: stri
   )
 }
 
+// ─── Completed workout card ───────────────────────────────────────────────────
+
+function CompletedCard({ workout }: { workout: WorkoutData }) {
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const formatElapsedLocal = (s: number) => {
+    const m = Math.floor(s / 60); const sec = s % 60
+    return `${m}:${String(sec).padStart(2, '0')}`
+  }
+
+  const handleSaveAsTemplate = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/workouts/${workout.id}/save-as-template`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: workout.title }),
+      })
+      if (res.ok) setSaved(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-8 rounded-2xl border border-emerald-200 dark:border-emerald-800/30 bg-emerald-50 dark:bg-emerald-900/10 p-6 text-center">
+      <CheckCircle2 className="size-10 text-emerald-500 mx-auto mb-3" />
+      <p className="font-black text-zinc-900 dark:text-white text-lg mb-1">Workout complete!</p>
+      {workout.durationSeconds && (
+        <p className="text-sm text-zinc-500">Duration: {formatElapsedLocal(workout.durationSeconds)}</p>
+      )}
+      <div className="flex gap-2 mt-4">
+        <Link href="/training" className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 py-2.5 text-sm font-semibold text-zinc-700 dark:text-zinc-300 text-center hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+          Training
+        </Link>
+        <Link href="/coach" className="flex-1 rounded-xl bg-zinc-900 dark:bg-white py-2.5 text-sm font-semibold text-white dark:text-zinc-900 text-center hover:opacity-90 transition-opacity">
+          Ask Coach
+        </Link>
+      </div>
+      <button
+        onClick={handleSaveAsTemplate}
+        disabled={saving || saved}
+        className="mt-3 flex items-center gap-1.5 mx-auto text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 disabled:opacity-50 transition-colors"
+      >
+        {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+        {saved ? '✓ Saved as template' : 'Save as template'}
+      </button>
+    </div>
+  )
+}
+
 // ─── Active workout session ───────────────────────────────────────────────────
 
 export default function WorkoutPage() {
@@ -650,6 +793,9 @@ export default function WorkoutPage() {
   const [elapsed, setElapsed] = useState(0)
   const [completedSets, setCompletedSets] = useState(0)
   const [showShortenModal, setShowShortenModal] = useState(false)
+  const [restTimer, setRestTimer] = useState<{ seconds: number } | null>(null)
+  const [showAddExercise, setShowAddExercise] = useState(false)
+  const [addingExercise, setAddingExercise] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchWorkout = useCallback(() => {
@@ -705,6 +851,29 @@ export default function WorkoutPage() {
 
   const handleRemoveExercise = (exerciseId: string) => {
     setWorkout(w => w ? { ...w, exercises: w.exercises.filter(e => e.id !== exerciseId) } : w)
+  }
+
+  const handleAddExercise = async (ex: ExerciseMeta) => {
+    if (!workout) return
+    setShowAddExercise(false)
+    setAddingExercise(true)
+    try {
+      const res = await fetch(`/api/workouts/${id}/exercises`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ exerciseId: ex.id }),
+      })
+      if (res.ok) fetchWorkout()
+    } finally {
+      setAddingExercise(false)
+    }
+  }
+
+  const handleSetCompleted = (restSeconds?: number) => {
+    setCompletedSets(c => c + 1)
+    if (restSeconds && workout?.status === 'in_progress') {
+      setRestTimer({ seconds: restSeconds })
+    }
   }
 
   const targetMinutes = workout?.durationTargetMinutes
@@ -817,14 +986,28 @@ export default function WorkoutPage() {
               key={ex.id}
               ex={ex}
               workoutId={workout.id}
-              onUpdate={() => setCompletedSets(c => c + 1)}
+              onUpdate={handleSetCompleted}
               onRemove={handleRemoveExercise}
+              onRefresh={fetchWorkout}
             />
           ))}
         </div>
       )}
 
       {/* Workout notes + finish */}
+      {workout.status === 'in_progress' && (
+        <div className="mt-4 flex justify-center">
+          <button
+            onClick={() => setShowAddExercise(true)}
+            disabled={addingExercise}
+            className="flex items-center gap-2 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 px-6 py-3 text-sm font-medium text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 dark:hover:border-zinc-500 dark:hover:text-zinc-300 transition-colors"
+          >
+            {addingExercise ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            Add exercise
+          </button>
+        </div>
+      )}
+
       {workout.status !== 'completed' && (
         <div className="mt-6 space-y-4">
           <WorkoutNotes workoutId={workout.id} initial={workout.notes} />
@@ -841,21 +1024,27 @@ export default function WorkoutPage() {
       )}
 
       {workout.status === 'completed' && (
-        <div className="mt-8 rounded-2xl border border-emerald-200 dark:border-emerald-800/30 bg-emerald-50 dark:bg-emerald-900/10 p-6 text-center">
-          <CheckCircle2 className="size-10 text-emerald-500 mx-auto mb-3" />
-          <p className="font-black text-zinc-900 dark:text-white text-lg mb-1">Workout complete!</p>
-          {workout.durationSeconds && (
-            <p className="text-sm text-zinc-500">Duration: {formatElapsed(workout.durationSeconds)}</p>
-          )}
-          <div className="flex gap-2 mt-4">
-            <Link href="/training" className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 py-2.5 text-sm font-semibold text-zinc-700 dark:text-zinc-300 text-center hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
-              Training
-            </Link>
-            <Link href="/coach" className="flex-1 rounded-xl bg-zinc-900 dark:bg-white py-2.5 text-sm font-semibold text-white dark:text-zinc-900 text-center hover:opacity-90 transition-opacity">
-              Ask Coach
-            </Link>
-          </div>
-        </div>
+        <CompletedCard workout={workout} />
+      )}
+
+      {restTimer && (
+        <RestTimer
+          seconds={restTimer.seconds}
+          onDone={() => setRestTimer(null)}
+          onDismiss={() => setRestTimer(null)}
+        />
+      )}
+
+      {showAddExercise && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setShowAddExercise(false)} />
+          <ExercisePicker
+            title="Add exercise"
+            onSelect={handleAddExercise}
+            onClose={() => setShowAddExercise(false)}
+            selectedIds={new Set(workout.exercises.map(e => e.exerciseId))}
+          />
+        </>
       )}
 
       <ShortenModal
