@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { ChevronRight, Plus, ArrowRight, Bot, Dumbbell } from 'lucide-react'
+import { ChevronRight, Plus, ArrowRight, Bot, Dumbbell, PlayCircle, CheckCircle2, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -72,9 +72,35 @@ export default async function TodayPage() {
   const user = await getUser()
   if (!user) redirect('/login')
 
-  const [nutrition, profile] = await Promise.all([
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const todayEnd = new Date()
+  todayEnd.setHours(23, 59, 59, 999)
+
+  const [nutrition, profile, todayWorkout] = await Promise.all([
     getTodayNutrition(user.id),
     prisma.profile.findUnique({ where: { id: user.id }, select: { displayName: true } }).catch(() => null),
+    prisma.workout.findFirst({
+      where: {
+        userId: user.id,
+        OR: [
+          { status: 'in_progress' },
+          {
+            status: 'planned',
+            scheduledDate: { gte: todayStart, lte: todayEnd },
+          },
+          {
+            status: 'completed',
+            completedAt: { gte: todayStart },
+          },
+        ],
+      },
+      orderBy: [
+        { status: 'asc' },
+        { scheduledDate: 'asc' },
+      ],
+      include: { exercises: { select: { exerciseId: true }, take: 5 } },
+    }).catch(() => null),
   ])
 
   const displayName =
@@ -189,22 +215,49 @@ export default async function TodayPage() {
             href="/training"
             className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
           >
-            Library <ChevronRight className="size-3" />
+            All <ChevronRight className="size-3" />
           </Link>
         </div>
 
-        <div className="flex flex-col items-center py-4 text-center">
-          <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800">
-            <Dumbbell className="size-6 text-zinc-400" />
+        {todayWorkout ? (
+          <div>
+            <div className="flex items-center gap-3 mb-3">
+              <div className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${todayWorkout.status === 'in_progress' ? 'bg-emerald-50 dark:bg-emerald-900/30' : todayWorkout.status === 'completed' ? 'bg-zinc-50 dark:bg-zinc-800' : 'bg-sky-50 dark:bg-sky-900/30'}`}>
+                {todayWorkout.status === 'in_progress' && <PlayCircle className="size-5 text-emerald-600 dark:text-emerald-400" />}
+                {todayWorkout.status === 'completed' && <CheckCircle2 className="size-5 text-zinc-500" />}
+                {todayWorkout.status === 'planned' && <Calendar className="size-5 text-sky-600 dark:text-sky-400" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-zinc-900 dark:text-white truncate">{todayWorkout.title}</p>
+                <p className="text-xs text-zinc-400">{todayWorkout.exercises.length} exercise{todayWorkout.exercises.length !== 1 ? 's' : ''}</p>
+              </div>
+              {todayWorkout.status === 'completed' && (
+                <span className="text-xs font-medium text-zinc-400">Done</span>
+              )}
+            </div>
+            <Link href={`/training/workout/${todayWorkout.id}`} className="w-full block">
+              <Button size="sm" className="w-full" variant={todayWorkout.status === 'completed' ? 'secondary' : 'primary'}>
+                {todayWorkout.status === 'in_progress' && <><PlayCircle className="size-4" /> Resume</>}
+                {todayWorkout.status === 'planned' && <><PlayCircle className="size-4" /> Start workout</>}
+                {todayWorkout.status === 'completed' && 'View workout'}
+              </Button>
+            </Link>
           </div>
-          <p className="font-semibold text-zinc-900 dark:text-white mb-1">No workout logged today</p>
-          <p className="text-sm text-zinc-400 mb-4">Browse exercises and start building your routine.</p>
-          <Link href="/training/exercises" className="w-full">
-            <Button variant="secondary" size="sm" className="w-full">
-              Browse exercises
-            </Button>
-          </Link>
-        </div>
+        ) : (
+          <div className="flex flex-col items-center py-4 text-center">
+            <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800">
+              <Dumbbell className="size-6 text-zinc-400" />
+            </div>
+            <p className="font-semibold text-zinc-900 dark:text-white mb-1">No workout today</p>
+            <p className="text-sm text-zinc-400 mb-4">Log a workout or plan ahead.</p>
+            <Link href="/training/log" className="w-full">
+              <Button variant="secondary" size="sm" className="w-full">
+                <Plus className="size-4" />
+                Log workout
+              </Button>
+            </Link>
+          </div>
+        )}
       </Card>
 
       {/* ── COACH ─────────────────────────────────────────────────────── */}

@@ -36,6 +36,10 @@ model Profile {
   goals            Goal[]
   aiUsageLogs      AiUsageLog[]
   subscription     UserSubscription?
+  workouts         Workout[]
+  personalRecords  PersonalRecord[]
+  trainerProfile   TrainerProfile?
+  clientOf         TrainerClientRelationship[] @relation("ClientTrainers")
 
   // Nutrition relations
   createdFoods     FoodItem[]       @relation("FoodItemsCreated")
@@ -454,6 +458,175 @@ enum AiFeature {
   label_scan
   progress_insight
   weekly_review
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// WORKOUTS
+// A workout can be planned (future), in progress, or completed.
+// Exercises reference the static exercise library by string ID.
+// Sets store both target (planned) and actual (logged) values so
+// trainers can prescribe and athletes can track performance vs. plan.
+// ═════════════════════════════════════════════════════════════════════
+
+model Workout {
+  id              String        @id @default(uuid()) @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  // If set, this workout was assigned by a trainer
+  assignedById    String?       @map("assigned_by_id") @db.Uuid
+  title           String        @db.VarChar(200)
+  notes           String?       @db.Text
+  scheduledDate   DateTime?     @map("scheduled_date") @db.Date
+  status          WorkoutStatus @default(planned)
+  source          WorkoutSource @default(manual)
+  startedAt       DateTime?     @map("started_at") @db.Timestamptz(3)
+  completedAt     DateTime?     @map("completed_at") @db.Timestamptz(3)
+  durationSeconds Int?          @map("duration_seconds")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  profile         Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercises       WorkoutExercise[]
+  personalRecords PersonalRecord[]
+
+  @@index([userId, scheduledDate])
+  @@index([userId, status])
+  @@index([userId, completedAt])
+  @@map("workouts")
+}
+
+model WorkoutExercise {
+  id         String   @id @default(uuid()) @db.Uuid
+  workoutId  String   @map("workout_id") @db.Uuid
+  // References the static exercise library (lib/exercises.ts), not a DB table
+  exerciseId String   @map("exercise_id") @db.VarChar(100)
+  order      Int      @default(0)
+  notes      String?  @db.VarChar(500)
+  targetSets Int?     @map("target_sets")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  workout Workout      @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  sets    WorkoutSet[]
+
+  @@index([workoutId])
+  @@map("workout_exercises")
+}
+
+model WorkoutSet {
+  id                    String    @id @default(uuid()) @db.Uuid
+  workoutExerciseId     String    @map("workout_exercise_id") @db.Uuid
+  setNumber             Int       @map("set_number")
+  // Planned targets (prescribed by trainer or set when planning ahead)
+  targetReps            Int?      @map("target_reps")
+  targetWeightKg        Decimal?  @map("target_weight_kg") @db.Decimal(7, 2)
+  targetDurationSeconds Int?      @map("target_duration_seconds")
+  targetDistanceM       Decimal?  @map("target_distance_m") @db.Decimal(10, 2)
+  // Actual logged values
+  actualReps            Int?      @map("actual_reps")
+  actualWeightKg        Decimal?  @map("actual_weight_kg") @db.Decimal(7, 2)
+  actualDurationSeconds Int?      @map("actual_duration_seconds")
+  actualDistanceM       Decimal?  @map("actual_distance_m") @db.Decimal(10, 2)
+  // Rate of perceived exertion 1–10 (optional)
+  rpe                   Int?
+  completed             Boolean   @default(false)
+  completedAt           DateTime? @map("completed_at") @db.Timestamptz(3)
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  workoutExercise WorkoutExercise @relation(fields: [workoutExerciseId], references: [id], onDelete: Cascade)
+  personalRecord  PersonalRecord?
+
+  @@index([workoutExerciseId])
+  @@map("workout_sets")
+}
+
+// ─── Personal Records ─────────────────────────────────────────────────────────
+// One row per PR per exercise per metric. Auto-detected server-side when a
+// set is completed. Never deleted — historical record.
+
+model PersonalRecord {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  exerciseId   String   @map("exercise_id") @db.VarChar(100)
+  metric       PRMetric
+  value        Decimal  @db.Decimal(10, 3)
+  unit         String   @db.VarChar(20)  // "kg", "lbs", "reps", "seconds", "m"
+  achievedAt   DateTime @map("achieved_at") @db.Timestamptz(3)
+  workoutId    String?  @map("workout_id") @db.Uuid
+  workoutSetId String?  @unique @map("workout_set_id") @db.Uuid
+
+  profile      Profile     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workout      Workout?    @relation(fields: [workoutId], references: [id], onDelete: SetNull)
+  workoutSet   WorkoutSet? @relation(fields: [workoutSetId], references: [id], onDelete: SetNull)
+
+  @@index([userId, exerciseId, metric])
+  @@map("personal_records")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// TRAINER FOUNDATION
+// Schema for the trainer tier. UI/billing comes in a later phase.
+// A user can be both an athlete (Profile) and a trainer (TrainerProfile).
+// Trainers assign workouts to clients; clients see them as "assigned".
+// ═════════════════════════════════════════════════════════════════════
+
+model TrainerProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  bio       String?  @db.VarChar(500)
+  specialty String?  @db.VarChar(200)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  profile Profile                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clients TrainerClientRelationship[] @relation("TrainerClients")
+
+  @@map("trainer_profiles")
+}
+
+model TrainerClientRelationship {
+  id         String              @id @default(uuid()) @db.Uuid
+  trainerId  String              @map("trainer_id") @db.Uuid
+  clientId   String              @map("client_id") @db.Uuid
+  status     TrainerClientStatus @default(invited)
+  invitedAt  DateTime            @default(now()) @map("invited_at")
+  acceptedAt DateTime?           @map("accepted_at")
+  createdAt  DateTime            @default(now()) @map("created_at")
+  updatedAt  DateTime            @updatedAt @map("updated_at")
+
+  trainer TrainerProfile @relation("TrainerClients", fields: [trainerId], references: [userId], onDelete: Cascade)
+  client  Profile        @relation("ClientTrainers", fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([trainerId, clientId])
+  @@index([trainerId])
+  @@index([clientId])
+  @@map("trainer_client_relationships")
+}
+
+enum WorkoutStatus {
+  planned
+  in_progress
+  completed
+  skipped
+}
+
+enum WorkoutSource {
+  manual
+  coach_generated
+  trainer_assigned
+}
+
+enum PRMetric {
+  weight
+  reps
+  duration
+  distance
+}
+
+enum TrainerClientStatus {
+  invited
+  active
+  paused
+  ended
 }
 
 enum GoalType {

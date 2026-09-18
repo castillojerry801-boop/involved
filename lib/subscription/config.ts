@@ -129,6 +129,20 @@ export function getAiLimit(tier: EffectiveTier, feature: AiFeatureKey): number |
 // ─── Upgrade messaging ────────────────────────────────────────────────────────
 // Used by upgrade gates to describe what's included with Involved+.
 
+// ─── Trainer tier config ──────────────────────────────────────────────────────
+// Pricing is placeholder — finalize before launch.
+// maxClients drives the DB-enforced client limit per trainer.
+
+export const TRAINER_TIERS = {
+  trainer_10: { maxClients: 10, monthlyAmount: 29.99, label: 'Starter' },
+  trainer_20: { maxClients: 20, monthlyAmount: 49.99, label: 'Growth' },
+  trainer_50: { maxClients: 50, monthlyAmount: 99.99, label: 'Pro' },
+} as const
+
+export type TrainerTierKey = keyof typeof TRAINER_TIERS
+
+// ─── Upgrade messaging ────────────────────────────────────────────────────────
+
 export const PLUS_HIGHLIGHTS = [
   'Unlimited AI Coach conversations',
   'Personalized AI workout generation',
