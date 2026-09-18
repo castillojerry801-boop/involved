@@ -9,8 +9,10 @@ export async function POST(req: NextRequest) {
 
   const secret = process.env.TURNSTILE_SECRET_KEY
   if (!secret) {
-    console.error('TURNSTILE_SECRET_KEY is not set')
-    return NextResponse.json({ success: false, error: 'Configuration error' }, { status: 500 })
+    // Key not configured — fail open so users aren't blocked.
+    // Set TURNSTILE_SECRET_KEY in Vercel env vars to enforce bot protection.
+    console.warn('TURNSTILE_SECRET_KEY is not set — skipping bot check')
+    return NextResponse.json({ success: true })
   }
 
   const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
