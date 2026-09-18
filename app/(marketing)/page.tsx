@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { ArrowRight, Dumbbell, Target, Bot, TrendingUp, Users, Zap } from 'lucide-react'
+import Image from 'next/image'
+import { ArrowRight, Dumbbell, Target, TrendingUp, Users, Zap, PersonStanding, Trophy, Activity } from 'lucide-react'
 import { InvolvedLogo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 
@@ -8,31 +9,39 @@ const features = [
     icon: Dumbbell,
     title: 'Smart Training',
     description: 'Structured programs for strength, conditioning, and sport-specific training. Built around your goals, not someone else\'s.',
+    color: 'from-emerald-500/20 to-emerald-600/10',
+    iconColor: 'text-emerald-400',
   },
   {
-    icon: Bot,
+    icon: null,
     title: 'AI Fitness Coach',
     description: 'Get personalized guidance, workout adjustments, and answers to your training questions — available whenever you need it.',
+    color: 'from-sky-500/20 to-sky-600/10',
+    iconColor: 'text-sky-400',
   },
   {
     icon: Target,
     title: 'Goal-Driven',
     description: 'Training that organizes itself around your next race, lifting milestone, or fitness goal. Know exactly where you\'re headed.',
+    color: 'from-violet-500/20 to-violet-600/10',
+    iconColor: 'text-violet-400',
   },
   {
     icon: TrendingUp,
     title: 'Real Progress Tracking',
     description: 'Log workouts, track PRs, see your fitness trend over time. Progress you can actually measure and be proud of.',
+    color: 'from-amber-500/20 to-amber-600/10',
+    iconColor: 'text-amber-400',
   },
 ]
 
 const forWhom = [
-  'First-time gym-goers building a habit',
-  'Basketball & court sport players',
-  'Football athletes & linemen',
-  'Wrestlers cutting and building strength',
-  'Runners chasing new PRs',
-  'Anyone ready to be more active',
+  { icon: PersonStanding, title: 'First-time gym-goers', sub: 'Building healthy habits' },
+  { icon: Activity,       title: 'Runners & endurance athletes', sub: 'Chasing new distances and PRs' },
+  { icon: Users,          title: 'Team sports athletes', sub: 'Stronger for your team' },
+  { icon: Dumbbell,       title: 'Strength & bodybuilders', sub: 'Getting stronger, every day' },
+  { icon: Trophy,         title: 'Individual sport athletes', sub: 'Competing and improving' },
+  { icon: Zap,            title: 'Weekend warriors', sub: 'A healthier, more active you' },
 ]
 
 export default function LandingPage() {
@@ -55,29 +64,36 @@ export default function LandingPage() {
 
       <main className="flex-1">
         {/* Hero */}
-        <section className="relative overflow-hidden px-6 pb-24 pt-20 text-white md:pb-32 md:pt-28">
+        <section className="relative overflow-hidden px-6 pb-24 pt-16 text-white md:pb-32 md:pt-24">
+
+          {/* Emerald glow behind headline */}
+          <div className="pointer-events-none absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 h-64 w-64 rounded-full bg-emerald-500/20 blur-3xl md:h-96 md:w-96" />
 
           <div className="relative mx-auto max-w-4xl text-center">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-900 px-4 py-1.5 text-xs font-medium text-zinc-300">
+            <div className="mb-5 flex justify-center">
+              <InvolvedLogo size="lg" variant="wordmark" />
+            </div>
+
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-400">
               <Zap className="size-3 fill-emerald-400 text-emerald-400" />
               Now in early access
             </div>
 
-            <h1 className="mb-6 font-black text-5xl leading-[1.05] tracking-tight md:text-7xl">
-              Real habits.{' '}
-              <br className="hidden md:block" />
-              Real progress.
+            <h1 className="mb-5 font-black text-4xl leading-[1.08] tracking-tight md:text-6xl">
+              Build habits for{' '}
+              <br />
+              <span className="text-emerald-400">real progress.</span>
             </h1>
 
-            <p className="mx-auto mb-10 max-w-xl text-lg text-zinc-400 md:text-xl">
+            <p className="mx-auto mb-10 max-w-lg text-base text-zinc-400 md:text-lg">
               The fitness platform built for real people. Whether you&apos;re just starting out or training for your next season — Involved meets you where you are.
             </p>
 
-            <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+            <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
               <Link href="/signup">
                 <Button
                   size="lg"
-                  className="w-full bg-white text-zinc-900 hover:bg-zinc-100 sm:w-auto"
+                  className="w-full bg-emerald-500 text-white hover:bg-emerald-400 sm:w-auto"
                 >
                   Start for free
                   <ArrowRight className="size-4" />
@@ -94,27 +110,44 @@ export default function LandingPage() {
               </Link>
             </div>
 
-            <p className="mt-6 text-sm text-zinc-500">Free to start. No credit card required.</p>
+            <p className="mt-5 text-sm text-zinc-500">Free to start. No credit card required.</p>
           </div>
         </section>
 
         {/* For whom */}
-        <section className="border-b border-zinc-200/30 bg-white/20 px-6 py-16 backdrop-blur-sm dark:border-zinc-700/30 dark:bg-zinc-950/30">
-          <div className="mx-auto max-w-4xl">
-            <p className="mb-8 text-center text-sm font-semibold uppercase tracking-widest text-zinc-500">
-              Built for every kind of athlete
+        <section className="bg-zinc-950 px-6 py-16">
+          <div className="mx-auto max-w-5xl">
+            <div className="mb-3 text-center">
+              <h2 className="font-black text-3xl tracking-tight text-white md:text-4xl">
+                Built for{' '}
+                <span className="text-emerald-400">real people</span>
+              </h2>
+            </div>
+            <p className="mb-2 text-center text-xs font-semibold uppercase tracking-widest text-zinc-500">
+              Real goals. Real progress. No matter where you start.
             </p>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-              {forWhom.map((item) => (
+            <div className="mb-10 mx-auto w-12 border-b-2 border-emerald-500" />
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+              {forWhom.map(({ icon: Icon, title, sub }) => (
                 <div
-                  key={item}
-                  className="flex items-center gap-2 rounded-xl bg-white/60 px-4 py-3 text-sm font-medium text-zinc-900 shadow-sm backdrop-blur-sm dark:bg-zinc-800/60 dark:text-zinc-200"
+                  key={title}
+                  className="flex items-center gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 px-5 py-4 transition-colors hover:border-emerald-500/40 hover:bg-zinc-800/60"
                 >
-                  <div className="size-1.5 shrink-0 rounded-full bg-emerald-500" />
-                  {item}
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15">
+                    <Icon className="size-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-white">{title}</p>
+                    <p className="text-xs text-zinc-400">{sub}</p>
+                  </div>
                 </div>
               ))}
             </div>
+
+            <p className="mt-10 text-center text-xs font-semibold uppercase tracking-widest text-zinc-600">
+              Fitness supports a better life
+            </p>
           </div>
         </section>
 
@@ -123,7 +156,8 @@ export default function LandingPage() {
           <div className="mx-auto max-w-5xl">
             <div className="mb-14 text-center">
               <h2 className="mb-4 font-black text-3xl tracking-tight text-zinc-900 dark:text-white md:text-4xl">
-                Everything you need to get involved
+                Everything you need to get{' '}
+                <span className="text-emerald-500">involved</span>
               </h2>
               <p className="mx-auto max-w-lg text-zinc-500">
                 A complete fitness platform designed around your goals — not vanity metrics.
@@ -131,13 +165,16 @@ export default function LandingPage() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-2">
-              {features.map(({ icon: Icon, title, description }) => (
+              {features.map(({ icon: Icon, title, description, color, iconColor }: { icon: React.ElementType | null; title: string; description: string; color: string; iconColor: string }) => (
                 <div
                   key={title}
                   className="group rounded-2xl border border-zinc-200/40 bg-white/60 p-8 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md dark:border-zinc-700/40 dark:bg-zinc-900/60"
                 >
-                  <div className="mb-4 inline-flex size-12 items-center justify-center rounded-xl bg-zinc-950 text-white dark:bg-white dark:text-zinc-900">
-                    <Icon className="size-6" />
+                  <div className={`mb-4 inline-flex size-12 items-center justify-center rounded-xl bg-gradient-to-br ${color} overflow-hidden`}>
+                    {Icon
+                      ? <Icon className={`size-6 ${iconColor}`} />
+                      : <Image src="/icon.jpg" alt="AI Coach" width={48} height={48} className="size-12 object-cover" />
+                    }
                   </div>
                   <h3 className="mb-2 font-bold text-lg text-zinc-900 dark:text-white">{title}</h3>
                   <p className="text-zinc-500 dark:text-zinc-400">{description}</p>
@@ -150,8 +187,8 @@ export default function LandingPage() {
         {/* Community callout */}
         <section className="border-t border-zinc-200/30 bg-white/10 px-6 py-16 backdrop-blur-sm dark:border-zinc-700/30 dark:bg-zinc-950/20">
           <div className="mx-auto max-w-3xl text-center">
-            <div className="mb-4 inline-flex size-14 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800">
-              <Users className="size-7 text-zinc-600 dark:text-zinc-400" />
+            <div className="mb-4 inline-flex size-14 items-center justify-center rounded-2xl bg-emerald-500/15">
+              <Users className="size-7 text-emerald-400" />
             </div>
             <h2 className="mb-3 font-black text-2xl text-zinc-900 dark:text-white">Community — coming soon</h2>
             <p className="text-zinc-500">
@@ -161,10 +198,11 @@ export default function LandingPage() {
         </section>
 
         {/* CTA */}
-        <section className="bg-black/30 px-6 py-20 text-white backdrop-blur-sm">
-          <div className="mx-auto max-w-2xl text-center">
+        <section className="relative overflow-hidden bg-zinc-950 px-6 py-20 text-white">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-64 w-96 rounded-full bg-emerald-500/15 blur-3xl" />
+          <div className="relative mx-auto max-w-2xl text-center">
             <h2 className="mb-4 font-black text-3xl tracking-tight md:text-5xl">
-              A more involved you starts today.
+              A more <span className="text-emerald-400">involved</span> you starts today.
             </h2>
             <p className="mb-10 text-zinc-400">
               Free to start. Every feature you need to build real, lasting fitness habits.
@@ -172,7 +210,7 @@ export default function LandingPage() {
             <Link href="/signup">
               <Button
                 size="lg"
-                className="bg-white text-zinc-900 hover:bg-zinc-100"
+                className="bg-emerald-500 text-white hover:bg-emerald-400"
               >
                 Get started — it&apos;s free
                 <ArrowRight className="size-4" />
