@@ -24,8 +24,8 @@ export async function POST(req: NextRequest) {
   const data = await res.json() as { success: boolean; 'error-codes'?: string[] }
 
   if (!data.success) {
-    // Log so the key mismatch is visible in Vercel logs, but don't block users.
     console.warn('Turnstile verification failed:', data['error-codes'])
+    return NextResponse.json({ success: false, error: 'Bot check failed' }, { status: 403 })
   }
 
   return NextResponse.json({ success: true })
