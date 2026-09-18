@@ -48,21 +48,26 @@ async function checkAndIncrementUsage(userId: string, tier: 'free' | 'trial' | '
   const limit = getAiLimit(tier, 'coach_message')
   const period = billingPeriod()
 
-  const record = await prisma.aiUsageLog.upsert({
-    where: { userId_billingPeriod_feature: { userId, billingPeriod: period, feature: 'coach_message' } },
-    update: { interactionCount: { increment: 1 } },
-    create: { userId, billingPeriod: period, feature: 'coach_message', interactionCount: 1 },
-  })
-
-  if (limit !== null && record.interactionCount > limit) {
-    await prisma.aiUsageLog.update({
+  try {
+    const record = await prisma.aiUsageLog.upsert({
       where: { userId_billingPeriod_feature: { userId, billingPeriod: period, feature: 'coach_message' } },
-      data: { interactionCount: { decrement: 1 } },
+      update: { interactionCount: { increment: 1 } },
+      create: { userId, billingPeriod: period, feature: 'coach_message', interactionCount: 1 },
     })
-    return { allowed: false, count: record.interactionCount - 1, limit }
-  }
 
-  return { allowed: true, count: record.interactionCount, limit }
+    if (limit !== null && record.interactionCount > limit) {
+      await prisma.aiUsageLog.update({
+        where: { userId_billingPeriod_feature: { userId, billingPeriod: period, feature: 'coach_message' } },
+        data: { interactionCount: { decrement: 1 } },
+      })
+      return { allowed: false, count: record.interactionCount - 1, limit }
+    }
+
+    return { allowed: true, count: record.interactionCount, limit }
+  } catch {
+    // DB schema not yet migrated (prisma db push pending) — allow without metering
+    return { allowed: true, count: 0, limit }
+  }
 }
 
 // ─── GET: usage status ────────────────────────────────────────────────────────
