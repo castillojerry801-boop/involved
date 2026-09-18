@@ -9,14 +9,15 @@
 //   3. No database migrations required
 
 import type { FoodProvider } from './types'
+import { FatSecretProvider } from './fatsecret'
 import { OpenFoodFactsProvider } from './open-food-facts'
 import { UsdaFoodDataProvider } from './usda-fooddata'
-// import { NutritionixProvider } from './nutritionix' // uncomment when ready
 
+// Priority order: FatSecret (best global DB + barcode) → USDA (authoritative whole foods) → Open Food Facts (fallback)
 export const FOOD_PROVIDERS: FoodProvider[] = [
+  new FatSecretProvider(),
   new UsdaFoodDataProvider(),
   new OpenFoodFactsProvider(),
-  // new NutritionixProvider(),
 ]
 
 
