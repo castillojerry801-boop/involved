@@ -124,13 +124,13 @@ export default function PlateCalculatorPage() {
         </div>
 
         {/* Unit toggle */}
-        <div className="ml-auto flex rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden text-sm font-semibold">
+        <div className="ml-auto shrink-0 flex rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden text-sm font-semibold">
           {(['lbs', 'kg'] as Unit[]).map(u => (
             <button
               key={u}
               onClick={() => switchUnit(u)}
               className={cn(
-                'px-4 py-1.5 transition-colors uppercase tracking-wide',
+                'w-14 py-1.5 text-center transition-colors uppercase tracking-wide',
                 unit === u
                   ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
                   : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'

@@ -23,9 +23,16 @@ export function Turnstile({ onVerify, onError, onExpire }: TurnstileProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const widgetId = useRef<string | null>(null)
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
+  const isDev = process.env.NODE_ENV === 'development'
+
+  // In development, skip the widget and auto-pass so localhost login works.
+  useEffect(() => {
+    if (isDev) { onVerify('dev-bypass'); return }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDev])
 
   const render = () => {
-    if (!containerRef.current || !window.turnstile || widgetId.current) return
+    if (isDev || !containerRef.current || !window.turnstile || widgetId.current) return
     widgetId.current = window.turnstile.render(containerRef.current, {
       sitekey: siteKey,
       callback: onVerify,
@@ -37,7 +44,7 @@ export function Turnstile({ onVerify, onError, onExpire }: TurnstileProps) {
   }
 
   useEffect(() => {
-    // Script may already be loaded from a previous render
+    if (isDev) return
     if (window.turnstile) render()
     return () => {
       if (widgetId.current && window.turnstile) {
@@ -47,6 +54,8 @@ export function Turnstile({ onVerify, onError, onExpire }: TurnstileProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  if (isDev) return null
 
   return (
     <>

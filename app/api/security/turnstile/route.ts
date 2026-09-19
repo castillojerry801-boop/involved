@@ -7,10 +7,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Missing token' }, { status: 400 })
   }
 
+  // Skip verification in development — Cloudflare rejects localhost tokens
+  if (process.env.NODE_ENV === 'development') {
+    return NextResponse.json({ success: true })
+  }
+
   const secret = process.env.TURNSTILE_SECRET_KEY
   if (!secret) {
-    // Key not configured — fail open so users aren't blocked.
-    // Set TURNSTILE_SECRET_KEY in Vercel env vars to enforce bot protection.
     console.warn('TURNSTILE_SECRET_KEY is not set — skipping bot check')
     return NextResponse.json({ success: true })
   }

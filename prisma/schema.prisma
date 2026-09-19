@@ -70,7 +70,26 @@ model Profile {
   healthSyncCursors HealthSyncCursor[]
   healthPermissions HealthPermission[]
 
+  // Photos
+  progressPhotos   ProgressPhoto[]
+
   @@map("profiles")
+}
+
+// ─── Progress Photos ──────────────────────────────────────────────────
+
+model ProgressPhoto {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  storageKey String   @map("storage_key")
+  url        String
+  note       String?  @db.VarChar(500)
+  takenAt    DateTime @default(now()) @map("taken_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("progress_photos")
 }
 
 // ═════════════════════════════════════════════════════════════════════

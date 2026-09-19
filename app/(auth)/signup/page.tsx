@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Turnstile } from '@/components/turnstile'
-import { createClient } from '@/lib/supabase/client'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -18,13 +17,11 @@ export default function SignupPage() {
   const [turnstileError, setTurnstileError] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [success, setSuccess] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
 
-    // Honeypot — bot filled the hidden field, silently drop
     if (honeypot) return
 
     if (!turnstileToken) {
@@ -35,62 +32,24 @@ export default function SignupPage() {
     setLoading(true)
 
     try {
-      // Verify Turnstile token server-side
-      const verify = await fetch('/api/security/turnstile', {
+      const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: turnstileToken }),
-      })
-      if (!verify.ok) {
-        setError('Security check failed. Please try again.')
-        setTurnstileToken(null)
-        return
-      }
-
-      const supabase = createClient()
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { display_name: name },
-          emailRedirectTo: `${location.origin}/auth/confirm?next=/onboarding`,
-        },
+        body: JSON.stringify({ email, password, name, turnstileToken }),
       })
 
-      if (error) {
-        setError(error.message)
+      const data = await res.json() as { success?: boolean; error?: string }
+
+      if (!res.ok || !data.success) {
+        setError(data.error ?? 'Something went wrong. Please try again.')
         return
       }
 
-      // Email confirmation off → session is returned immediately, go straight in
-      if (data.session) {
-        router.push('/onboarding')
-        return
-      }
-
-      // Email confirmation on → show "check your email"
-      setSuccess(true)
+      // Session is set via cookie by the server — go straight to onboarding
+      router.push('/onboarding')
     } finally {
       setLoading(false)
     }
-  }
-
-  if (success) {
-    return (
-      <div className="w-full max-w-sm text-center">
-        <div className="mb-4 inline-flex size-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/20">
-          <svg className="size-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        <h2 className="mb-2 text-xl font-black text-zinc-900 dark:text-white">Check your email</h2>
-        <p className="text-sm text-zinc-500">
-          We sent a confirmation link to{' '}
-          <strong className="text-zinc-900 dark:text-white">{email}</strong>.
-          Click it to activate your account and start training.
-        </p>
-      </div>
-    )
   }
 
   return (

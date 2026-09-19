@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Check } from 'lucide-react'
+import Image from 'next/image'
+import { ArrowLeft, Loader2, Check, Camera, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BodyStatsInput } from '@/components/ui/body-stats-input'
 
@@ -16,6 +17,7 @@ interface ProfileData {
   fitnessLevel: FitnessLevel | null
   heightCm:     number | null
   weightKg:     number | null
+  avatarUrl:    string | null
 }
 
 const FITNESS_LEVELS: { id: FitnessLevel; label: string }[] = [
@@ -26,10 +28,13 @@ const FITNESS_LEVELS: { id: FitnessLevel; label: string }[] = [
 
 export default function ProfileEditPage() {
   const router = useRouter()
-  const [loading, setLoading]   = useState(true)
-  const [saving,  setSaving]    = useState(false)
-  const [saved,   setSaved]     = useState(false)
-  const [error,   setError]     = useState<string | null>(null)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const [loading, setLoading]         = useState(true)
+  const [saving,  setSaving]          = useState(false)
+  const [saved,   setSaved]           = useState(false)
+  const [error,   setError]           = useState<string | null>(null)
+  const [avatarUrl, setAvatarUrl]     = useState<string | null>(null)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
   const [form, setForm] = useState({
     displayName:  '',
@@ -44,6 +49,7 @@ export default function ProfileEditPage() {
     fetch('/api/profile')
       .then(r => r.json() as Promise<{ profile: ProfileData }>)
       .then(({ profile }) => {
+        setAvatarUrl(profile.avatarUrl)
         setForm({
           displayName:  profile.displayName  ?? '',
           username:     profile.username     ?? '',
@@ -55,6 +61,18 @@ export default function ProfileEditPage() {
       })
       .finally(() => setLoading(false))
   }, [])
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadingAvatar(true)
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/profile/avatar', { method: 'POST', body: fd })
+    const data = await res.json() as { url?: string }
+    if (data.url) setAvatarUrl(data.url)
+    setUploadingAvatar(false)
+  }
 
   const handleSave = async () => {
     if (!form.displayName.trim()) { setError('Name is required'); return }
@@ -103,6 +121,36 @@ export default function ProfileEditPage() {
 
       <div className="space-y-4">
 
+        {/* Avatar */}
+        <div className="flex justify-center pb-2">
+          <button
+            onClick={() => avatarInputRef.current?.click()}
+            className="relative flex size-24 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 overflow-hidden group"
+          >
+            {avatarUrl ? (
+              <Image src={avatarUrl} alt="Avatar" fill className="object-cover" />
+            ) : (
+              <User className="size-10" />
+            )}
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
+              {uploadingAvatar
+                ? <Loader2 className="size-5 text-white animate-spin" />
+                : <>
+                    <Camera className="size-5 text-white" />
+                    <span className="text-[10px] text-white font-medium">Change</span>
+                  </>
+              }
+            </div>
+          </button>
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarChange}
+          />
+        </div>
+
         {/* Identity */}
         <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-4">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Identity</p>
@@ -146,7 +194,7 @@ export default function ProfileEditPage() {
           </div>
         </div>
 
-        {/* Fitness */}
+        {/* Fitness level */}
         <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-3">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Fitness level</p>
           <div className="flex gap-2">

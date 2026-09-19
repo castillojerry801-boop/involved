@@ -20,6 +20,7 @@ export async function GET() {
       fitnessLevel: true,
       heightCm:     true,
       weightKg:     true,
+      avatarUrl:    true,
     },
   })
 

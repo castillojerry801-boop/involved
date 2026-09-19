@@ -71,7 +71,7 @@ export default function LandingPage() {
 
           <div className="relative mx-auto max-w-4xl text-center">
             <div className="mb-5 flex justify-center">
-              <InvolvedLogo size="lg" variant="wordmark" />
+              <InvolvedLogo size="lg" variant="wordmark" className="rounded-2xl" />
             </div>
 
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-400">

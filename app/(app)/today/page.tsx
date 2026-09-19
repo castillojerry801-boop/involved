@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { ChevronRight, Plus, ArrowRight, Bot, Dumbbell, PlayCircle, CheckCircle2, Calendar } from 'lucide-react'
+import { ChevronRight, Plus, ArrowRight, Dumbbell, PlayCircle, CheckCircle2, Calendar } from 'lucide-react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import { Card } from '@/components/ui/card'
@@ -285,8 +286,8 @@ export default async function TodayPage() {
       <div className="rounded-2xl border border-dashed border-zinc-200 bg-white px-4 py-4 dark:border-zinc-700 dark:bg-zinc-900">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900">
-              <Bot className="size-4" />
+            <div className="size-8 shrink-0 rounded-lg overflow-hidden">
+              <Image src="/icon.jpg" alt="Coach" width={32} height={32} className="size-8 object-cover" />
             </div>
             <div>
               <p className="text-sm font-semibold text-zinc-900 dark:text-white">Involved Coach</p>

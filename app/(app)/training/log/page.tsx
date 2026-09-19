@@ -50,7 +50,10 @@ function LogWorkoutForm() {
       try {
         const params = new URLSearchParams({ q: query, limit: '20' })
         const res = await fetch(`/api/training/exercises?${params}`)
-        if (res.ok) setResults(await res.json() as Exercise[])
+        if (res.ok) {
+          const data = await res.json() as { exercises: Exercise[] }
+          setResults(data.exercises ?? [])
+        }
       } catch { /* ignore */ } finally {
         setSearching(false)
       }
