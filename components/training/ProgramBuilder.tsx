@@ -253,7 +253,7 @@ export default function ProgramBuilder({
 
       <div className="space-y-4 mb-6">
         {days.map(day => (
-          <div key={day.key} className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
+          <div key={day.key} className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-50 dark:border-zinc-800">
               <GripVertical className="size-4 text-zinc-300 shrink-0" />
               <input

@@ -669,9 +669,9 @@ export default function NewTrainerProgramPage() {
       {/* Days */}
       <div className="space-y-4 mb-4">
         {days.map(day => (
-          <div key={day.id} className="rounded-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+          <div key={day.id} className="rounded-2xl border border-zinc-200 dark:border-zinc-700">
             {/* Day header */}
-            <div className="flex items-center gap-2 px-4 py-3 bg-zinc-50 dark:bg-zinc-800">
+            <div className="flex items-center gap-2 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 rounded-t-2xl">
               <input
                 type="text"
                 value={day.name}
