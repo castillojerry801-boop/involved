@@ -1,9 +1,8 @@
 import 'server-only'
-import { searchExercises, getExerciseById } from '@/lib/exercises'
-import type { Exercise } from '@/lib/exercises'
+import { searchExercises, getExerciseById, deriveMovementPattern } from '@/lib/exercises'
+import type { Exercise, MovementPattern } from '@/lib/exercises'
 
-// Compact exercise summary — only structured metadata, never GIF URLs.
-// GIFs are served from our own storage and never sent to OpenAI.
+// Compact exercise summary sent to V — structured metadata only, never GIF URLs.
 export interface ExerciseSummary {
   id: string
   name: string
@@ -11,6 +10,7 @@ export interface ExerciseSummary {
   equipment: string
   target: string
   secondaryMuscles: string[]
+  movementPattern: MovementPattern
 }
 
 function toSummary(e: Exercise): ExerciseSummary {
@@ -21,6 +21,7 @@ function toSummary(e: Exercise): ExerciseSummary {
     equipment: e.equipment,
     target: e.target,
     secondaryMuscles: e.secondaryMuscles,
+    movementPattern: deriveMovementPattern(e),
   }
 }
 
@@ -29,13 +30,15 @@ export interface ExerciseSearchParams {
   bodyPart?: string
   equipment?: string
   muscle?: string
+  movementPattern?: string
   limit?: number
 }
 
 export function executeExerciseSearch(params: ExerciseSearchParams): ExerciseSummary[] {
-  const { query = '', bodyPart = 'all', equipment, muscle, limit = 15 } = params
+  const { query = '', bodyPart = 'all', equipment, muscle, movementPattern, limit = 15 } = params
 
-  let results = searchExercises(query, bodyPart, 200)
+  // Get a broad result set first (up to 300 so downstream filters have room)
+  let results = searchExercises(query, bodyPart, 300)
 
   if (equipment) {
     const eq = equipment.toLowerCase()
@@ -47,31 +50,36 @@ export function executeExerciseSearch(params: ExerciseSearchParams): ExerciseSum
       e => e.target.toLowerCase().includes(m) || e.secondaryMuscles.some(s => s.toLowerCase().includes(m))
     )
   }
+  if (movementPattern) {
+    results = results.filter(e => deriveMovementPattern(e) === movementPattern)
+  }
 
   return results.slice(0, limit).map(toSummary)
 }
 
 // Validate that an exercise ID exists in our library.
-// Used to reject AI-fabricated IDs before saving any workout.
 export function validateExerciseId(id: string): Exercise | null {
   return getExerciseById(id) ?? null
 }
 
-// OpenAI tool definition for exercise search
 export const SEARCH_EXERCISES_TOOL = {
   type: 'function' as const,
   function: {
     name: 'search_exercises',
     description:
-      'Search the Involved exercise library for exercises matching the given criteria. Only returns exercises that exist in the library. Use this before selecting exercise IDs for a workout.',
+      'Search the Involved exercise library. Returns exercises with their movementPattern — use movementPattern filter to find exercises for a specific training role (e.g. "hinge" for hip-dominant work, "vertical_pull" for pulldowns/pull-ups). Always search before selecting exercise IDs. Never invent IDs.',
     parameters: {
       type: 'object',
       properties: {
-        query:     { type: 'string',  description: 'Search term (exercise name, muscle, etc.)' },
-        bodyPart:  { type: 'string',  description: 'Body part: back, chest, shoulders, upper arms, lower arms, upper legs, lower legs, waist, neck, cardio' },
-        equipment: { type: 'string',  description: 'Equipment type, e.g. barbell, dumbbell, cable, body weight, machine' },
-        muscle:    { type: 'string',  description: 'Target or secondary muscle to filter by' },
-        limit:     { type: 'number',  description: 'Max results to return (default 15, max 20)' },
+        query:          { type: 'string', description: 'Exercise name or keyword search' },
+        bodyPart:       { type: 'string', description: 'Body part: back, chest, shoulders, upper arms, lower arms, upper legs, lower legs, waist, neck, cardio' },
+        equipment:      { type: 'string', description: 'Equipment type, e.g. barbell, dumbbell, cable, body weight, machine, kettlebell' },
+        muscle:         { type: 'string', description: 'Target or secondary muscle to filter by, e.g. glutes, hamstrings, lats, quads' },
+        movementPattern: {
+          type: 'string',
+          description: 'Filter by training role. Values: squat, hinge, lunge, calf, horizontal_push, incline_push, fly, vertical_push, shoulder_isolation, vertical_pull, horizontal_pull, bicep, tricep, forearm, core_antiextension, core_flexion, core_rotation, core_lateral, carry, cardio, other',
+        },
+        limit: { type: 'number', description: 'Max results (default 15, max 20)' },
       },
       required: [],
     },

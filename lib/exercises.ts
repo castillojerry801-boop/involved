@@ -101,6 +101,123 @@ export function getAliasMatchIds(query: string): Set<string> {
   return matched
 }
 
+// ─── Movement pattern classification ─────────────────────────────────────────
+// Derived at runtime from ExerciseDB bodyPart + target + exercise name.
+// These patterns give V vocabulary to search by training role instead of body part,
+// enabling design-first program building and redundancy detection.
+
+export type MovementPattern =
+  | 'squat'             // knee-dominant lower (back squat, leg press, hack squat)
+  | 'hinge'             // hip-dominant posterior chain (deadlift, RDL, hip thrust)
+  | 'lunge'             // unilateral lower (lunge, split squat, step-up, Bulgarian)
+  | 'calf'              // calf raises and variants
+  | 'horizontal_push'   // flat bench press and variants
+  | 'incline_push'      // incline / decline press
+  | 'fly'               // chest isolation (flye, crossover, pec deck)
+  | 'vertical_push'     // overhead press
+  | 'shoulder_isolation'// lateral raise, front raise, face pull, rear delt
+  | 'vertical_pull'     // pull-ups, lat pulldowns
+  | 'horizontal_pull'   // rows of all kinds
+  | 'bicep'             // curls and variants
+  | 'tricep'            // extensions, pushdowns, skull crushers
+  | 'forearm'           // wrist/forearm work
+  | 'core_antiextension'// plank, ab wheel, dead bug, Pallof press
+  | 'core_flexion'      // crunch, sit-up
+  | 'core_rotation'     // Russian twist, woodchop
+  | 'core_lateral'      // side bend, lateral flexion
+  | 'carry'             // farmer carry, suitcase carry
+  | 'cardio'            // conditioning modalities
+  | 'other'
+
+export function deriveMovementPattern(exercise: Exercise): MovementPattern {
+  const name = exercise.name.toLowerCase()
+  const bp   = exercise.bodyPart.toLowerCase()
+  const tgt  = exercise.target.toLowerCase()
+
+  if (bp === 'cardio') return 'cardio'
+
+  if (name.includes('farmer') || name.includes('suitcase carry') ||
+      (name.includes('carry') && !name.includes('tricep'))) return 'carry'
+
+  if (bp === 'upper legs') {
+    // Hinge: hip-dominant — glute/hamstring target or named hip-extension movements
+    if (
+      tgt === 'glutes' || tgt === 'hamstrings' ||
+      name.includes('deadlift') || name.includes(' rdl') || name.includes('romanian') ||
+      name.includes('good morning') || name.includes('hip thrust') ||
+      name.includes('hip extension') || name.includes('back extension') ||
+      name.includes('glute bridge') || name.includes('hyperextension')
+    ) return 'hinge'
+
+    // Lunge: unilateral lower
+    if (
+      name.includes('lunge') || name.includes('step-up') || name.includes('step up') ||
+      name.includes('split squat') || name.includes('bulgarian') || name.includes('pistol') ||
+      name.includes('single-leg') || name.includes('single leg') ||
+      name.includes('one-leg') || name.includes('one leg')
+    ) return 'lunge'
+
+    return 'squat'
+  }
+
+  if (bp === 'lower legs') return 'calf'
+
+  if (bp === 'chest') {
+    if (name.includes('fly') || name.includes('flye') ||
+        name.includes('crossover') || name.includes('pec deck')) return 'fly'
+    if (name.includes('incline') || name.includes('decline')) return 'incline_push'
+    return 'horizontal_push'
+  }
+
+  if (bp === 'shoulders') {
+    if (
+      name.includes('lateral') || name.includes('front raise') ||
+      name.includes('rear delt') || name.includes('face pull') ||
+      name.includes('reverse fly') || name.includes('upright row') ||
+      name.includes('shrug') || tgt === 'traps' || tgt === 'upper back'
+    ) return 'shoulder_isolation'
+    return 'vertical_push'
+  }
+
+  if (bp === 'back') {
+    if (
+      tgt === 'lats' ||
+      name.includes('pull-up') || name.includes('pull up') || name.includes('pullup') ||
+      name.includes('chin-up') || name.includes('chin up') || name.includes('chinup') ||
+      name.includes('pulldown') || name.includes('pull-down') || name.includes('pull down')
+    ) return 'vertical_pull'
+    return 'horizontal_pull'
+  }
+
+  if (bp === 'upper arms') {
+    if (
+      tgt === 'triceps' ||
+      name.includes('tricep') || name.includes('pushdown') ||
+      name.includes('skull') || name.includes('kickback') ||
+      (name.includes('extension') && !name.includes('hip') && !name.includes('leg'))
+    ) return 'tricep'
+    return 'bicep'
+  }
+
+  if (bp === 'lower arms') return 'forearm'
+
+  if (bp === 'waist') {
+    if (
+      name.includes('plank') || name.includes('ab wheel') || name.includes('rollout') ||
+      name.includes('hollow') || name.includes('dead bug') ||
+      name.includes('bird-dog') || name.includes('bird dog') || name.includes('pallof')
+    ) return 'core_antiextension'
+    if (
+      name.includes('twist') || name.includes('rotation') ||
+      name.includes('russian') || name.includes('woodchop') || name.includes('wood chop')
+    ) return 'core_rotation'
+    if (name.includes('side bend') || name.includes('lateral flex')) return 'core_lateral'
+    return 'core_flexion'
+  }
+
+  return 'other'
+}
+
 // ─── Stackable filter ─────────────────────────────────────────────────────────
 
 export interface FilterOptions {
@@ -108,6 +225,7 @@ export interface FilterOptions {
   bodyPart?: string | null
   equipment?: string | null
   target?: string | null
+  movementPattern?: MovementPattern | null
   allowedIds?: Set<string>       // restrict to this set (e.g. from equipment profile)
   favoriteIds?: Set<string>      // used when favoritesOnly=true
   favoritesOnly?: boolean
@@ -118,7 +236,7 @@ export interface FilterOptions {
 
 export function filterExercises(opts: FilterOptions): Exercise[] {
   const {
-    q, bodyPart, equipment, target,
+    q, bodyPart, equipment, target, movementPattern,
     allowedIds, favoriteIds, favoritesOnly, excludeIds,
     limit = 60, offset = 0,
   } = opts
@@ -147,6 +265,10 @@ export function filterExercises(opts: FilterOptions): Exercise[] {
 
   if (target) {
     results = results.filter(e => e.target === target)
+  }
+
+  if (movementPattern) {
+    results = results.filter(e => deriveMovementPattern(e) === movementPattern)
   }
 
   if (q?.trim()) {
