@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { ChevronRight, Plus, ArrowRight, Dumbbell, PlayCircle, CheckCircle2, Calendar } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { headers } from 'next/headers'
+import { headers, cookies } from 'next/headers'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
@@ -97,8 +97,11 @@ export default async function TodayPage() {
   const user = await getUser()
   if (!user) redirect('/login')
 
-  const headersList = await headers()
-  const tz = headersList.get('x-vercel-ip-timezone') ?? 'America/Chicago'
+  const [headersList, cookieStore] = await Promise.all([headers(), cookies()])
+  const tz =
+    decodeURIComponent(cookieStore.get('tz')?.value ?? '') ||
+    headersList.get('x-vercel-ip-timezone') ||
+    'America/New_York'
   const { dateStr, start: todayStart, end: todayEnd, greeting, displayDate } = getLocalDayInfo(tz)
 
   const [nutrition, profile, todayWorkout] = await Promise.all([

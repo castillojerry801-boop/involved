@@ -7,13 +7,13 @@ import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { ThemeToggle } from '@/components/theme-toggle'
 
-const navItems = [
+const BASE_NAV_ITEMS = [
   { href: '/today',    label: 'Today',    icon: Sun },
   { href: '/nutrition',label: 'Nutrition', icon: Utensils },
   { href: '/training', label: 'Training',  icon: Dumbbell },
   { href: '/health',   label: 'Health',    icon: Activity },
   { href: '/coach',    label: 'Coach',     icon: null },
-  { href: '/trainer',  label: 'Trainer',   icon: Users },
+  { href: '/trainer',  label: 'Trainer',   icon: Users, trainerOnly: true },
   { href: '/goals',    label: 'Goals',     icon: Target },
   { href: '/progress', label: 'Progress',  icon: TrendingUp },
   { href: '/profile',  label: 'Profile',   icon: User },
@@ -28,8 +28,9 @@ const mobileNavItems = [
   { href: '/profile',  label: 'Profile',   icon: User },
 ]
 
-export function AppNav() {
+export function AppNav({ isTrainer = false }: { isTrainer?: boolean }) {
   const pathname = usePathname()
+  const navItems = BASE_NAV_ITEMS.filter(item => !('trainerOnly' in item && item.trainerOnly && !isTrainer))
 
   return (
     <>

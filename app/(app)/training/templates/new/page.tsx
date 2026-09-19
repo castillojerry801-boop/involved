@@ -7,6 +7,7 @@ import { ArrowLeft, Plus, Trash2, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ExercisePicker from '@/components/training/ExercisePicker'
 import type { ExerciseMeta } from '@/lib/exercises'
+import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 
 interface TemplateSet {
   setNumber: number
@@ -42,6 +43,7 @@ function SetEditor({ sets, onChange, trackingType }: {
 }) {
   const showWeight = ['strength', 'assisted', 'carry'].includes(trackingType)
   const showReps = ['strength', 'bodyweight', 'assisted'].includes(trackingType)
+  const { unit, toDisplay, fromInput } = useWeightUnit()
 
   const update = (i: number, field: keyof TemplateSet, value: unknown) => {
     onChange(sets.map((s, idx) => idx === i ? { ...s, [field]: value } : s))
@@ -62,8 +64,10 @@ function SetEditor({ sets, onChange, trackingType }: {
             <option value="amrap">AMRAP</option>
           </select>
           {showWeight && (
-            <input type="number" value={s.targetWeightKg ?? ''} onChange={e => update(i, 'targetWeightKg', e.target.value ? parseFloat(e.target.value) : null)}
-              placeholder="kg" className="w-14 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none" />
+            <input type="number"
+              value={toDisplay(s.targetWeightKg)}
+              onChange={e => update(i, 'targetWeightKg', fromInput(e.target.value) ?? null)}
+              placeholder={unit} className="w-14 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none" />
           )}
           {showReps && (
             <div className="flex items-center gap-0.5 flex-1">

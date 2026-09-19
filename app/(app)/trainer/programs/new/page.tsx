@@ -45,6 +45,18 @@ interface DayDraft {
 }
 
 const LEVELS = ['beginner', 'intermediate', 'advanced'] as const
+const LBS_PER_KG = 2.20462
+
+function kgToDisplay(kg: number | undefined, unit: 'kg' | 'lbs'): string {
+  if (kg === undefined) return ''
+  return unit === 'lbs' ? String(Math.round(kg * LBS_PER_KG * 10) / 10) : String(kg)
+}
+function inputToKg(val: string, unit: 'kg' | 'lbs'): number | undefined {
+  if (!val) return undefined
+  const n = Number(val)
+  if (isNaN(n)) return undefined
+  return unit === 'lbs' ? Math.round((n / LBS_PER_KG) * 100) / 100 : n
+}
 
 let _uid = 0
 function uid() { return `local_${++_uid}` }
@@ -69,10 +81,12 @@ function defaultExercise(result: ExerciseResult, sortOrder: number): ExerciseDra
 
 function SetRow({
   s,
+  unit,
   onChange,
   onRemove,
 }: {
   s: SetDraft
+  unit: 'kg' | 'lbs'
   onChange: (patch: Partial<SetDraft>) => void
   onRemove: () => void
 }) {
@@ -81,23 +95,23 @@ function SetRow({
       <span className="text-center font-semibold text-zinc-400">{s.setNumber}</span>
       <input
         type="number"
-        placeholder="Min reps"
+        placeholder="Min"
         value={s.targetRepsMin ?? ''}
         onChange={e => onChange({ targetRepsMin: e.target.value ? Number(e.target.value) : undefined })}
         className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1.5 text-center focus:outline-none focus:border-zinc-400"
       />
       <input
         type="number"
-        placeholder="Max reps"
+        placeholder="Max"
         value={s.targetRepsMax ?? ''}
         onChange={e => onChange({ targetRepsMax: e.target.value ? Number(e.target.value) : undefined })}
         className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1.5 text-center focus:outline-none focus:border-zinc-400"
       />
       <input
         type="number"
-        placeholder="kg"
-        value={s.targetWeightKg ?? ''}
-        onChange={e => onChange({ targetWeightKg: e.target.value ? Number(e.target.value) : undefined })}
+        placeholder={unit}
+        value={kgToDisplay(s.targetWeightKg, unit)}
+        onChange={e => onChange({ targetWeightKg: inputToKg(e.target.value, unit) })}
         className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1.5 text-center focus:outline-none focus:border-zinc-400"
       />
       <input
@@ -116,10 +130,12 @@ function SetRow({
 
 function ExerciseCard({
   ex,
+  unit,
   onChange,
   onRemove,
 }: {
   ex: ExerciseDraft
+  unit: 'kg' | 'lbs'
   onChange: (patch: Partial<ExerciseDraft>) => void
   onRemove: () => void
 }) {
@@ -161,7 +177,7 @@ function ExerciseCard({
             <span className="text-center">#</span>
             <span className="text-center">Min</span>
             <span className="text-center">Max</span>
-            <span className="text-center">Wt (kg)</span>
+            <span className="text-center">Wt ({unit})</span>
             <span className="text-center">Rest</span>
             <span />
           </div>
@@ -169,6 +185,7 @@ function ExerciseCard({
             <SetRow
               key={i}
               s={s}
+              unit={unit}
               onChange={patch => patchSet(i, patch)}
               onRemove={() => removeSet(i)}
             />
@@ -284,6 +301,7 @@ export default function NewTrainerProgramPage() {
   const [durationWeeks, setDurationWeeks] = useState('')
   const [sessionsPerWeek, setSessionsPerWeek] = useState('')
   const [days, setDays]                   = useState<DayDraft[]>([])
+  const [unit, setUnit]                   = useState<'kg' | 'lbs'>('lbs')
   const [saving, setSaving]               = useState(false)
   const [error, setError]                 = useState<string | null>(null)
 
@@ -386,7 +404,23 @@ export default function NewTrainerProgramPage() {
         >
           <ArrowLeft className="size-4 text-zinc-600 dark:text-zinc-400" />
         </Link>
-        <h1 className="text-xl font-black text-zinc-900 dark:text-white">New Program</h1>
+        <h1 className="text-xl font-black text-zinc-900 dark:text-white flex-1">New Program</h1>
+        <div className="flex shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-xs font-semibold">
+          {(['lbs', 'kg'] as const).map(u => (
+            <button
+              key={u}
+              onClick={() => setUnit(u)}
+              className={cn(
+                'w-10 py-1.5 text-center transition-colors uppercase',
+                unit === u
+                  ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                  : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+              )}
+            >
+              {u}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Details */}
@@ -475,6 +509,7 @@ export default function NewTrainerProgramPage() {
                   <ExerciseCard
                     key={ex.id}
                     ex={ex}
+                    unit={unit}
                     onChange={patch => patchExercise(day.id, ex.id, patch)}
                     onRemove={() => removeExercise(day.id, ex.id)}
                   />
