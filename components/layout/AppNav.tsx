@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Sun, Utensils, Dumbbell, TrendingUp, User, Target, Bot, Activity, Users } from 'lucide-react'
+import { Sun, Utensils, Dumbbell, TrendingUp, User, Target, Activity, Users } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -12,7 +12,7 @@ const navItems = [
   { href: '/nutrition',label: 'Nutrition', icon: Utensils },
   { href: '/training', label: 'Training',  icon: Dumbbell },
   { href: '/health',   label: 'Health',    icon: Activity },
-  { href: '/coach',    label: 'Coach',     icon: Bot },
+  { href: '/coach',    label: 'Coach',     icon: null },
   { href: '/trainer',  label: 'Trainer',   icon: Users },
   { href: '/goals',    label: 'Goals',     icon: Target },
   { href: '/progress', label: 'Progress',  icon: TrendingUp },
@@ -24,7 +24,7 @@ const mobileNavItems = [
   { href: '/today',    label: 'Today',    icon: Sun },
   { href: '/training', label: 'Training',  icon: Dumbbell },
   { href: '/health',   label: 'Health',    icon: Activity },
-  { href: '/coach',    label: 'Coach',     icon: Bot },
+  { href: '/coach',    label: 'Coach',     icon: null },
   { href: '/profile',  label: 'Profile',   icon: User },
 ]
 
@@ -61,7 +61,10 @@ export function AppNav() {
                     : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
                 )}
               >
-                <Icon className="size-5 shrink-0" />
+                {Icon
+                  ? <Icon className="size-5 shrink-0" />
+                  : <Image src="/icon.jpg" alt="Coach" width={20} height={20} className="size-5 shrink-0 rounded-md object-cover" />
+                }
                 {label}
               </Link>
             )
@@ -93,7 +96,10 @@ export function AppNav() {
                   : 'text-zinc-400 dark:text-zinc-600'
               )}
             >
-              <Icon className={cn('size-5', active && 'stroke-[2.5px]')} />
+              {Icon
+                ? <Icon className={cn('size-5', active && 'stroke-[2.5px]')} />
+                : <Image src="/icon.jpg" alt="Coach" width={20} height={20} className={cn('size-5 rounded-md object-cover', !active && 'opacity-50')} />
+              }
               <span>{label}</span>
             </Link>
           )
