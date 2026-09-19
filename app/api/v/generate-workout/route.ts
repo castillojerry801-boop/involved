@@ -30,6 +30,7 @@ RULES:
 • Respect the user's equipment constraints — only include exercises that match their available equipment.
 • Respect the user's exercise preferences (favorites, avoid lists).
 • Build a workout appropriate for the user's fitness level and goals.
+• Prefer conventional compound movements (e.g., squat, deadlift, bench press, overhead press, pull-up, row) unless equipment or preferences require alternatives.
 • The server will validate every exercise ID. Invalid IDs will be rejected.
 • After searching, call propose_workout with the final workout.
 

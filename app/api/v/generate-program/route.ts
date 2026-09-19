@@ -11,17 +11,18 @@ import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage } from '@/lib/v/usage'
 import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training-context'
+import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
 import type OpenAI from 'openai'
 
 const SYSTEM_PROMPT = `You are Involved V, an AI training program designer.
 
 RULES:
 • Only use exercise IDs returned by search_exercises. Never invent IDs.
-• Search for exercises for each day separately.
-• Distribute muscle groups across days for proper recovery.
-• Build the program appropriate for the user's fitness level and goals.
+• Search for exercises for each day separately — one search per movement-pattern role per day.
+• Plan all movement-pattern roles first. Then search to fill them. Never search first and assemble later.
 • Respect equipment constraints and exercise preferences.
-• After searching, call propose_program with the complete program.
+• Complete the Program Review Pass before calling propose_program.
+${PROGRAM_INTELLIGENCE_PROMPT}
 
 USER CONTEXT:
 `

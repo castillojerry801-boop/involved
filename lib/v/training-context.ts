@@ -2,34 +2,66 @@ import 'server-only'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 export interface VTrainingContext {
   profile: {
-    fitnessLevel: string | null
-    goals: Array<{ type: string; title: string; targetDate?: string }>
+    fitnessLevel:        string | null
+    goals:               Array<{ type: string; title: string; targetDate?: string }>
+    bodyMetrics:         { ageYears: number | null; weightKg: number | null }
+    weeklyWorkoutTarget: number | null
   }
   equipment: {
     profileName: string
     items: string[]
   } | null
   preferences: {
-    favorites: string[]
-    moreOften: string[]
-    lessOften: string[]
+    favorites:     string[]
+    moreOften:     string[]
+    lessOften:     string[]
     dontRecommend: string[]
   }
+  personalRecords: Array<{
+    exerciseName: string
+    exerciseId:   string
+    metric:       string
+    value:        number
+    unit:         string
+    achievedAt:   string
+  }>
   recentTraining: Array<{
-    date: string
-    title: string
+    date:          string
+    title:         string
     musclesWorked: string[]
-    totalSets: number
+    totalSets:     number
+    topSets:       Array<{
+      exerciseName: string
+      exerciseId:   string
+      maxWeightKg:  number
+      topReps:      number | null
+      setCount:     number
+    }>
   }>
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function calcAge(dob: Date | null): number | null {
+  if (!dob) return null
+  const today = new Date()
+  let age = today.getFullYear() - dob.getFullYear()
+  const m = today.getMonth() - dob.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--
+  return age
+}
+
+// ─── Builder ──────────────────────────────────────────────────────────────────
+
 export async function buildVTrainingContext(userId: string): Promise<VTrainingContext> {
-  const [profile, goals, activeEquipment, preferences, recentWorkouts] = await Promise.all([
+  const [profile, goals, activeEquipment, preferences, prs, weeklyTarget, recentWorkouts] = await Promise.all([
     prisma.profile.findUnique({
       where: { id: userId },
-      select: { fitnessLevel: true },
+      select: { fitnessLevel: true, dateOfBirth: true, weightKg: true },
     }).catch(() => null),
 
     prisma.goal.findMany({
@@ -49,6 +81,21 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
       select: { exerciseId: true, state: true },
     }).catch(() => []),
 
+    prisma.personalRecord.findMany({
+      where: {
+        userId,
+        metric: { in: ['weight', 'estimated_1rm'] },
+      },
+      select: { exerciseId: true, metric: true, value: true, unit: true, achievedAt: true },
+      orderBy: { value: 'desc' },
+      take: 20,
+    }).catch(() => []),
+
+    prisma.weeklyTarget.findFirst({
+      where: { userId, targetType: 'workouts_per_week' },
+      select: { targetValue: true },
+    }).catch(() => null),
+
     prisma.workout.findMany({
       where: { userId, status: 'completed' },
       orderBy: { completedAt: 'desc' },
@@ -56,25 +103,46 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
       include: {
         exercises: {
           include: {
-            sets: { where: { completed: true }, select: { id: true } },
+            sets: {
+              where: { completed: true },
+              select: {
+                setType:      true,
+                actualWeightKg: true,
+                actualReps:   true,
+              },
+            },
           },
         },
       },
     }).catch(() => []),
   ])
 
+  // Preferences
   const favs: string[] = []
   const more: string[] = []
   const less: string[] = []
   const avoid: string[] = []
-
   for (const p of preferences) {
-    if (p.state === 'favorite')        favs.push(p.exerciseId)
-    else if (p.state === 'more_often') more.push(p.exerciseId)
-    else if (p.state === 'less_often') less.push(p.exerciseId)
+    if (p.state === 'favorite')         favs.push(p.exerciseId)
+    else if (p.state === 'more_often')  more.push(p.exerciseId)
+    else if (p.state === 'less_often')  less.push(p.exerciseId)
     else if (p.state === 'dont_recommend') avoid.push(p.exerciseId)
   }
 
+  // PRs
+  const personalRecords = prs.map(pr => {
+    const ex = getExerciseById(pr.exerciseId)
+    return {
+      exerciseName: ex?.name ?? pr.exerciseId,
+      exerciseId:   pr.exerciseId,
+      metric:       pr.metric,
+      value:        Number(pr.value),
+      unit:         pr.unit,
+      achievedAt:   new Date(pr.achievedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    }
+  })
+
+  // Recent training with actual performance
   const recentTraining = recentWorkouts.map(w => {
     const muscles = [...new Set(
       w.exercises.flatMap(we => {
@@ -83,24 +151,54 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
       })
     )]
     const totalSets = w.exercises.reduce((n, we) => n + we.sets.length, 0)
+
+    // Top sets per exercise: working sets with weight data, highest weight first
+    const topSets = w.exercises
+      .map(we => {
+        const ex = getExerciseById(we.exerciseId)
+        const workingSets = we.sets.filter(
+          s => s.setType === 'working' && s.actualWeightKg != null && Number(s.actualWeightKg) > 0
+        )
+        if (workingSets.length === 0) return null
+        const topSet = workingSets.reduce((best, s) =>
+          Number(s.actualWeightKg) > Number(best.actualWeightKg) ? s : best
+        )
+        return {
+          exerciseName: ex?.name ?? we.exerciseId,
+          exerciseId:   we.exerciseId,
+          maxWeightKg:  Number(topSet.actualWeightKg),
+          topReps:      topSet.actualReps ?? null,
+          setCount:     workingSets.length,
+        }
+      })
+      .filter((s): s is NonNullable<typeof s> => s !== null)
+      .sort((a, b) => b.maxWeightKg - a.maxWeightKg)
+      .slice(0, 4)
+
     return {
-      date: (w.completedAt ?? w.startedAt ?? w.createdAt).toISOString().slice(0, 10),
-      title: w.title,
+      date:          (w.completedAt ?? w.startedAt ?? w.createdAt).toISOString().slice(0, 10),
+      title:         w.title,
       musclesWorked: muscles,
       totalSets,
+      topSets,
     }
   })
 
   return {
     profile: {
-      fitnessLevel: profile?.fitnessLevel ?? null,
-      goals: goals.map(g => ({
-        type: g.type,
-        title: g.title,
+      fitnessLevel:        profile?.fitnessLevel ?? null,
+      goals:               goals.map(g => ({
+        type:       g.type,
+        title:      g.title,
         targetDate: g.targetDate
           ? new Date(g.targetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
           : undefined,
       })),
+      bodyMetrics: {
+        ageYears: calcAge(profile?.dateOfBirth ?? null),
+        weightKg: profile?.weightKg != null ? Number(profile.weightKg) : null,
+      },
+      weeklyWorkoutTarget: weeklyTarget?.targetValue ?? null,
     },
     equipment: activeEquipment
       ? { profileName: activeEquipment.name, items: activeEquipment.items.map(i => i.equipment) }
@@ -111,15 +209,36 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
       lessOften:     less.slice(0, 20),
       dontRecommend: avoid.slice(0, 20),
     },
+    personalRecords,
     recentTraining,
   }
 }
+
+// ─── Formatter ────────────────────────────────────────────────────────────────
 
 export function trainingContextToPrompt(ctx: VTrainingContext): string {
   const lines: string[] = []
 
   lines.push(`FITNESS LEVEL: ${ctx.profile.fitnessLevel ?? 'not specified'}`)
 
+  // Body metrics
+  const { ageYears, weightKg } = ctx.profile.bodyMetrics
+  if (ageYears != null || weightKg != null) {
+    const parts: string[] = []
+    if (ageYears != null) parts.push(`Age: ${ageYears}`)
+    if (weightKg != null) {
+      const lbs = Math.round(weightKg * 2.20462)
+      parts.push(`Body weight: ${lbs} lb (${weightKg} kg)`)
+    }
+    lines.push(`BODY METRICS: ${parts.join(' | ')}`)
+  }
+
+  // Weekly target
+  if (ctx.profile.weeklyWorkoutTarget != null) {
+    lines.push(`WEEKLY WORKOUT TARGET: ${ctx.profile.weeklyWorkoutTarget} days/week`)
+  }
+
+  // Goals
   if (ctx.profile.goals.length > 0) {
     lines.push('GOALS:')
     ctx.profile.goals.forEach(g => {
@@ -130,6 +249,7 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
     lines.push('GOALS: None set.')
   }
 
+  // Equipment
   if (ctx.equipment) {
     lines.push(`EQUIPMENT PROFILE: ${ctx.equipment.profileName} — ${ctx.equipment.items.join(', ') || 'none listed'}`)
     lines.push('IMPORTANT: Only use exercises compatible with this equipment. Use search_exercises with these equipment values.')
@@ -137,6 +257,7 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
     lines.push('EQUIPMENT: No active equipment profile — assume full gym access.')
   }
 
+  // Preferences
   if (ctx.preferences.favorites.length > 0) {
     lines.push(`FAVORITE EXERCISES (prefer these): ${ctx.preferences.favorites.join(', ')}`)
   }
@@ -150,11 +271,27 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
     lines.push(`DO NOT USE (user excluded): ${ctx.preferences.dontRecommend.join(', ')}`)
   }
 
+  // PRs — load calibration reference
+  if (ctx.personalRecords.length > 0) {
+    lines.push('PERSONAL RECORDS (use for load calibration):')
+    ctx.personalRecords.forEach(pr => {
+      const metricLabel = pr.metric === 'estimated_1rm' ? 'est. 1RM' : 'max weight'
+      lines.push(`  ${pr.exerciseName}: ${metricLabel} ${pr.value} ${pr.unit} (${pr.achievedAt})`)
+    })
+  }
+
+  // Recent training with actual performance
   if (ctx.recentTraining.length > 0) {
     lines.push('RECENT TRAINING (last 10 sessions):')
     ctx.recentTraining.forEach(t => {
       const muscles = t.musclesWorked.join(', ') || 'unknown'
       lines.push(`  ${t.date} — ${t.title} — ${muscles} — ${t.totalSets} sets`)
+      if (t.topSets.length > 0) {
+        t.topSets.forEach(s => {
+          const repsStr = s.topReps != null ? ` × ${s.topReps} reps` : ''
+          lines.push(`    ${s.exerciseName}: ${s.setCount} sets @ ${s.maxWeightKg} kg${repsStr}`)
+        })
+      }
     })
   } else {
     lines.push('RECENT TRAINING: No recent sessions.')
