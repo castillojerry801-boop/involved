@@ -184,6 +184,9 @@ export async function revokeClientRelationship(
  * Enforce seat limit — throws if the trainer is at capacity.
  */
 async function assertSeatAvailable(trainerId: string): Promise<void> {
+  const trainerOverrides = (process.env.TRAINER_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  if (trainerOverrides.includes(trainerId)) return
+
   const [trainerSub, activeCount] = await Promise.all([
     prisma.trainerSubscription.findUnique({ where: { userId: trainerId } }),
     prisma.trainerClientRelationship.count({
