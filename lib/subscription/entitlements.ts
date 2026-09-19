@@ -44,9 +44,25 @@ const FREE_ENTITLEMENT: Entitlement = {
  * Never trust client-supplied tier claims — always call this.
  */
 export async function getUserEntitlement(userId: string): Promise<Entitlement> {
-  // Dev override — PLUS_USER_IDS=uuid1,uuid2 in .env.local
-  const overrides = (process.env.PLUS_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
-  if (overrides.includes(userId)) {
+  // Dev overrides — set in .env.local or Vercel env vars
+  const trainerOverrides = (process.env.TRAINER_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  if (trainerOverrides.includes(userId)) {
+    return {
+      tier: 'trainer',
+      status: 'active',
+      trialEndsAt: null,
+      trialDaysRemaining: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      isPlus: true,
+      isTrial: false,
+      isFree: false,
+      isTrainer: true,
+      isTrainerSponsored: false,
+    }
+  }
+  const plusOverrides = (process.env.PLUS_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  if (plusOverrides.includes(userId)) {
     return { ...FREE_ENTITLEMENT, tier: 'plus', isPlus: true, isFree: false, status: 'active' }
   }
 
