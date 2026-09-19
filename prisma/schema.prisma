@@ -361,7 +361,7 @@ model Program {
   id          String      @id @default(uuid()) @db.Uuid
   userId      String      @map("user_id") @db.Uuid
   name        String      @db.VarChar(200)
-  description String?     @db.VarChar(500)
+  description String?     @db.Text
   isActive    Boolean     @default(false) @map("is_active")
   // Set when a trainer assigns this program to a client
   trainerCreatedById    String?   @map("trainer_created_by_id") @db.Uuid
@@ -379,12 +379,14 @@ model Program {
 }
 
 model ProgramDay {
-  id        String            @id @default(uuid()) @db.Uuid
-  programId String            @map("program_id") @db.Uuid
-  name      String            @db.VarChar(200)
-  sortOrder Int               @default(0) @map("sort_order")
-  createdAt DateTime          @default(now()) @map("created_at")
-  updatedAt DateTime          @updatedAt @map("updated_at")
+  id                       String            @id @default(uuid()) @db.Uuid
+  programId                String            @map("program_id") @db.Uuid
+  name                     String            @db.VarChar(200)
+  focus                    String?           @db.VarChar(300)
+  estimatedDurationMinutes Int?              @map("estimated_duration_minutes")
+  sortOrder                Int               @default(0) @map("sort_order")
+  createdAt                DateTime          @default(now()) @map("created_at")
+  updatedAt                DateTime          @updatedAt @map("updated_at")
 
   program   Program           @relation(fields: [programId], references: [id], onDelete: Cascade)
   exercises ProgramExercise[]

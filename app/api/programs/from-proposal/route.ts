@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
         days: {
           create: validated.days.map((day, di) => ({
             name: day.name,
+            focus: day.focus ?? null,
+            estimatedDurationMinutes: day.estimated_duration_minutes ?? null,
             sortOrder: di,
             exercises: {
               create: day.exercises.map((ex, ei) => ({

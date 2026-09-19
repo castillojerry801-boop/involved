@@ -1,0 +1,9 @@
+{
+  "version": "0.0.0",
+  "severityDefinitions": {
+    "blocking": "Structurally invalid program. Exercise role mismatch. Equipment incompatibility. Explicit user constraint violated. Missing required progression. Genuinely invalid state.",
+    "warning": "Unusual redundancy. Recovery concern. Volume or intensity concern. Frequency concern. Complexity concern. Potential goal mismatch requiring V review. V may leave as-is with explicit stated reasoning.",
+    "informational": "Legitimate tradeoffs. Programming alternatives worth explaining. Non-critical optimization."
+  },
+  "rules": []
+}

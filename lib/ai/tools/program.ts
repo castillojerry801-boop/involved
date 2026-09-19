@@ -1,8 +1,10 @@
 import { validateExerciseId } from './exercises'
+import { classifyExercise } from '@/lib/exercises'
 import type { Exercise } from '@/lib/exercises'
 
 export interface ProgramExercise {
   exercise_id: string
+  intended_pattern: string   // V must declare the movementPattern role this exercise fills; server validates it
   sets: number
   reps_min?: number
   reps_max?: number
@@ -79,6 +81,41 @@ export function validateProgramDraft(draft: ProgramDraft): ProgramValidationResu
         errors.push(`Day "${day.name}": exercise ID "${ex.exercise_id}" does not exist — only use IDs from search_exercises`)
         continue
       }
+
+      // Validate intended_pattern against the Involved classification layer
+      if (!ex.intended_pattern?.trim()) {
+        errors.push(`Day "${day.name}", ${record.name}: intended_pattern is required — declare the movementPattern role this exercise fills`)
+      } else {
+        const classification = classifyExercise(record)
+
+        if (classification.exerciseRole === 'mobility') {
+          // Mobility/stretch exercises cannot fill strength or conditioning roles.
+          // V may include them intentionally (warmup, cooldown) by setting intended_pattern to "other".
+          if (ex.intended_pattern !== 'other') {
+            errors.push(
+              `Day "${day.name}", ${record.name}: exerciseRole is "mobility" (stretch / flexibility). ` +
+              `It cannot fill a "${ex.intended_pattern}" strength role. ` +
+              `Set intended_pattern to "other" to include it intentionally for warmup/cooldown, ` +
+              `or choose a different exercise.`
+            )
+          }
+        } else {
+          const derived = classification.primaryMovementPattern
+          const secondary = classification.secondaryMovementPatterns
+          const intendedOk =
+            ex.intended_pattern === derived ||
+            secondary.includes(ex.intended_pattern as typeof derived)
+          if (!intendedOk) {
+            errors.push(
+              `Day "${day.name}", ${record.name}: intended_pattern "${ex.intended_pattern}" does not match ` +
+              `the Involved classification (derived: "${derived}"` +
+              (secondary.length ? `, secondaryPatterns: [${secondary.join(', ')}]` : '') +
+              `). Search for a different exercise or correct the intended_pattern.`
+            )
+          }
+        }
+      }
+
       if (ex.sets < 1 || ex.sets > 20) {
         errors.push(`${record.name}: sets must be 1–20`)
       }
@@ -162,15 +199,16 @@ export const PROPOSE_PROGRAM_TOOL = {
                 items: {
                   type: 'object',
                   properties: {
-                    exercise_id:      { type: 'string', description: 'ID from search_exercises — never invent' },
-                    sets:             { type: 'number', description: 'Sets (1–20)' },
-                    reps_min:         { type: 'number', description: 'Minimum reps per set (omit for time-based)' },
-                    reps_max:         { type: 'number', description: 'Maximum reps per set (omit for time-based)' },
-                    duration_seconds: { type: 'number', description: 'Duration per set in seconds (omit for rep-based)' },
-                    rest_seconds:     { type: 'number', description: 'Rest between sets in seconds' },
-                    notes:            { type: 'string', description: 'Coaching cue, progression instruction, or form note' },
+                    exercise_id:       { type: 'string', description: 'ID from search_exercises — never invent' },
+                    intended_pattern:  { type: 'string', description: 'REQUIRED: the movementPattern role this exercise fills in this session (e.g. "squat", "hinge", "vertical_pull"). Must match the exercise\'s movementPattern from search_exercises or the server will reject it.' },
+                    sets:              { type: 'number', description: 'Sets (1–20)' },
+                    reps_min:          { type: 'number', description: 'Minimum reps per set (omit for time-based)' },
+                    reps_max:          { type: 'number', description: 'Maximum reps per set (omit for time-based)' },
+                    duration_seconds:  { type: 'number', description: 'Duration per set in seconds (omit for rep-based)' },
+                    rest_seconds:      { type: 'number', description: 'Rest between sets in seconds' },
+                    notes:             { type: 'string', description: 'Coaching cue, progression instruction, or form note' },
                   },
-                  required: ['exercise_id', 'sets', 'rest_seconds'],
+                  required: ['exercise_id', 'intended_pattern', 'sets', 'rest_seconds'],
                 },
               },
             },
