@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Plus, Trash2, Loader2, Trophy, Dumbbell,
-  FileText, Target, Lock, Unlock, ChevronRight,
+  FileText, Target, Lock, Unlock, ChevronRight, Send, CheckCircle2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -14,9 +14,13 @@ type Tab = 'overview' | 'workouts' | 'programs' | 'notes'
 interface TrainerNote { id: string; content: string; createdAt: string; isPrivate: boolean }
 interface TrainerTarget { id: string; targetType: string; targetValue: number; unit: string; effectiveDate: string }
 interface Goal { type: string; title: string; targetDate: string | null }
-interface Workout { id: string; title: string; status: string; scheduledDate: string | null; completedAt: string | null; totalSets: number }
+interface Workout { id: string; title: string; status: string; scheduledDate: string | null; completedAt: string | null; totalSets: number; assignedById: string | null; source: string }
 interface PR { exerciseId: string; metric: string; value: number; unit: string; achievedAt: string }
 interface AssignedProgram { id: string; name: string; isActive: boolean }
+interface Compliance { total: number; completed: number }
+
+interface TrainerProgramDay { id: string; name: string }
+interface TrainerProgramBrief { id: string; name: string; days: TrainerProgramDay[] }
 
 interface ClientDetail {
   profile:          { displayName: string | null; fitnessLevel: string | null; heightCm: number | null; weightKg: number | null } | null
@@ -27,6 +31,7 @@ interface ClientDetail {
   trainerTargets:   TrainerTarget[]
   trainerNotes:     TrainerNote[]
   pendingDrafts:    number
+  compliance:       Compliance
 }
 
 const TARGET_OPTIONS: { type: string; label: string; unit: string; placeholder: string }[] = [
@@ -173,6 +178,127 @@ function TargetSetter({ clientId, onSaved }: { clientId: string; onSaved: () => 
   )
 }
 
+function WorkoutSender({ clientId, programs, onSent }: {
+  clientId: string
+  programs: TrainerProgramBrief[]
+  onSent: () => void
+}) {
+  const [programId, setProgramId] = useState('')
+  const [dayId, setDayId] = useState('')
+  const [date, setDate] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [open, setOpen] = useState(false)
+
+  const selectedProgram = programs.find(p => p.id === programId)
+
+  const handleProgramChange = (id: string) => {
+    setProgramId(id)
+    setDayId('')
+  }
+
+  const handleSend = async () => {
+    if (!programId || !dayId) return
+    setSending(true)
+    const r = await fetch(`/api/trainer/clients/${clientId}/workouts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trainerProgramId: programId, dayId, scheduledDate: date || undefined }),
+    })
+    setSending(false)
+    if (r.ok) {
+      setSent(true)
+      setProgramId('')
+      setDayId('')
+      setDate('')
+      setTimeout(() => { setSent(false); setOpen(false) }, 1500)
+      onSent()
+    }
+  }
+
+  if (!open) return (
+    <button
+      onClick={() => setOpen(true)}
+      className="flex items-center gap-1.5 w-full rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-3 text-sm font-medium text-zinc-400 hover:border-emerald-300 hover:text-emerald-600 dark:hover:border-emerald-700 dark:hover:text-emerald-400 transition-colors"
+    >
+      <Send className="size-4" /> Send a workout
+    </button>
+  )
+
+  return (
+    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 space-y-3">
+      <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Send a workout</p>
+
+      {programs.length === 0 ? (
+        <p className="text-sm text-zinc-400">
+          No programs in your library yet.{' '}
+          <Link href="/trainer/programs/new" className="text-emerald-600 hover:underline">Build one</Link>
+        </p>
+      ) : (
+        <>
+          <div className="space-y-2">
+            <select
+              value={programId}
+              onChange={e => handleProgramChange(e.target.value)}
+              className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none"
+            >
+              <option value="">Select program...</option>
+              {programs.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+
+            {selectedProgram && (
+              <select
+                value={dayId}
+                onChange={e => setDayId(e.target.value)}
+                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none"
+              >
+                <option value="">Select day...</option>
+                {selectedProgram.days.map(d => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            )}
+
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Schedule for (optional)</label>
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-white focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setOpen(false); setProgramId(''); setDayId(''); setDate('') }}
+              className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 py-2 text-xs text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={!programId || !dayId || sending || sent}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-white py-2 text-xs font-bold hover:bg-emerald-700 disabled:opacity-40 transition-colors"
+            >
+              {sent ? (
+                <><CheckCircle2 className="size-3.5" /> Sent!</>
+              ) : sending ? (
+                <><Loader2 className="size-3.5 animate-spin" /> Sending...</>
+              ) : (
+                <><Send className="size-3.5" /> Send workout</>
+              )}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ClientDetailPage({ params }: { params: Promise<{ clientId: string }> }) {
@@ -183,6 +309,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ clientI
   const [tab, setTab] = useState<Tab>('overview')
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [deletingNote, setDeletingNote] = useState<string | null>(null)
+  const [trainerPrograms, setTrainerPrograms] = useState<TrainerProgramBrief[] | null>(null)
 
   const fetchDetail = useCallback(async () => {
     const r = await fetch(`/api/trainer/clients/${clientId}`)
@@ -191,6 +318,16 @@ export default function ClientDetailPage({ params }: { params: Promise<{ clientI
   }, [clientId])
 
   useEffect(() => { void fetchDetail() }, [fetchDetail])
+
+  // Load trainer programs lazily when programs tab is first opened
+  useEffect(() => {
+    if (tab === 'programs' && trainerPrograms === null) {
+      fetch('/api/trainer/programs')
+        .then(r => r.json())
+        .then((d: { programs: TrainerProgramBrief[] }) => setTrainerPrograms(d.programs ?? []))
+        .catch(() => setTrainerPrograms([]))
+    }
+  }, [tab, trainerPrograms])
 
   const handleRemove = async () => {
     const r = await fetch(`/api/trainer/clients/${clientId}/remove`, { method: 'POST' })
@@ -220,7 +357,9 @@ export default function ClientDetailPage({ params }: { params: Promise<{ clientI
     </div>
   )
 
-  const { profile, goals, recentWorkouts, personalRecords, assignedPrograms, trainerTargets, trainerNotes, pendingDrafts } = detail
+  const { profile, goals, recentWorkouts, personalRecords, assignedPrograms, trainerTargets, trainerNotes, pendingDrafts, compliance } = detail
+
+  const compliancePct = compliance.total > 0 ? Math.round((compliance.completed / compliance.total) * 100) : null
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
@@ -344,12 +483,50 @@ export default function ClientDetailPage({ params }: { params: Promise<{ clientI
       {/* Workouts tab */}
       {tab === 'workouts' && (
         <div className="space-y-2">
+          {/* 30-day compliance for trainer-assigned workouts */}
+          {compliance.total > 0 && (
+            <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 mb-1">
+              <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-2">30-day compliance</p>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                  <div
+                    className={cn(
+                      'h-full rounded-full transition-all',
+                      compliancePct != null && compliancePct >= 80 ? 'bg-emerald-500' :
+                      compliancePct != null && compliancePct >= 50 ? 'bg-amber-400' : 'bg-red-400'
+                    )}
+                    style={{ width: `${compliancePct ?? 0}%` }}
+                  />
+                </div>
+                <span className={cn(
+                  'text-sm font-bold shrink-0',
+                  compliancePct != null && compliancePct >= 80 ? 'text-emerald-600 dark:text-emerald-400' :
+                  compliancePct != null && compliancePct >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500'
+                )}>
+                  {compliance.completed}/{compliance.total}
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400 mt-1">
+                trainer-assigned workouts completed in the last 30 days
+              </p>
+            </div>
+          )}
+
           {recentWorkouts.length === 0 ? (
             <p className="text-sm text-zinc-400 py-6 text-center">No workouts recorded yet.</p>
           ) : recentWorkouts.map(w => (
-            <div key={w.id} className="flex items-center justify-between rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3">
+            <div
+              key={w.id}
+              className={cn(
+                'flex items-center justify-between rounded-2xl border px-4 py-3 bg-white dark:bg-zinc-900',
+                w.assignedById ? 'border-emerald-100 dark:border-emerald-900/30' : 'border-zinc-100 dark:border-zinc-800'
+              )}
+            >
               <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-white">{w.title}</p>
+                <div className="flex items-center gap-1.5">
+                  {w.assignedById && <Send className="size-3 text-emerald-500 shrink-0" />}
+                  <p className="text-sm font-medium text-zinc-900 dark:text-white">{w.title}</p>
+                </div>
                 <p className="text-xs text-zinc-400">
                   {(w.completedAt ?? w.scheduledDate ?? '').slice(0, 10)} · {w.totalSets} sets
                 </p>
@@ -363,8 +540,18 @@ export default function ClientDetailPage({ params }: { params: Promise<{ clientI
       {/* Programs tab */}
       {tab === 'programs' && (
         <div className="space-y-3">
+          {/* Send a workout */}
+          {trainerPrograms === null ? (
+            <div className="flex justify-center py-4">
+              <Loader2 className="size-4 animate-spin text-zinc-400" />
+            </div>
+          ) : (
+            <WorkoutSender clientId={clientId} programs={trainerPrograms} onSent={fetchDetail} />
+          )}
+
+          {/* Assigned programs */}
           {assignedPrograms.length === 0 ? (
-            <p className="text-sm text-zinc-400 py-4">No programs assigned yet.</p>
+            <p className="text-sm text-zinc-400 py-2">No programs assigned yet.</p>
           ) : assignedPrograms.map(p => (
             <div key={p.id} className="flex items-center justify-between rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3">
               <div className="flex items-center gap-2">
@@ -377,7 +564,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ clientI
             </div>
           ))}
           <Link href="/trainer/programs" className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors mt-1">
-            Assign from program library <ChevronRight className="size-4" />
+            Assign a full program <ChevronRight className="size-4" />
           </Link>
         </div>
       )}

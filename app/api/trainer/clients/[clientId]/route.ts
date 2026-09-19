@@ -23,6 +23,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return Response.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+
   try {
     const [
       profile,
@@ -33,6 +35,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       trainerTargets,
       trainerNotes,
       pendingDrafts,
+      complianceWorkouts,
     ] = await Promise.all([
       prisma.profile.findUnique({
         where:  { id: clientId },
@@ -88,7 +91,21 @@ export async function GET(_req: NextRequest, { params }: Params) {
       prisma.vTrainerDraft.count({
         where: { trainerId: user.id, clientId, status: 'pending' },
       }),
+
+      // Workouts assigned by this trainer in the last 30 days that are due (scheduled in the past)
+      prisma.workout.findMany({
+        where: {
+          userId: clientId,
+          assignedById: user.id,
+          scheduledDate: { gte: thirtyDaysAgo, lte: new Date() },
+        },
+        select: { id: true, status: true, completedAt: true },
+      }),
     ])
+
+    const completedCount = complianceWorkouts.filter(
+      w => w.status === 'completed' || w.completedAt != null
+    ).length
 
     return Response.json({
       profile,
@@ -102,6 +119,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
       trainerTargets,
       trainerNotes,
       pendingDrafts,
+      compliance: { total: complianceWorkouts.length, completed: completedCount },
     })
   } catch {
     return Response.json({ error: 'Failed to load client detail' }, { status: 500 })
