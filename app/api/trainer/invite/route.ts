@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { createInvitation } from '@/lib/trainer/relationships'
+import { sendTrainerInvite } from '@/lib/email/send-trainer-invite'
 
 // GET: list pending invitations sent by this trainer, OR look up by token
 export async function GET(req: NextRequest) {
@@ -61,13 +62,17 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Cannot invite yourself' }, { status: 400 })
   }
 
+  // Get trainer's display name for the email
+  const trainerProfile = await prisma.profile.findUnique({
+    where: { id: user.id },
+    select: { displayName: true },
+  })
+  const trainerName = trainerProfile?.displayName ?? 'Your trainer'
+
   try {
     const { token, expiresAt } = await createInvitation(user.id, normalizedEmail)
 
-    // TODO: send email with invitation link
-    // The invite link is: /invite/[token]
-    // Email sending requires a transactional email provider (Resend, Postmark, etc.)
-    // For now the token is returned so it can be copied/tested.
+    await sendTrainerInvite({ toEmail: normalizedEmail, trainerName, token, expiresAt })
 
     return Response.json({ ok: true, token, expiresAt })
   } catch (err) {
