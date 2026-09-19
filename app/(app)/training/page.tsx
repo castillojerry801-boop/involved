@@ -366,15 +366,16 @@ export default async function TrainingPage() {
           </div>
 
           {trainerPrograms.length === 0 ? (
-            <Link href="/trainer/programs/new">
-              <div className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors">
+            <Link href="/trainer/programs">
+              <div className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
                 <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
-                  <Plus className="size-4 text-zinc-400" />
+                  <ClipboardList className="size-4 text-zinc-400" />
                 </div>
-                <div>
-                  <p className="font-semibold text-sm text-zinc-700 dark:text-zinc-300">Build a trainer program</p>
-                  <p className="text-xs text-zinc-400">Create reusable programs to assign to clients</p>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Trainer program library</p>
+                  <p className="text-xs text-zinc-400">No programs built yet</p>
                 </div>
+                <ChevronRight className="size-4 text-zinc-300 dark:text-zinc-600 shrink-0" />
               </div>
             </Link>
           ) : (
