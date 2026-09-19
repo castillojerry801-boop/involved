@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { ChevronRight, Plus, ArrowRight, Bot, Dumbbell, PlayCircle, CheckCircle2, Calendar } from 'lucide-react'
 import Link from 'next/link'
+import { headers } from 'next/headers'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
@@ -9,11 +10,34 @@ import { redirect } from 'next/navigation'
 
 export const metadata: Metadata = { title: 'Today' }
 
-function getGreeting() {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
+// Returns the user's local date as YYYY-MM-DD and the start/end of that day in UTC.
+// Uses x-vercel-ip-timezone (auto-set by Vercel per request) so the server always
+// operates in the visitor's actual timezone rather than UTC.
+function getLocalDayInfo(tz: string) {
+  const now = new Date()
+  const dateStr = now.toLocaleDateString('en-CA', { timeZone: tz }) // "YYYY-MM-DD"
+
+  // Compute UTC times that bound midnight→midnight in the user's timezone.
+  // Trick: parse UTC midnight, then adjust by the timezone's offset at that moment.
+  const utcMidnight = new Date(`${dateStr}T00:00:00Z`)
+  const offsetMs =
+    new Date(utcMidnight.toLocaleString('en-US', { timeZone: 'UTC' })).getTime() -
+    new Date(utcMidnight.toLocaleString('en-US', { timeZone: tz })).getTime()
+
+  const start = new Date(utcMidnight.getTime() + offsetMs)
+  const end   = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1)
+
+  const hour = parseInt(now.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }))
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+
+  const displayDate = now.toLocaleDateString('en-US', {
+    timeZone: tz,
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
+
+  return { dateStr, start, end, greeting, displayDate }
 }
 
 function pct(consumed: number, target: number) {
@@ -21,8 +45,8 @@ function pct(consumed: number, target: number) {
   return Math.min(Math.round((consumed / target) * 100), 100)
 }
 
-async function getTodayNutrition(userId: string) {
-  const today = new Date().toISOString().slice(0, 10)
+async function getTodayNutrition(userId: string, dateStr: string) {
+  const today = dateStr
 
   const [entries, target] = await Promise.all([
     prisma.foodLogEntry.findMany({
@@ -71,16 +95,13 @@ async function getTodayNutrition(userId: string) {
 export default async function TodayPage() {
   const user = await getUser()
   if (!user) redirect('/login')
-  // New users who haven't completed onboarding get redirected there first.
-  // We check after fetching the profile below.
 
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
-  const todayEnd = new Date()
-  todayEnd.setHours(23, 59, 59, 999)
+  const headersList = await headers()
+  const tz = headersList.get('x-vercel-ip-timezone') ?? 'America/Chicago'
+  const { dateStr, start: todayStart, end: todayEnd, greeting, displayDate } = getLocalDayInfo(tz)
 
   const [nutrition, profile, todayWorkout] = await Promise.all([
-    getTodayNutrition(user.id),
+    getTodayNutrition(user.id, dateStr),
     prisma.profile.findUnique({ where: { id: user.id }, select: { displayName: true, fitnessLevel: true } }).catch(() => null),
     prisma.workout.findFirst({
       where: {
@@ -116,17 +137,13 @@ export default async function TodayPage() {
   const { totals, target, hasEntries } = nutrition
   const calRemaining = target ? target.calories - totals.calories : 0
 
-  const today = new Date().toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric',
-  })
-
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 md:py-8">
 
       {/* Header */}
       <div className="mb-6">
-        <p className="text-sm font-medium text-zinc-500">{getGreeting()}, {displayName}</p>
-        <p className="text-xs text-zinc-400 mt-0.5">{today}</p>
+        <p className="text-sm font-medium text-zinc-500">{greeting}, {displayName}</p>
+        <p className="text-xs text-zinc-400 mt-0.5">{displayDate}</p>
       </div>
 
       {/* ── NUTRITION ─────────────────────────────────────────────────── */}
