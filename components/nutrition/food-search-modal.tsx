@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Search, Barcode, Camera, X, Plus, Loader2, ChevronDown, ChevronUp, Minus, Clock } from 'lucide-react'
+import { Search, Barcode, Camera, X, Plus, Loader2, ChevronDown, ChevronUp, Minus, Clock, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { BarcodeScanner } from './barcode-scanner'
@@ -212,6 +212,7 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
   const [recentFoods, setRecentFoods] = useState<FoodResult[]>([])
   const [searching, setSearching] = useState(false)
   const [logging, setLogging] = useState<string | null>(null)
+  const [loggedFood, setLoggedFood] = useState<{ name: string; cal: number; multiplier: number } | null>(null)
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -258,7 +259,7 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
   const logFood = async (food: FoodResult, servingMultiplier = 1) => {
     setLogging(food.externalId)
     try {
-      await fetch('/api/nutrition/log', {
+      const res = await fetch('/api/nutrition/log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -279,7 +280,15 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
           externalId: food.externalId,
         }),
       })
-      onLogged()
+      if (res.ok) {
+        onLogged()
+        setLoggedFood({
+          name: food.brand ? `${food.name} (${food.brand})` : food.name,
+          cal: Math.round(food.coreNutrients.calories * servingMultiplier),
+          multiplier: servingMultiplier,
+        })
+        setTimeout(onClose, 1600)
+      }
     } finally {
       setLogging(null)
     }
@@ -328,8 +337,24 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
           ))}
         </div>
 
+        {/* Success overlay */}
+        {loggedFood && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 py-12 px-6 text-center">
+            <div className="flex size-16 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/40">
+              <CheckCircle2 className="size-8 text-emerald-500" />
+            </div>
+            <div>
+              <p className="font-bold text-zinc-900 dark:text-white text-base">Logged!</p>
+              <p className="text-sm text-zinc-500 mt-1 line-clamp-2">{loggedFood.name}</p>
+              <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mt-1">
+                {loggedFood.cal} cal · {loggedFood.multiplier}x serving
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={loggedFood ? 'hidden' : 'flex-1 overflow-y-auto'}>
           {tab === 'search' && (
             <div className="p-4">
               {/* Search input */}
@@ -405,7 +430,7 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
           )}
 
           {tab === 'barcode' && (
-            <BarcodeScanner onFound={food => { setTab('search'); logFood(food) }} mealType={mealType} logDate={logDate} onLogged={onLogged} />
+            <BarcodeScanner onFound={food => logFood(food)} mealType={mealType} logDate={logDate} onLogged={onLogged} />
           )}
 
           {tab === 'photo' && (

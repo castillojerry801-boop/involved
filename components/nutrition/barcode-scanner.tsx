@@ -62,6 +62,7 @@ export function BarcodeScanner({ onFound }: Props) {
 
   useEffect(() => {
     let html5QrCode: { stop: () => Promise<void>; clear: () => void; start: (...args: unknown[]) => Promise<void> } | null = null
+    let stopped = false
 
     async function startScanner() {
       const { Html5Qrcode } = await import('html5-qrcode')
@@ -75,8 +76,9 @@ export function BarcodeScanner({ onFound }: Props) {
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 280, height: 140 } },
         async (decodedText: string) => {
-          if (decodedText === lastScanned) return
+          if (decodedText === lastScanned || stopped) return
           setLastScanned(decodedText)
+          stopped = true
           await html5QrCode!.stop()
 
           const res = await fetch(`/api/nutrition/barcode?upc=${encodeURIComponent(decodedText)}`)
@@ -95,7 +97,10 @@ export function BarcodeScanner({ onFound }: Props) {
     startScanner().catch(() => setStatus('error'))
 
     return () => {
-      html5QrCode?.stop().catch(() => {})
+      if (!stopped) {
+        stopped = true
+        html5QrCode?.stop().catch(() => {})
+      }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
