@@ -99,6 +99,7 @@ export default async function TodayPage() {
 
   const [headersList, cookieStore] = await Promise.all([headers(), cookies()])
   const tz =
+    headersList.get('x-tz') ||                                      // set by middleware from cookie or Vercel header
     decodeURIComponent(cookieStore.get('tz')?.value ?? '') ||
     headersList.get('x-vercel-ip-timezone') ||
     'America/New_York'

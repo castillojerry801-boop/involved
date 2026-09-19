@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Plus, Trash2, Search, GripVertical, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
@@ -301,7 +302,7 @@ export default function NewTrainerProgramPage() {
   const [durationWeeks, setDurationWeeks] = useState('')
   const [sessionsPerWeek, setSessionsPerWeek] = useState('')
   const [days, setDays]                   = useState<DayDraft[]>([])
-  const [unit, setUnit]                   = useState<'kg' | 'lbs'>('lbs')
+  const { unit }                          = useWeightUnit()
   const [saving, setSaving]               = useState(false)
   const [error, setError]                 = useState<string | null>(null)
 
@@ -404,23 +405,7 @@ export default function NewTrainerProgramPage() {
         >
           <ArrowLeft className="size-4 text-zinc-600 dark:text-zinc-400" />
         </Link>
-        <h1 className="text-xl font-black text-zinc-900 dark:text-white flex-1">New Program</h1>
-        <div className="flex shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-xs font-semibold">
-          {(['lbs', 'kg'] as const).map(u => (
-            <button
-              key={u}
-              onClick={() => setUnit(u)}
-              className={cn(
-                'w-10 py-1.5 text-center transition-colors uppercase',
-                unit === u
-                  ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                  : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-              )}
-            >
-              {u}
-            </button>
-          ))}
-        </div>
+        <h1 className="text-xl font-black text-zinc-900 dark:text-white">New Program</h1>
       </div>
 
       {/* Details */}

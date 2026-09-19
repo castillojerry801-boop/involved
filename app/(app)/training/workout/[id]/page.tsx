@@ -812,7 +812,7 @@ function CompletedCard({ workout }: { workout: WorkoutData }) {
 export default function WorkoutPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const { unit, setUnit } = useWeightUnit()
+  const { unit } = useWeightUnit()
   const [workout, setWorkout] = useState<WorkoutData | null>(null)
   const [loading, setLoading] = useState(true)
   const [completing, setCompleting] = useState(false)
@@ -934,13 +934,6 @@ export default function WorkoutPage() {
           <Link href="/training" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
             <ArrowLeft className="size-4 text-zinc-600 dark:text-zinc-400" />
           </Link>
-          <div className="flex shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden text-[10px] font-semibold">
-            {(['lbs', 'kg'] as const).map(u => (
-              <button key={u} onClick={() => setUnit(u)} className={cn('w-8 py-1 uppercase transition-colors', unit === u ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300')}>
-                {u}
-              </button>
-            ))}
-          </div>
           <div className="min-w-0">
             <h1 className="font-black text-lg text-zinc-900 dark:text-white truncate">{workout.title}</h1>
             {workout.status === 'in_progress' && (
