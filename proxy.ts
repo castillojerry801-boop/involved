@@ -66,6 +66,12 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // Forward weight unit preference to server components as x-weight-unit header.
+  const weightUnit = request.cookies.get('weight_unit')?.value
+  if (weightUnit === 'lbs' || weightUnit === 'kg') {
+    supabaseResponse.headers.set('x-weight-unit', weightUnit)
+  }
+
   return supabaseResponse
 }
 

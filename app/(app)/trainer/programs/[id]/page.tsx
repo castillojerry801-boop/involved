@@ -3,7 +3,7 @@
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Users, Archive, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { ArrowLeft, Users, Trash2, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
 interface ProgramSet {
@@ -15,13 +15,14 @@ interface ProgramSet {
 }
 
 interface ProgramExercise {
-  id:           string
-  exerciseId:   string
-  sortOrder:    number
-  trackingType: string
-  notes?:       string | null
-  restSeconds?: number | null
-  sets:         ProgramSet[]
+  id:            string
+  exerciseId:    string
+  exerciseName?: string | null
+  sortOrder:     number
+  trackingType:  string
+  notes?:        string | null
+  restSeconds?:  number | null
+  sets:          ProgramSet[]
 }
 
 interface ProgramDay {
@@ -59,7 +60,7 @@ export default function TrainerProgramDetailPage({ params }: { params: Promise<{
   const [assigning, setAssigning]   = useState(false)
   const [assignTarget, setAssignTarget] = useState('')
   const [assignError, setAssignError]   = useState<string | null>(null)
-  const [archiving, setArchiving]   = useState(false)
+  const [deleting, setDeleting]     = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -98,13 +99,10 @@ export default function TrainerProgramDetailPage({ params }: { params: Promise<{
     setAssigning(false)
   }
 
-  async function handleArchive() {
-    setArchiving(true)
-    await fetch(`/api/trainer/programs/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isArchived: true }),
-    })
+  async function handleDelete() {
+    if (!confirm(`Delete "${program?.name}"? This cannot be undone.`)) return
+    setDeleting(true)
+    await fetch(`/api/trainer/programs/${id}`, { method: 'DELETE' })
     router.push('/trainer/programs')
   }
 
@@ -140,12 +138,12 @@ export default function TrainerProgramDetailPage({ params }: { params: Promise<{
             Edit
           </Link>
           <button
-            onClick={handleArchive}
-            disabled={archiving}
+            onClick={handleDelete}
+            disabled={deleting}
             className="flex items-center gap-1 rounded-xl border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-400 hover:text-red-500 hover:border-red-200 transition-colors"
           >
-            {archiving ? <Loader2 className="size-3.5 animate-spin" /> : <Archive className="size-3.5" />}
-            Archive
+            {deleting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+            Delete
           </button>
         </div>
       </div>
@@ -212,7 +210,7 @@ export default function TrainerProgramDetailPage({ params }: { params: Promise<{
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <p className="text-sm font-semibold text-zinc-900 dark:text-white">
-                          {i + 1}. {ex.exerciseId}
+                          {i + 1}. {ex.exerciseName ?? ex.exerciseId}
                         </p>
                         {ex.notes && <p className="text-xs text-zinc-400 mt-0.5">{ex.notes}</p>}
                       </div>

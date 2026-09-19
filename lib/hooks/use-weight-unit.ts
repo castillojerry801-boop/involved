@@ -6,17 +6,25 @@ export type WeightUnit = 'lbs' | 'kg'
 const STORAGE_KEY = 'weight_unit'
 export const LBS_PER_KG = 2.20462
 
+function writeUnitCookie(u: WeightUnit) {
+  document.cookie = `weight_unit=${u}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`
+}
+
 export function useWeightUnit() {
   const [unit, setUnitState] = useState<WeightUnit>('lbs')
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY) as WeightUnit | null
-    if (stored === 'kg' || stored === 'lbs') setUnitState(stored)
+    if (stored === 'kg' || stored === 'lbs') {
+      setUnitState(stored)
+      writeUnitCookie(stored)
+    }
   }, [])
 
   const setUnit = useCallback((u: WeightUnit) => {
     setUnitState(u)
     localStorage.setItem(STORAGE_KEY, u)
+    writeUnitCookie(u)
   }, [])
 
   // Convert stored kg value to display string in selected unit

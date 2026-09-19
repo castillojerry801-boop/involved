@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { searchExercises, getGifUrl } from '@/lib/exercises'
+import { getUserEntitlement } from '@/lib/subscription/entitlements'
 
 export const metadata: Metadata = { title: 'Training' }
 
@@ -73,7 +74,19 @@ export default async function TrainingPage() {
   if (!user) redirect('/login')
 
   const featured = searchExercises('', 'all', 6)
-  const { recent, planned, activeProgram, templateCount } = await getTrainingData(user.id)
+  const [{ recent, planned, activeProgram, templateCount }, ent] = await Promise.all([
+    getTrainingData(user.id),
+    getUserEntitlement(user.id),
+  ])
+
+  const trainerPrograms = ent.isTrainer
+    ? await prisma.trainerProgram.findMany({
+        where: { trainerId: user.id, isArchived: false },
+        select: { id: true, name: true, days: { select: { id: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      }).catch(() => [])
+    : []
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
@@ -324,6 +337,49 @@ export default async function TrainingPage() {
           </Link>
         )}
       </section>
+
+      {/* Trainer Programs — only for trainers */}
+      {ent.isTrainer && (
+        <section className="mb-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-bold text-zinc-900 dark:text-white">Trainer Programs</h2>
+            <Link href="/trainer/programs" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+              View all
+            </Link>
+          </div>
+
+          {trainerPrograms.length === 0 ? (
+            <Link href="/trainer/programs/new">
+              <div className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
+                  <Plus className="size-4 text-zinc-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-sm text-zinc-700 dark:text-zinc-300">Build a trainer program</p>
+                  <p className="text-xs text-zinc-400">Create reusable programs to assign to clients</p>
+                </div>
+              </div>
+            </Link>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {trainerPrograms.map(p => (
+                <Link key={p.id} href={`/trainer/programs/${p.id}`}>
+                  <div className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
+                      <ClipboardList className="size-4 text-zinc-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{p.name}</p>
+                      <p className="text-xs text-zinc-400">{p.days.length} day{p.days.length !== 1 ? 's' : ''}</p>
+                    </div>
+                    <ChevronRight className="size-4 text-zinc-300 dark:text-zinc-600 shrink-0" />
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Templates */}
       <section>

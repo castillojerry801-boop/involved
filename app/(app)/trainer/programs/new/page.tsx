@@ -4,7 +4,7 @@ import { useState, useRef } from 'react'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Trash2, Search, GripVertical, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Search, GripVertical, ChevronDown, ChevronUp, Loader2, Check, ChevronsRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -23,7 +23,6 @@ interface SetDraft {
   targetRepsMax?: number
   targetWeightKg?: number
   restSeconds?:   number
-  notes?:         string
 }
 
 interface ExerciseDraft {
@@ -49,7 +48,7 @@ const LEVELS = ['beginner', 'intermediate', 'advanced'] as const
 const LBS_PER_KG = 2.20462
 
 function kgToDisplay(kg: number | undefined, unit: 'kg' | 'lbs'): string {
-  if (kg === undefined) return ''
+  if (kg === undefined || kg === null) return ''
   return unit === 'lbs' ? String(Math.round(kg * LBS_PER_KG * 10) / 10) : String(kg)
 }
 function inputToKg(val: string, unit: 'kg' | 'lbs'): number | undefined {
@@ -62,8 +61,23 @@ function inputToKg(val: string, unit: 'kg' | 'lbs'): number | undefined {
 let _uid = 0
 function uid() { return `local_${++_uid}` }
 
-function defaultSet(n: number): SetDraft {
-  return { setNumber: n, targetRepsMin: 8, targetRepsMax: 12, targetWeightKg: undefined, restSeconds: 90 }
+function buildSets(
+  numSets: number,
+  repsMin: number,
+  repsMax: number,
+  weightKg: number | undefined,
+  restSec: number,
+  progressive: boolean,
+  endWeightKg: number | undefined,
+): SetDraft[] {
+  return Array.from({ length: numSets }, (_, i) => {
+    let w = weightKg
+    if (progressive && weightKg !== undefined && endWeightKg !== undefined && numSets > 1) {
+      const raw = weightKg + ((endWeightKg - weightKg) * i) / (numSets - 1)
+      w = Math.round(raw * 100) / 100
+    }
+    return { setNumber: i + 1, targetRepsMin: repsMin, targetRepsMax: repsMax, targetWeightKg: w, restSeconds: restSec }
+  })
 }
 
 function defaultExercise(result: ExerciseResult, sortOrder: number): ExerciseDraft {
@@ -73,61 +87,12 @@ function defaultExercise(result: ExerciseResult, sortOrder: number): ExerciseDra
     exerciseName: result.name,
     sortOrder,
     trackingType: 'reps',
-    sets:         [defaultSet(1), defaultSet(2), defaultSet(3)],
+    sets:         buildSets(3, 8, 12, undefined, 90, false, undefined),
     expanded:     true,
   }
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function SetRow({
-  s,
-  unit,
-  onChange,
-  onRemove,
-}: {
-  s: SetDraft
-  unit: 'kg' | 'lbs'
-  onChange: (patch: Partial<SetDraft>) => void
-  onRemove: () => void
-}) {
-  return (
-    <div className="grid grid-cols-[32px_1fr_1fr_1fr_1fr_32px] gap-1.5 items-center text-xs">
-      <span className="text-center font-semibold text-zinc-400">{s.setNumber}</span>
-      <input
-        type="number"
-        placeholder="Min"
-        value={s.targetRepsMin ?? ''}
-        onChange={e => onChange({ targetRepsMin: e.target.value ? Number(e.target.value) : undefined })}
-        className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1.5 text-center focus:outline-none focus:border-zinc-400"
-      />
-      <input
-        type="number"
-        placeholder="Max"
-        value={s.targetRepsMax ?? ''}
-        onChange={e => onChange({ targetRepsMax: e.target.value ? Number(e.target.value) : undefined })}
-        className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1.5 text-center focus:outline-none focus:border-zinc-400"
-      />
-      <input
-        type="number"
-        placeholder={unit}
-        value={kgToDisplay(s.targetWeightKg, unit)}
-        onChange={e => onChange({ targetWeightKg: inputToKg(e.target.value, unit) })}
-        className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1.5 text-center focus:outline-none focus:border-zinc-400"
-      />
-      <input
-        type="number"
-        placeholder="Rest s"
-        value={s.restSeconds ?? ''}
-        onChange={e => onChange({ restSeconds: e.target.value ? Number(e.target.value) : undefined })}
-        className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1.5 text-center focus:outline-none focus:border-zinc-400"
-      />
-      <button onClick={onRemove} className="flex items-center justify-center text-zinc-300 hover:text-red-500 transition-colors">
-        <Trash2 className="size-3.5" />
-      </button>
-    </div>
-  )
-}
+// ─── ExerciseCard ─────────────────────────────────────────────────────────────
 
 function ExerciseCard({
   ex,
@@ -140,16 +105,34 @@ function ExerciseCard({
   onChange: (patch: Partial<ExerciseDraft>) => void
   onRemove: () => void
 }) {
-  function patchSet(i: number, patch: Partial<SetDraft>) {
-    const sets = ex.sets.map((s, idx) => idx === i ? { ...s, ...patch } : s)
-    onChange({ sets })
+  const [numSets, setNumSets]         = useState(Math.max(ex.sets.length, 1))
+  const [repsMin, setRepsMin]         = useState(ex.sets[0]?.targetRepsMin ?? 8)
+  const [repsMax, setRepsMax]         = useState(ex.sets[0]?.targetRepsMax ?? 12)
+  const [weightKg, setWeightKg]       = useState<number | undefined>(ex.sets[0]?.targetWeightKg)
+  const [restSec, setRestSec]         = useState(ex.sets[0]?.restSeconds ?? 90)
+  const [progressive, setProgressive] = useState(false)
+  const [endWeightKg, setEndWeightKg] = useState<number | undefined>()
+  const [advanced, setAdvanced]       = useState(false)
+
+  function push(patch: {
+    n?: number; rMin?: number; rMax?: number
+    wKg?: number | undefined; rest?: number
+    prog?: boolean; eKg?: number | undefined
+  }) {
+    const n    = patch.n    !== undefined ? patch.n    : numSets
+    const rMin = patch.rMin !== undefined ? patch.rMin : repsMin
+    const rMax = patch.rMax !== undefined ? patch.rMax : repsMax
+    const wKg  = 'wKg' in patch ? patch.wKg : weightKg
+    const rest = patch.rest !== undefined ? patch.rest : restSec
+    const prog = patch.prog !== undefined ? patch.prog : progressive
+    const eKg  = 'eKg' in patch ? patch.eKg : endWeightKg
+    onChange({ sets: buildSets(n, rMin, rMax, wKg, rest, prog, eKg) })
   }
-  function removeSet(i: number) {
+
+  function removeSetAt(i: number) {
     const sets = ex.sets.filter((_, idx) => idx !== i).map((s, idx) => ({ ...s, setNumber: idx + 1 }))
     onChange({ sets })
-  }
-  function addSet() {
-    onChange({ sets: [...ex.sets, defaultSet(ex.sets.length + 1)] })
+    setNumSets(sets.length)
   }
 
   return (
@@ -173,60 +156,276 @@ function ExerciseCard({
 
       {ex.expanded && (
         <div className="p-3 space-y-3">
-          {/* Set header */}
-          <div className="grid grid-cols-[32px_1fr_1fr_1fr_1fr_32px] gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-            <span className="text-center">#</span>
-            <span className="text-center">Min</span>
-            <span className="text-center">Max</span>
-            <span className="text-center">Wt ({unit})</span>
-            <span className="text-center">Rest</span>
-            <span />
-          </div>
-          {ex.sets.map((s, i) => (
-            <SetRow
-              key={i}
-              s={s}
-              unit={unit}
-              onChange={patch => patchSet(i, patch)}
-              onRemove={() => removeSet(i)}
-            />
-          ))}
-          <button
-            onClick={addSet}
-            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
-          >
-            <Plus className="size-3.5" />
-            Add set
-          </button>
-
-          {/* Rest / notes */}
-          <div className="grid grid-cols-2 gap-2 pt-1">
+          {/* Quick entry row */}
+          <div className="grid grid-cols-4 gap-2">
             <div>
-              <label className="text-[10px] font-semibold text-zinc-400 block mb-1">Default rest (s)</label>
+              <label className="text-[10px] font-semibold text-zinc-400 uppercase block mb-1">Sets</label>
               <input
                 type="number"
-                value={ex.restSeconds ?? ''}
-                onChange={e => onChange({ restSeconds: e.target.value ? Number(e.target.value) : undefined })}
-                placeholder="e.g. 90"
-                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1.5 text-xs focus:outline-none focus:border-zinc-400"
+                min={1}
+                value={numSets}
+                onChange={e => {
+                  const n = Math.max(1, Number(e.target.value) || 1)
+                  setNumSets(n)
+                  push({ n })
+                }}
+                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-2 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:border-zinc-400"
               />
             </div>
             <div>
-              <label className="text-[10px] font-semibold text-zinc-400 block mb-1">Coaching note</label>
+              <label className="text-[10px] font-semibold text-zinc-400 uppercase block mb-1">Reps</label>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={1}
+                  value={repsMin}
+                  onChange={e => {
+                    const v = Math.max(1, Number(e.target.value) || 1)
+                    setRepsMin(v)
+                    push({ rMin: v })
+                  }}
+                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-1 py-2 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:border-zinc-400"
+                />
+                <span className="text-zinc-300 text-xs shrink-0">–</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={repsMax}
+                  onChange={e => {
+                    const v = Math.max(1, Number(e.target.value) || 1)
+                    setRepsMax(v)
+                    push({ rMax: v })
+                  }}
+                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-1 py-2 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:border-zinc-400"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-zinc-400 uppercase block mb-1">Wt ({unit})</label>
               <input
-                type="text"
-                value={ex.notes ?? ''}
-                onChange={e => onChange({ notes: e.target.value || undefined })}
-                placeholder="Optional"
-                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1.5 text-xs focus:outline-none focus:border-zinc-400"
+                type="number"
+                placeholder={unit}
+                value={kgToDisplay(weightKg, unit)}
+                onChange={e => {
+                  const kg = inputToKg(e.target.value, unit)
+                  setWeightKg(kg)
+                  push({ wKg: kg })
+                }}
+                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-2 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:border-zinc-400"
               />
             </div>
+            <div>
+              <label className="text-[10px] font-semibold text-zinc-400 uppercase block mb-1">Rest (s)</label>
+              <input
+                type="number"
+                value={restSec}
+                onChange={e => {
+                  const v = Number(e.target.value) || 60
+                  setRestSec(v)
+                  push({ rest: v })
+                }}
+                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-2 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:border-zinc-400"
+              />
+            </div>
+          </div>
+
+          {/* Progressive loading toggle */}
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                const p = !progressive
+                setProgressive(p)
+                push({ prog: p })
+              }}
+              className={cn(
+                'flex items-center gap-2 text-xs font-semibold transition-colors',
+                progressive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+              )}
+            >
+              <div className={cn(
+                'flex size-4 items-center justify-center rounded border transition-colors',
+                progressive ? 'bg-emerald-500 border-emerald-500' : 'border-zinc-300 dark:border-zinc-600'
+              )}>
+                {progressive && <Check className="size-3 text-white" />}
+              </div>
+              Progressive loading
+            </button>
+
+            {progressive && (
+              <div className="mt-2.5 flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="text-[10px] font-semibold text-zinc-400 uppercase block mb-1">Start ({unit})</label>
+                  <input
+                    type="number"
+                    placeholder={unit}
+                    value={kgToDisplay(weightKg, unit)}
+                    onChange={e => {
+                      const kg = inputToKg(e.target.value, unit)
+                      setWeightKg(kg)
+                      push({ wKg: kg })
+                    }}
+                    className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-2 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:border-zinc-400"
+                  />
+                </div>
+                <div className="flex items-center pb-2.5">
+                  <ChevronsRight className="size-4 text-zinc-300" />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] font-semibold text-zinc-400 uppercase block mb-1">End ({unit})</label>
+                  <input
+                    type="number"
+                    placeholder={unit}
+                    value={kgToDisplay(endWeightKg, unit)}
+                    onChange={e => {
+                      const kg = inputToKg(e.target.value, unit)
+                      setEndWeightKg(kg)
+                      push({ eKg: kg })
+                    }}
+                    className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-2 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:border-zinc-400"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sets: compact preview or advanced per-set editing */}
+          {ex.sets.length > 0 && (
+            <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5 space-y-1.5">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wide">Sets</p>
+                <button
+                  type="button"
+                  onClick={() => setAdvanced(a => !a)}
+                  className={cn(
+                    'text-[10px] font-semibold uppercase tracking-wide transition-colors',
+                    advanced ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                  )}
+                >
+                  {advanced ? 'Simple' : 'Advanced'}
+                </button>
+              </div>
+
+              {advanced ? (
+                // Editable per-set rows
+                <div className="space-y-1.5">
+                  <div className="grid grid-cols-[20px_1fr_1fr_1fr_20px] gap-1.5 text-[10px] font-semibold uppercase text-zinc-400">
+                    <span className="text-center">#</span>
+                    <span className="text-center">Reps</span>
+                    <span className="text-center">Wt ({unit})</span>
+                    <span className="text-center">Rest</span>
+                    <span />
+                  </div>
+                  {ex.sets.map((s, i) => (
+                    <div key={i} className="grid grid-cols-[20px_1fr_1fr_1fr_20px] gap-1.5 items-center">
+                      <span className="text-center text-xs font-semibold text-zinc-400">{s.setNumber}</span>
+                      <div className="flex items-center gap-0.5">
+                        <input
+                          type="number"
+                          value={s.targetRepsMin ?? ''}
+                          onChange={e => {
+                            const sets = ex.sets.map((s2, idx) => idx === i ? { ...s2, targetRepsMin: e.target.value ? Number(e.target.value) : undefined } : s2)
+                            onChange({ sets })
+                          }}
+                          className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1 py-1.5 text-xs text-zinc-900 dark:text-white text-center focus:outline-none"
+                        />
+                        <span className="text-zinc-300 text-[10px] shrink-0">–</span>
+                        <input
+                          type="number"
+                          value={s.targetRepsMax ?? ''}
+                          onChange={e => {
+                            const sets = ex.sets.map((s2, idx) => idx === i ? { ...s2, targetRepsMax: e.target.value ? Number(e.target.value) : undefined } : s2)
+                            onChange({ sets })
+                          }}
+                          className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1 py-1.5 text-xs text-zinc-900 dark:text-white text-center focus:outline-none"
+                        />
+                      </div>
+                      <input
+                        type="number"
+                        placeholder={unit}
+                        value={kgToDisplay(s.targetWeightKg, unit)}
+                        onChange={e => {
+                          const sets = ex.sets.map((s2, idx) => idx === i ? { ...s2, targetWeightKg: inputToKg(e.target.value, unit) } : s2)
+                          onChange({ sets })
+                        }}
+                        className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1 py-1.5 text-xs text-zinc-900 dark:text-white text-center focus:outline-none"
+                      />
+                      <input
+                        type="number"
+                        value={s.restSeconds ?? ''}
+                        onChange={e => {
+                          const sets = ex.sets.map((s2, idx) => idx === i ? { ...s2, restSeconds: e.target.value ? Number(e.target.value) : undefined } : s2)
+                          onChange({ sets })
+                        }}
+                        className="w-full rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1 py-1.5 text-xs text-zinc-900 dark:text-white text-center focus:outline-none"
+                      />
+                      <button
+                        onClick={() => removeSetAt(i)}
+                        className="flex items-center justify-center text-zinc-300 hover:text-red-400 transition-colors"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => {
+                      const last = ex.sets[ex.sets.length - 1]
+                      const newSet: SetDraft = { setNumber: ex.sets.length + 1, targetRepsMin: last?.targetRepsMin, targetRepsMax: last?.targetRepsMax, targetWeightKg: last?.targetWeightKg, restSeconds: last?.restSeconds }
+                      onChange({ sets: [...ex.sets, newSet] })
+                      setNumSets(ex.sets.length + 1)
+                    }}
+                    className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                  >
+                    <Plus className="size-3" /> Add set
+                  </button>
+                </div>
+              ) : (
+                // Compact read-only summary
+                ex.sets.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span className="w-4 text-center font-semibold text-zinc-400 shrink-0">{s.setNumber}</span>
+                    <span className="text-zinc-700 dark:text-zinc-300">
+                      {s.targetRepsMin ?? '?'}
+                      {s.targetRepsMax && s.targetRepsMax !== s.targetRepsMin ? `–${s.targetRepsMax}` : ''} reps
+                    </span>
+                    {s.targetWeightKg !== undefined && (
+                      <span className="text-zinc-500">
+                        · {kgToDisplay(s.targetWeightKg, unit)} {unit}
+                      </span>
+                    )}
+                    {s.restSeconds != null && (
+                      <span className="text-zinc-400">· {s.restSeconds}s rest</span>
+                    )}
+                    <button
+                      onClick={() => removeSetAt(i)}
+                      className="ml-auto shrink-0 text-zinc-300 hover:text-red-400 transition-colors"
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Coaching note */}
+          <div>
+            <label className="text-[10px] font-semibold text-zinc-400 uppercase block mb-1">Coaching note</label>
+            <input
+              type="text"
+              value={ex.notes ?? ''}
+              onChange={e => onChange({ notes: e.target.value || undefined })}
+              placeholder="Optional tip for the client"
+              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-xs text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
+            />
           </div>
         </div>
       )}
     </div>
   )
 }
+
+// ─── ExercisePicker ───────────────────────────────────────────────────────────
 
 function ExercisePicker({ onSelect }: { onSelect: (ex: ExerciseResult) => void }) {
   const [query, setQuery]           = useState('')

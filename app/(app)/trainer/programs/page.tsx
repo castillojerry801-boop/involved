@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { Trash2 } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,8 +20,9 @@ interface TrainerProgram {
 }
 
 export default function TrainerProgramsPage() {
-  const [programs, setPrograms] = useState<TrainerProgram[]>([])
-  const [loading, setLoading]   = useState(true)
+  const [programs, setPrograms]   = useState<TrainerProgram[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [deleting, setDeleting]   = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/trainer/programs')
@@ -28,6 +30,15 @@ export default function TrainerProgramsPage() {
       .then(d => setPrograms(d.programs ?? []))
       .finally(() => setLoading(false))
   }, [])
+
+  async function handleDelete(e: React.MouseEvent, p: TrainerProgram) {
+    e.preventDefault()
+    if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) return
+    setDeleting(p.id)
+    await fetch(`/api/trainer/programs/${p.id}`, { method: 'DELETE' })
+    setPrograms(prev => prev.filter(x => x.id !== p.id))
+    setDeleting(null)
+  }
 
   if (loading) return <div className="p-6 text-sm text-zinc-500">Loading…</div>
 
@@ -57,9 +68,16 @@ export default function TrainerProgramsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {programs.map(p => (
             <Link key={p.id} href={`/trainer/programs/${p.id}`}>
-              <Card className="hover:border-emerald-500 transition-colors cursor-pointer h-full">
+              <Card className="hover:border-emerald-500 transition-colors cursor-pointer h-full relative">
+                <button
+                  onClick={e => handleDelete(e, p)}
+                  disabled={deleting === p.id}
+                  className="absolute top-3 right-3 flex size-7 items-center justify-center rounded-lg text-zinc-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
                 <CardHeader>
-                  <CardTitle>{p.name}</CardTitle>
+                  <CardTitle className="pr-6">{p.name}</CardTitle>
                   {p.level && (
                     <Badge className="text-xs capitalize">{p.level}</Badge>
                   )}
@@ -69,7 +87,7 @@ export default function TrainerProgramsPage() {
                   <div className="flex gap-3 text-xs text-zinc-500">
                     {p.durationWeeks && <span>{p.durationWeeks}w</span>}
                     {p.sessionsPerWeek && <span>{p.sessionsPerWeek}x/week</span>}
-                    <span>{p.days.length} days</span>
+                    <span>{p.days.length} day{p.days.length !== 1 ? 's' : ''}</span>
                   </div>
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-xs text-zinc-400">

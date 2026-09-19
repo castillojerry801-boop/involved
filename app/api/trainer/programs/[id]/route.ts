@@ -2,6 +2,7 @@ import 'server-only'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
+import { getExerciseById } from '@/lib/exercises'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -32,7 +33,19 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return Response.json({ error: 'Not found' }, { status: 404 })
   }
 
-  return Response.json({ program })
+  // Resolve exercise names from the library
+  const enriched = {
+    ...program,
+    days: program.days.map(day => ({
+      ...day,
+      exercises: day.exercises.map(ex => ({
+        ...ex,
+        exerciseName: getExerciseById(ex.exerciseId)?.name ?? null,
+      })),
+    })),
+  }
+
+  return Response.json({ program: enriched })
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {

@@ -51,34 +51,36 @@ function SetEditor({ sets, onChange, trackingType }: {
 
   return (
     <div className="mt-2 space-y-1">
+      {/* Column headers */}
+      <div className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase text-zinc-400 ${showWeight && showReps ? 'grid grid-cols-[20px_1fr_1fr_48px_20px]' : showWeight ? 'grid grid-cols-[20px_1fr_48px_20px]' : 'grid grid-cols-[20px_1fr_48px_20px]'}`}>
+        <span className="text-center">#</span>
+        {showWeight && <span className="text-center">{unit.toUpperCase()}</span>}
+        {showReps && <span className="text-center">Reps</span>}
+        <span className="text-center">Rest</span>
+        <span />
+      </div>
       {sets.map((s, i) => (
-        <div key={i} className="flex items-center gap-1.5">
-          <span className="text-xs text-zinc-400 w-5 text-center">{s.setNumber}</span>
-          <select value={s.setType} onChange={e => update(i, 'setType', e.target.value)}
-            className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-1 text-xs text-zinc-700 dark:text-zinc-300 focus:outline-none w-16">
-            <option value="working">Work</option>
-            <option value="warmup">Warm</option>
-            <option value="amrap">AMRAP</option>
-          </select>
+        <div key={i} className={`flex items-center gap-1.5 ${showWeight && showReps ? 'grid grid-cols-[20px_1fr_1fr_48px_20px]' : showWeight ? 'grid grid-cols-[20px_1fr_48px_20px]' : 'grid grid-cols-[20px_1fr_48px_20px]'}`}>
+          <span className="text-xs text-zinc-400 text-center">{s.setNumber}</span>
           {showWeight && (
             <input type="number"
               value={toDisplay(s.targetWeightKg)}
               onChange={e => update(i, 'targetWeightKg', fromInput(e.target.value) ?? null)}
-              placeholder={unit} className="w-14 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none" />
+              placeholder={unit} className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none" />
           )}
           {showReps && (
-            <div className="flex items-center gap-0.5 flex-1">
+            <div className="flex items-center gap-0.5">
               <input type="number" value={s.targetRepsMin ?? ''} onChange={e => update(i, 'targetRepsMin', e.target.value ? parseInt(e.target.value) : null)}
                 placeholder="lo" className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none" />
-              <span className="text-zinc-300 text-xs">–</span>
+              <span className="text-zinc-300 text-[10px]">–</span>
               <input type="number" value={s.targetRepsMax ?? ''} onChange={e => update(i, 'targetRepsMax', e.target.value ? parseInt(e.target.value) : null)}
                 placeholder="hi" className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none" />
             </div>
           )}
           <input type="number" value={s.restSeconds ?? ''} onChange={e => update(i, 'restSeconds', e.target.value ? parseInt(e.target.value) : null)}
-            placeholder="s" className="w-12 rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none" />
+            placeholder="s" className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none" />
           <button onClick={() => onChange(sets.filter((_, idx) => idx !== i).map((s2, idx2) => ({ ...s2, setNumber: idx2 + 1 })))}
-            className="p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-zinc-300 hover:text-red-500 transition-colors">
+            className="flex items-center justify-center p-0.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-zinc-300 hover:text-red-500 transition-colors">
             <X className="size-3" />
           </button>
         </div>

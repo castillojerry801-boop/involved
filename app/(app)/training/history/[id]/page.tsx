@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle2, Clock, Dumbbell } from 'lucide-react'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById, getGifUrl } from '@/lib/exercises'
+import { getWeightUnit, kgToUnit } from '@/lib/weight-unit.server'
 
 export const metadata: Metadata = { title: 'Workout' }
 
@@ -12,11 +13,6 @@ function formatDuration(seconds: number) {
   const m = Math.floor(seconds / 60)
   if (m < 60) return `${m}m`
   return `${Math.floor(m / 60)}h ${m % 60}m`
-}
-
-function formatWeight(kg: number | null) {
-  if (!kg) return null
-  return `${kg}kg`
 }
 
 async function getWorkout(id: string, userId: string) {
@@ -45,7 +41,10 @@ export default async function WorkoutHistoryPage({ params }: { params: Promise<{
   if (!user) redirect('/login')
 
   const { id } = await params
-  const workout = await getWorkout(id, user.id)
+  const [workout, unit] = await Promise.all([
+    getWorkout(id, user.id),
+    getWeightUnit(),
+  ])
   if (!workout) redirect('/training')
 
   const totalSets = workout.exercises.reduce((n, ex) => n + ex.sets.length, 0)
@@ -125,7 +124,7 @@ export default async function WorkoutHistoryPage({ params }: { params: Promise<{
                 <div className="px-4 py-3">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="w-6 text-[10px] text-zinc-400 text-center">SET</span>
-                    <span className="w-14 text-[10px] text-zinc-400 text-center">KG</span>
+                    <span className="w-20 text-[10px] text-zinc-400 text-center">{unit.toUpperCase()}</span>
                     <span className="w-14 text-[10px] text-zinc-400 text-center">REPS</span>
                     {completedSets.some(s => s.rpe != null) && (
                       <span className="w-14 text-[10px] text-zinc-400 text-center">RPE</span>
@@ -134,8 +133,8 @@ export default async function WorkoutHistoryPage({ params }: { params: Promise<{
                   {completedSets.map(s => (
                     <div key={s.id} className="flex items-center gap-2 py-1.5 border-b border-zinc-50 dark:border-zinc-800 last:border-0">
                       <span className="w-6 text-xs text-zinc-400 text-center">{s.setNumber}</span>
-                      <span className="w-14 text-xs font-medium text-zinc-700 dark:text-zinc-300 text-center">
-                        {formatWeight(s.actualWeightKg ? Number(s.actualWeightKg) : null) ?? '—'}
+                      <span className="w-20 text-xs font-medium text-zinc-700 dark:text-zinc-300 text-center">
+                        {kgToUnit(s.actualWeightKg ? Number(s.actualWeightKg) : null, unit)}
                       </span>
                       <span className="w-14 text-xs font-medium text-zinc-700 dark:text-zinc-300 text-center">
                         {s.actualReps ?? (s.actualDurationSeconds ? `${s.actualDurationSeconds}s` : '—')}
