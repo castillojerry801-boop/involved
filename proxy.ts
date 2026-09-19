@@ -50,6 +50,22 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Forward timezone to server components as x-tz header.
+  // Prefer the browser-set cookie (exact tz), fall back to Vercel's IP-based header.
+  const cookieTz = request.cookies.get('tz')?.value
+  const vercelTz = request.headers.get('x-vercel-ip-timezone')
+  const tz = cookieTz ? decodeURIComponent(cookieTz) : vercelTz
+  if (tz) {
+    supabaseResponse.headers.set('x-tz', tz)
+    if (!cookieTz && vercelTz) {
+      supabaseResponse.cookies.set('tz', encodeURIComponent(vercelTz), {
+        path: '/',
+        maxAge: 60 * 60 * 24 * 365,
+        sameSite: 'lax',
+      })
+    }
+  }
+
   return supabaseResponse
 }
 
