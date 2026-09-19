@@ -434,7 +434,7 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
           )}
 
           {tab === 'photo' && (
-            <PhotoAnalyzer mealType={mealType} logDate={logDate} onLogged={onLogged} />
+            <PhotoAnalyzer mealType={mealType} logDate={logDate} onLogged={onLogged} onClose={onClose} />
           )}
         </div>
       </div>
