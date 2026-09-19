@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Dumbbell, TrendingUp, Scale, Trophy, Loader2, Flame, Target, BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ function StatCard({ icon: Icon, label, value, sub, highlight = false }: {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ProgressPage() {
+  const { unit, toDisplay } = useWeightUnit()
   const [summary, setSummary] = useState<Summary | null>(null)
   const [volume, setVolume] = useState<VolumeData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -222,7 +224,7 @@ export default function ProgressPage() {
         <StatCard
           icon={Scale}
           label="Body weight"
-          value={summary?.latestBodyWeightKg != null ? `${summary.latestBodyWeightKg} kg` : '—'}
+          value={summary?.latestBodyWeightKg != null ? `${toDisplay(summary.latestBodyWeightKg)} ${unit}` : '—'}
         />
       </div>
 

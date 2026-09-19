@@ -1,16 +1,14 @@
 'use client'
 
-import { useState } from 'react'
 import { cn } from '@/lib/utils'
+import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 
 // ─── Conversions ──────────────────────────────────────────────────────────────
 
-function kgToLbs(kg: number) { return Math.round(kg * 2.20462 * 10) / 10 }
-function lbsToKg(lbs: number) { return Math.round((lbs / 2.20462) * 10) / 10 }
 function cmToFtIn(cm: number) { const totalIn = cm / 2.54; return { ft: Math.floor(totalIn / 12), inches: Math.round(totalIn % 12) } }
 function ftInToCm(ft: number, inches: number) { return Math.round((ft * 12 + inches) * 2.54 * 10) / 10 }
 
-type Unit = 'imperial' | 'metric'
+type DisplayUnit = 'imperial' | 'metric'
 
 interface Props {
   weightKg:  number | null
@@ -20,12 +18,11 @@ interface Props {
 }
 
 export function BodyStatsInput({ weightKg, heightCm, onChange, className }: Props) {
-  const [unit, setUnit] = useState<Unit>('imperial')
+  const { unit: weightUnit, setUnit: setWeightUnit, toDisplay, fromInput } = useWeightUnit()
+  const unit: DisplayUnit = weightUnit === 'kg' ? 'metric' : 'imperial'
 
   // Display values derived from canonical kg/cm
-  const displayWeight = weightKg != null
-    ? (unit === 'imperial' ? String(kgToLbs(weightKg)) : String(weightKg))
-    : ''
+  const displayWeight = weightKg != null ? toDisplay(weightKg) : ''
 
   const displayFt     = heightCm != null ? String(cmToFtIn(heightCm).ft)     : ''
   const displayIn     = heightCm != null ? String(cmToFtIn(heightCm).inches)  : ''
@@ -33,9 +30,9 @@ export function BodyStatsInput({ weightKg, heightCm, onChange, className }: Prop
 
   const handleWeightChange = (val: string) => {
     if (!val) { onChange(null, heightCm); return }
-    const n = parseFloat(val)
-    if (isNaN(n)) return
-    onChange(unit === 'imperial' ? lbsToKg(n) : n, heightCm)
+    const kg = fromInput(val)
+    if (kg == null) return
+    onChange(kg, heightCm)
   }
 
   const handleFtChange = (val: string) => {
@@ -57,9 +54,8 @@ export function BodyStatsInput({ weightKg, heightCm, onChange, className }: Prop
     onChange(weightKg, n)
   }
 
-  const switchUnit = (next: Unit) => {
-    // Values stay as kg/cm in parent — just switch display mode
-    setUnit(next)
+  const switchUnit = (next: DisplayUnit) => {
+    setWeightUnit(next === 'imperial' ? 'lbs' : 'kg')
   }
 
   return (
