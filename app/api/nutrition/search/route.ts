@@ -6,14 +6,25 @@ export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get('q')?.trim()
   if (!query || query.length < 2) return NextResponse.json({ results: [] })
 
-  // 1. Own food library — community-cached items, fastest path
+  // Split into individual terms so multi-word queries work across non-adjacent words.
+  // e.g. "pure protein bar" finds "Pure Protein 1.76oz Bar Chocolate Deluxe"
+  // Each term must appear in the name OR brand.
+  const terms = query.split(/\s+/).filter(t => t.length >= 2)
+  const termFilters = terms.map(t => ({
+    OR: [
+      { name: { contains: t, mode: 'insensitive' as const } },
+      { brand: { contains: t, mode: 'insensitive' as const } },
+    ],
+  }))
+
+  // 1. Own food library — community-cached items (from barcode scans + logged foods)
   const cached = await prisma.foodItem.findMany({
     where: {
-      name: { contains: query, mode: 'insensitive' },
+      AND: termFilters,
       visibility: { in: ['verified', 'community'] },
     },
-    orderBy: { name: 'asc' },
-    take: 8,
+    orderBy: [{ lastSyncedAt: 'desc' }, { name: 'asc' }],
+    take: 20,
   }).catch(() => [])
 
   const cachedResults = cached.map(f => ({
@@ -25,11 +36,12 @@ export async function GET(req: NextRequest) {
     servingSize: Number(f.servingSize),
     servingUnit: f.servingUnit,
     coreNutrients: {
-      calories: Number(f.calories),
-      proteinG: Number(f.proteinG),
+      calories:      Number(f.calories),
+      proteinG:      Number(f.proteinG),
       carbohydrateG: Number(f.carbohydrateG),
-      fatG: Number(f.fatG),
+      fatG:          Number(f.fatG),
     },
+    extendedNutrients: f.nutrientsJson ? (f.nutrientsJson as Record<string, number | undefined>) : undefined,
     source: 'library' as const,
   }))
 
@@ -39,7 +51,7 @@ export async function GET(req: NextRequest) {
     await Promise.all(FOOD_PROVIDERS.map(p => p.search(query, { limit: 20 }).catch(() => [])))
   ).flat()
 
-  // 3. Drop results with zero usable nutrition (avoids polluting list with empty entries)
+  // 3. Drop results with zero usable nutrition
   const withNutrition = providerResults.filter(r =>
     r.coreNutrients.calories > 0 ||
     r.coreNutrients.proteinG > 0 ||
@@ -56,11 +68,11 @@ export async function GET(req: NextRequest) {
     return true
   })
 
-  // 5. Also skip items already covered by the local cache
-  const cachedNames = new Set(cachedResults.map(r => `${r.name.toLowerCase()}|${(r.brand ?? '').toLowerCase()}`))
+  // 5. Skip items already covered by the local cache
+  const cachedKeys = new Set(cachedResults.map(r => `${r.name.toLowerCase()}|${(r.brand ?? '').toLowerCase()}`))
   const external = deduped.filter(r => {
     const key = `${r.name.toLowerCase()}|${(r.brand ?? '').toLowerCase()}`
-    return !cachedNames.has(key)
+    return !cachedKeys.has(key)
   })
 
   const results = [
