@@ -34,7 +34,7 @@ function WorkoutStatusBadge({ status }: { status: string }) {
 
 async function getTrainingData(userId: string) {
   try {
-    const [recent, planned, activeProgram, templateCount] = await Promise.all([
+    const [recent, planned, allPrograms, templateCount] = await Promise.all([
       prisma.workout.findMany({
         where: { userId, status: { in: ['completed', 'in_progress'] } },
         orderBy: [{ completedAt: 'desc' }, { startedAt: 'desc' }],
@@ -51,8 +51,10 @@ async function getTrainingData(userId: string) {
           exercises: { select: { exerciseId: true }, take: 3 },
         },
       }),
-      prisma.program.findFirst({
-        where: { userId, isActive: true },
+      prisma.program.findMany({
+        where: { userId },
+        orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
+        take: 5,
         include: {
           days: {
             orderBy: { sortOrder: 'asc' },
@@ -62,9 +64,10 @@ async function getTrainingData(userId: string) {
       }),
       prisma.workoutTemplate.count({ where: { userId } }),
     ])
-    return { recent, planned, activeProgram, templateCount }
+    const activeProgram = allPrograms.find(p => p.isActive) ?? null
+    return { recent, planned, activeProgram, allPrograms, templateCount }
   } catch {
-    return { recent: [], planned: [], activeProgram: null, templateCount: 0 }
+    return { recent: [], planned: [], activeProgram: null, allPrograms: [], templateCount: 0 }
   }
 }
 
@@ -74,7 +77,7 @@ export default async function TrainingPage() {
   if (!user) redirect('/login')
 
   const featured = searchExercises('', 'all', 6)
-  const [{ recent, planned, activeProgram, templateCount }, ent] = await Promise.all([
+  const [{ recent, planned, activeProgram, allPrograms, templateCount }, ent] = await Promise.all([
     getTrainingData(user.id),
     getUserEntitlement(user.id),
   ])
@@ -290,39 +293,13 @@ export default async function TrainingPage() {
       {/* Programs */}
       <section className="mb-6">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-bold text-zinc-900 dark:text-white">Program</h2>
+          <h2 className="font-bold text-zinc-900 dark:text-white">Programs</h2>
           <Link href="/training/programs" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
             View all
           </Link>
         </div>
 
-        {activeProgram ? (
-          <Link href={`/training/programs/${activeProgram.id}`}>
-            <div className="rounded-2xl border border-emerald-100 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-900/10 px-4 py-4 hover:border-emerald-200 dark:hover:border-emerald-800 transition-colors">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/40">
-                  <Zap className="size-4 text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-bold text-sm text-zinc-900 dark:text-white truncate">{activeProgram.name}</p>
-                    <span className="shrink-0 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">Active</span>
-                  </div>
-                  <p className="text-xs text-zinc-500">{activeProgram.days.length} day{activeProgram.days.length !== 1 ? 's' : ''}</p>
-                </div>
-                <ChevronRight className="size-4 text-zinc-300 shrink-0" />
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {activeProgram.days.map(day => (
-                  <div key={day.id} className="shrink-0 rounded-xl border border-emerald-100 dark:border-emerald-900/40 bg-white dark:bg-zinc-900 px-3 py-2 text-center min-w-[72px]">
-                    <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 truncate">{day.name}</p>
-                    <p className="text-[11px] text-zinc-400">{day._count.exercises} ex</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Link>
-        ) : (
+        {allPrograms.length === 0 ? (
           <Link href="/training/programs/new">
             <div className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
@@ -335,6 +312,46 @@ export default async function TrainingPage() {
               <Plus className="size-4 text-zinc-300 ml-auto shrink-0" />
             </div>
           </Link>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {allPrograms.map(program => {
+              const isActive = program.isActive
+              return (
+                <Link key={program.id} href={`/training/programs/${program.id}`}>
+                  <div className={`rounded-2xl border px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-600 transition-colors ${
+                    isActive
+                      ? 'border-emerald-100 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-900/10'
+                      : 'border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${
+                        isActive ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-zinc-50 dark:bg-zinc-800'
+                      }`}>
+                        {isActive
+                          ? <Zap className="size-4 text-emerald-600 dark:text-emerald-400" />
+                          : <ClipboardList className="size-4 text-zinc-400" />
+                        }
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{program.name}</p>
+                          {isActive && (
+                            <span className="shrink-0 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">Active</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-zinc-400">
+                          {program.days.length} day{program.days.length !== 1 ? 's' : ''}
+                          {' · '}
+                          {program.days.reduce((n, d) => n + d._count.exercises, 0)} exercises
+                        </p>
+                      </div>
+                      <ChevronRight className="size-4 text-zinc-300 dark:text-zinc-600 shrink-0" />
+                    </div>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
         )}
       </section>
 

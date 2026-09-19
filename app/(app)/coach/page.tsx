@@ -27,8 +27,29 @@ interface WorkoutMessage {
     }>
   }
 }
+interface ProgramMessage {
+  role: 'assistant'; type: 'program'
+  data: {
+    program_name: string
+    description?: string
+    days: Array<{
+      name: string
+      estimated_duration_minutes: number
+      exercises: Array<{
+        exercise_id: string
+        sets: number
+        reps_min?: number
+        reps_max?: number
+        duration_seconds?: number
+        rest_seconds: number
+        notes?: string
+        exercise: { id: string; name: string; bodyPart: string; equipment: string; target: string }
+      }>
+    }>
+  }
+}
 
-type Message = TextMessage | WorkoutMessage
+type Message = TextMessage | WorkoutMessage | ProgramMessage
 
 interface Usage {
   tier: 'free' | 'trial' | 'plus'
@@ -207,9 +228,110 @@ function WorkoutCard({ data }: { data: WorkoutMessage['data'] }) {
   )
 }
 
+// ─── Program card ─────────────────────────────────────────────────────────────
+
+function ProgramCard({ data }: { data: ProgramMessage['data'] }) {
+  const router = useRouter()
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/programs/from-proposal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      const json = await res.json() as { programId?: string; error?: string }
+      if (!res.ok || !json.programId) {
+        setError(json.error ?? 'Failed to save program')
+        return
+      }
+      router.push(`/training/programs/${json.programId}`)
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const totalExercises = data.days.reduce((n, d) => n + d.exercises.length, 0)
+
+  return (
+    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 overflow-hidden">
+      <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="font-bold text-zinc-900 dark:text-white">{data.program_name}</p>
+            {data.description && <p className="text-xs text-zinc-500 mt-0.5">{data.description}</p>}
+          </div>
+          <span className="shrink-0 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-2 py-1 text-xs text-zinc-500">
+            {data.days.length} days
+          </span>
+        </div>
+        <p className="text-xs text-zinc-400 mt-1">{totalExercises} exercises total</p>
+      </div>
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        {data.days.map((day, di) => (
+          <div key={di} className="px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wide">{day.name}</p>
+              <span className="text-xs text-zinc-400">~{day.estimated_duration_minutes ?? 45} min</span>
+            </div>
+            <div className="space-y-1.5">
+              {day.exercises.map((ex, ei) => (
+                <div key={ei} className="flex items-center gap-2.5">
+                  <div className="size-8 shrink-0 rounded-lg bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={getGifUrl(ex.exercise_id)} alt={ex.exercise.name} className="h-full w-auto object-contain" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-zinc-900 dark:text-white truncate">{ex.exercise.name}</p>
+                    <p className="text-[10px] text-zinc-500">
+                      {ex.sets} sets ·{' '}
+                      {ex.reps_min != null && ex.reps_max != null
+                        ? ex.reps_min === ex.reps_max ? `${ex.reps_min} reps` : `${ex.reps_min}–${ex.reps_max} reps`
+                        : ex.duration_seconds ? `${ex.duration_seconds}s` : '—'}
+                      {' · '}{ex.rest_seconds}s rest
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="px-4 py-3 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-2.5 text-sm font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="size-4 animate-spin" /> : <Dumbbell className="size-4" />}
+          {saving ? 'Saving...' : 'Add to my programs'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Message bubble ───────────────────────────────────────────────────────────
 
 function MessageBubble({ msg }: { msg: Message }) {
+  if (msg.type === 'program') return (
+    <div className="flex gap-3">
+      <div className="size-8 shrink-0 rounded-full overflow-hidden">
+        <Image src="/icon.jpg" alt="Coach" width={32} height={32} className="size-8 object-cover" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <ProgramCard data={msg.data} />
+      </div>
+    </div>
+  )
+
   if (msg.type === 'workout') return (
     <div className="flex gap-3">
       <div className="size-8 shrink-0 rounded-full overflow-hidden">
@@ -323,7 +445,7 @@ export default function CoachPage() {
           const json = line.slice(6)
           if (!json.trim()) continue
           try {
-            const event = JSON.parse(json) as { type: string; content?: string; data?: WorkoutMessage['data'] }
+            const event = JSON.parse(json) as { type: string; content?: string; data?: WorkoutMessage['data'] | ProgramMessage['data'] }
             if (event.type === 'text' && event.content) {
               assistantText += event.content
               setMessages(prev => {
@@ -335,7 +457,9 @@ export default function CoachPage() {
                 return updated
               })
             } else if (event.type === 'workout' && event.data) {
-              setMessages(prev => [...prev, { role: 'assistant', type: 'workout', data: event.data! }])
+              setMessages(prev => [...prev, { role: 'assistant', type: 'workout', data: event.data as WorkoutMessage['data'] }])
+            } else if (event.type === 'program' && event.data) {
+              setMessages(prev => [...prev, { role: 'assistant', type: 'program', data: event.data as ProgramMessage['data'] }])
             }
           } catch { /* malformed event */ }
         }

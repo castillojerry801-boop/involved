@@ -1,11 +1,20 @@
 import { validateExerciseId } from './exercises'
-import type { WorkoutExercise } from './workout'
 import type { Exercise } from '@/lib/exercises'
+
+export interface ProgramExercise {
+  exercise_id: string
+  sets: number
+  reps_min?: number
+  reps_max?: number
+  duration_seconds?: number
+  rest_seconds: number
+  notes?: string
+}
 
 export interface ProgramDayDraft {
   name: string
   estimated_duration_minutes: number
-  exercises: WorkoutExercise[]
+  exercises: ProgramExercise[]
 }
 
 export interface ProgramDraft {
@@ -17,7 +26,7 @@ export interface ProgramDraft {
 export interface ValidatedProgramDay {
   name: string
   estimated_duration_minutes: number
-  exercises: Array<WorkoutExercise & { exercise: Exercise }>
+  exercises: Array<ProgramExercise & { exercise: Exercise }>
 }
 
 export interface ValidatedProgram {
@@ -53,7 +62,7 @@ export function validateProgramDraft(draft: ProgramDraft): ProgramValidationResu
       continue
     }
 
-    const validatedExercises: Array<WorkoutExercise & { exercise: Exercise }> = []
+    const validatedExercises: Array<ProgramExercise & { exercise: Exercise }> = []
 
     for (const ex of day.exercises) {
       const record = validateExerciseId(ex.exercise_id)
@@ -62,7 +71,8 @@ export function validateProgramDraft(draft: ProgramDraft): ProgramValidationResu
         continue
       }
       if (ex.sets < 1 || ex.sets > 20) errors.push(`${record.name}: sets must be 1–20`)
-      if (ex.reps !== undefined && (ex.reps < 1 || ex.reps > 100)) errors.push(`${record.name}: reps must be 1–100`)
+      if (ex.reps_min !== undefined && (ex.reps_min < 1 || ex.reps_min > 100)) errors.push(`${record.name}: reps_min must be 1–100`)
+      if (ex.reps_max !== undefined && (ex.reps_max < 1 || ex.reps_max > 100)) errors.push(`${record.name}: reps_max must be 1–100`)
       if (ex.rest_seconds < 0 || ex.rest_seconds > 600) errors.push(`${record.name}: rest must be 0–600s`)
       if (errors.length === 0) validatedExercises.push({ ...ex, exercise: record })
     }
@@ -127,10 +137,11 @@ export const PROPOSE_PROGRAM_TOOL = {
                   properties: {
                     exercise_id:      { type: 'string', description: 'ID from search_exercises result' },
                     sets:             { type: 'number', description: 'Number of sets (1–20)' },
-                    reps:             { type: 'number', description: 'Reps per set (omit for time-based)' },
+                    reps_min:         { type: 'number', description: 'Minimum reps per set (omit for time-based)' },
+                    reps_max:         { type: 'number', description: 'Maximum reps per set (omit for time-based)' },
                     duration_seconds: { type: 'number', description: 'Duration per set in seconds (omit for rep-based)' },
                     rest_seconds:     { type: 'number', description: 'Rest between sets in seconds' },
-                    notes:            { type: 'string', description: 'Optional coaching note' },
+                    notes:            { type: 'string', description: 'Optional coaching note for this exercise' },
                   },
                   required: ['exercise_id', 'sets', 'rest_seconds'],
                 },

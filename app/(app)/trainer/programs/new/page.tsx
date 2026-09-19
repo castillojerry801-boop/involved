@@ -505,10 +505,12 @@ export default function NewTrainerProgramPage() {
   const [saving, setSaving]               = useState(false)
   const [error, setError]                 = useState<string | null>(null)
 
+  const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
   function addDay() {
     setDays(prev => [...prev, {
       id:        uid(),
-      name:      `Day ${prev.length + 1}`,
+      name:      WEEKDAYS[prev.length % 7],
       exercises: [],
       expanded:  true,
     }])

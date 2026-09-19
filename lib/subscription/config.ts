@@ -99,7 +99,7 @@ export const FEATURE_ENTITLEMENTS: Record<FeatureKey, { tiers: readonly Effectiv
   workout_generation:         { tiers: ALL },
   health_sync:                { tiers: ALL },
   coach_unlimited:            { tiers: PLUS_AND_UP },
-  workout_generation_ai:      { tiers: PLUS_AND_UP },
+  workout_generation_ai:      { tiers: ALL },
   meal_photo_analysis:        { tiers: PLUS_AND_UP },
   nutrition_label_scan:       { tiers: PLUS_AND_UP },
   advanced_insights:          { tiers: PLUS_AND_UP },

@@ -152,15 +152,17 @@ export default function ProgramBuilder({
 }: ProgramBuilderProps) {
   const [name, setName] = useState(initialName)
   const [description, setDescription] = useState(initialDescription)
+  const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
   const [days, setDays] = useState<ProgramDay[]>(
-    initialDays ?? [{ key: 'day-0', name: 'Day 1', exercises: [] }]
+    initialDays ?? [{ key: 'day-0', name: 'Monday', exercises: [] }]
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [pickerDayKey, setPickerDayKey] = useState<string | null>(null)
 
   const addDay = () => {
-    setDays(prev => [...prev, { key: `day-${Date.now()}`, name: `Day ${prev.length + 1}`, exercises: [] }])
+    setDays(prev => [...prev, { key: `day-${Date.now()}`, name: WEEKDAYS[prev.length % 7], exercises: [] }])
   }
 
   const removeDay = (key: string) => setDays(prev => prev.filter(d => d.key !== key))

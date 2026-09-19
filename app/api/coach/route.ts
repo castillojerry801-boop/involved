@@ -10,6 +10,8 @@ import { buildCoachContext, contextToSystemSnippet } from '@/lib/ai/context'
 import { SEARCH_EXERCISES_TOOL, executeExerciseSearch } from '@/lib/ai/tools/exercises'
 import { PROPOSE_WORKOUT_TOOL, validateWorkoutDraft } from '@/lib/ai/tools/workout'
 import type { WorkoutDraft } from '@/lib/ai/tools/workout'
+import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/program'
+import type { ProgramDraft } from '@/lib/ai/tools/program'
 import type OpenAI from 'openai'
 
 const SYSTEM_PROMPT = `You are Involved Coach, a knowledgeable and direct personal fitness and nutrition coach built into the Involved app.
@@ -26,9 +28,12 @@ HONESTY RULES — CRITICAL:
 • Math is done by the app — do not recalculate nutrition totals.
 
 TOOLS:
-• Use search_exercises to find valid exercises before building any workout.
-• Use propose_workout only after searching — never invent exercise IDs.
-• Search multiple times with different filters to build a complete, balanced workout.
+• Use search_exercises to find valid exercises before building any workout or program.
+• Use propose_workout for a single session (e.g., "give me a workout today", "I have 30 minutes").
+• Use propose_program for a structured multi-day plan (e.g., "build me a program", "I want a 3-day split", "create a 4-week plan").
+• Always search first — never invent exercise IDs.
+• Search multiple times with different body part / equipment filters to build complete, balanced days.
+• For programs: each day should target different muscle groups. Use rep ranges (reps_min/reps_max) for all strength exercises.
 
 TONE:
 Direct, encouraging, and practical. Like a coach who knows their athlete. No filler phrases like "Great question!" or "Absolutely!". Get to the point.
@@ -132,7 +137,7 @@ export async function POST(req: NextRequest) {
   const model = coachModel(tier === 'free' ? 'free' : 'plus')
   const openai = getOpenAI()
 
-  const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL]
+  const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL, PROPOSE_PROGRAM_TOOL]
   type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
 
   const chatMessages: ChatMessage[] = [
@@ -142,6 +147,7 @@ export async function POST(req: NextRequest) {
 
   // Agentic tool loop — max 4 rounds to prevent runaway cost
   let pendingWorkout: ReturnType<typeof validateWorkoutDraft> | null = null
+  let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
   const MAX_ROUNDS = 4
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -181,6 +187,15 @@ export async function POST(req: NextRequest) {
         } else {
           result = JSON.stringify({ status: 'invalid', errors: validation.errors })
         }
+      } else if (fn.name === 'propose_program') {
+        const draft = JSON.parse(fn.arguments) as ProgramDraft
+        const validation = validateProgramDraft(draft)
+        if (validation.valid) {
+          pendingProgram = validation
+          result = JSON.stringify({ status: 'valid', message: 'Program validated. Present it to the user.' })
+        } else {
+          result = JSON.stringify({ status: 'invalid', errors: validation.errors })
+        }
       } else {
         result = JSON.stringify({ error: 'Unknown tool' })
       }
@@ -211,10 +226,15 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', content: chunk })}\n\n`))
           setTimeout(push, 8)
         } else {
-          // Send workout if one was validated
+          // Send workout or program if one was validated
           if (pendingWorkout?.valid && pendingWorkout.workout) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({ type: 'workout', data: pendingWorkout.workout })}\n\n`)
+            )
+          }
+          if (pendingProgram?.valid && pendingProgram.program) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: 'program', data: pendingProgram.program })}\n\n`)
             )
           }
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
