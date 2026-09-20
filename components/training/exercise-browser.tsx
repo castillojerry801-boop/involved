@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useTransition, useCallback, useOptimistic } from 'react'
-import { Search, Loader2, Heart, SlidersHorizontal, X, Filter } from 'lucide-react'
+import { Search, Loader2, Heart, SlidersHorizontal, X, Filter, ArrowLeft } from 'lucide-react'
 import { type Exercise, type EquipmentOption, BODY_PARTS, getGifUrl } from '@/lib/exercises'
+import { type CanonicalFamily, type CanonicalExercise, movementFamilies, getExercisesForFamily, getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { ExerciseDetailModal } from './exercise-detail-modal'
+import { CanonicalExerciseDetail } from './canonical-exercise-detail'
 import { cn } from '@/lib/utils'
 
 export type PreferenceState = 'favorite' | 'more_often' | 'normal' | 'less_often' | 'dont_recommend'
@@ -85,8 +87,8 @@ function ExerciseCard({ exercise, preference, onToggleFav, onClick, compact }: {
         />
       </div>
       <div className="p-2.5">
-        <p className="text-xs font-semibold text-zinc-900 dark:text-white capitalize line-clamp-2 leading-snug">
-          {exercise.name}
+        <p className="text-xs font-semibold text-zinc-900 dark:text-white line-clamp-2 leading-snug">
+          {getInvolvedDisplayName(exercise.id, exercise.name)}
         </p>
         <p className="text-[11px] text-zinc-400 capitalize mt-0.5">{exercise.bodyPart}</p>
       </div>
@@ -120,6 +122,9 @@ export function ExerciseBrowser({
   const [selected, setSelected] = useState<Exercise | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [mode, setMode] = useState<'search' | 'browse'>('browse')
+  const [browseFamily, setBrowseFamily] = useState<CanonicalFamily | null>(null)
+  const [browseCanonical, setBrowseCanonical] = useState<CanonicalExercise | null>(null)
 
   // Optimistic preferences — toggling heart is instant, synced to API in background
   const [preferences, updatePreferences] = useOptimistic(
@@ -187,6 +192,33 @@ export function ExerciseBrowser({
         </div>
       )}
 
+      {/* Mode switcher */}
+      <div className="flex p-1 mb-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800/80">
+        <button
+          onClick={() => { setMode('search'); setSelected(null) }}
+          className={cn(
+            'flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
+            mode === 'search'
+              ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+          )}
+        >
+          Search
+        </button>
+        <button
+          onClick={() => setMode('browse')}
+          className={cn(
+            'flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
+            mode === 'browse'
+              ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+          )}
+        >
+          Browse
+        </button>
+      </div>
+
+      {mode === 'search' && (<>
       {/* Search + filter toggle */}
       <div className="flex gap-2 mb-3">
         <div className="relative flex-1">
@@ -386,6 +418,82 @@ export function ExerciseBrowser({
           >
             Clear filters
           </button>
+        </div>
+      )}
+
+      </>)}
+
+      {mode === 'browse' && (
+        <div>
+          {!browseFamily && (
+            <>
+              <p className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Movement patterns</p>
+              <div className="grid grid-cols-2 gap-3">
+                {movementFamilies.map(family => (
+                  <button
+                    key={family.id}
+                    onClick={() => setBrowseFamily(family)}
+                    className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 text-left hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors"
+                  >
+                    <p className="font-bold text-zinc-900 dark:text-white text-sm mb-1">{family.displayName}</p>
+                    <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-500 mt-1">
+                      {getExercisesForFamily(family.id).length} {getExercisesForFamily(family.id).length === 1 ? 'exercise' : 'exercises'}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {browseFamily && !browseCanonical && (
+            <>
+              <button
+                onClick={() => setBrowseFamily(null)}
+                className="flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white mb-4 -ml-1 transition-colors"
+              >
+                <ArrowLeft className="size-4" /> Movements
+              </button>
+              <h3 className="text-lg font-black text-zinc-900 dark:text-white mb-4">{browseFamily.displayName}</h3>
+              <div className="flex flex-col gap-2">
+                {getExercisesForFamily(browseFamily.id).map(ex => (
+                  <button
+                    key={ex.id}
+                    onClick={() => setBrowseCanonical(ex)}
+                    className="flex items-center justify-between rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3.5 text-left hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-zinc-900 dark:text-white text-sm">{ex.name}</p>
+                      <p className="text-xs text-zinc-400 capitalize mt-0.5">
+                        {ex.muscleCard.primary.slice(0, 2).join(', ')}
+                        {ex.implementations.length > 0
+                          ? ` · ${ex.implementations.length} ${ex.implementations.length === 1 ? 'option' : 'options'}`
+                          : ''}
+                        {ex.sourceGap ? ' · coming soon' : ''}
+                      </p>
+                    </div>
+                    <span className={cn(
+                      'ml-3 shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize',
+                      ex.difficulty === 'beginner'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400'
+                        : ex.difficulty === 'intermediate'
+                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
+                          : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400'
+                    )}>
+                      {ex.difficulty}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {browseCanonical && (
+            <CanonicalExerciseDetail
+              exercise={browseCanonical}
+              onBack={() => setBrowseCanonical(null)}
+              onSelectImpl={onSelect}
+            />
+          )}
         </div>
       )}
 

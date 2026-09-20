@@ -2,6 +2,7 @@
 
 import { X, Heart, Info } from 'lucide-react'
 import { type Exercise, getGifUrl } from '@/lib/exercises'
+import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { type PreferenceState } from './exercise-browser'
 import { cn } from '@/lib/utils'
 
@@ -52,8 +53,8 @@ export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleF
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-5">
           <div className="flex items-start justify-between gap-3 mb-3">
-            <h2 className="text-xl font-black text-zinc-900 dark:text-white capitalize leading-tight">
-              {exercise.name}
+            <h2 className="text-xl font-black text-zinc-900 dark:text-white leading-tight">
+              {getInvolvedDisplayName(exercise.id, exercise.name)}
             </h2>
             {preference !== 'normal' && preference !== 'favorite' && (
               <span className={cn(
