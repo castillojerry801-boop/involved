@@ -8507,7 +8507,8 @@
           },
           "priority": 1
         }
-      ]
+      ],
+      "originalVisualPath": "/originals/inv_skater_hops.png"
     },
     {
       "id": "inv_ski_step",
@@ -8942,25 +8943,47 @@
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
-          "delts"
+          "shoulders",
+          "upper back"
         ],
         "secondary": [
-          "traps",
-          "core",
-          "serratus anterior",
           "triceps",
-          "abs",
-          "upper back",
-          "glutes"
+          "core"
         ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
+        "stabilizers": [
+          "rotator cuff",
+          "obliques"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A loaded carry performed with the weight overhead to train shoulder stability and trunk control.",
+        "steps": [
+          "Press the weight overhead.",
+          "Set the arm in a strong, comfortable position.",
+          "Brace your trunk.",
+          "Walk slowly while keeping the weight stacked over your shoulder."
+        ],
+        "feelItIn": [
+          "shoulders",
+          "upper back",
+          "core"
+        ],
+        "hold": "15–40 seconds",
+        "reps": "2–4 carries",
+        "whyUseIt": "Improves overhead stability, shoulder endurance, and trunk control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the weight stacked over the shoulder.",
+        "Keep ribs down.",
+        "Walk slowly.",
+        "Stay tall."
+      ],
+      "commonMistakes": [
+        "Arching the lower back.",
+        "Letting the weight drift forward.",
+        "Losing shoulder control.",
+        "Walking too quickly."
+      ],
       "aliases": [],
       "implementations": [
         {
@@ -8995,7 +9018,14 @@
           },
           "priority": 2
         }
-      ]
+      ],
+      "browseTags": [
+        "carry",
+        "grip",
+        "core",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_overhead_carry.png"
     },
     {
       "id": "inv_barbell_decline_wide_grip_press",
@@ -15480,20 +15510,44 @@
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
-          "abs"
+          "deep core",
+          "rectus abdominis"
         ],
         "secondary": [
-          "hip flexors",
-          "lower back"
+          "hip flexors"
         ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
+        "stabilizers": [
+          "obliques"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A controlled core drill that trains limb movement while the trunk stays stable.",
+        "steps": [
+          "Lie on your back with hips and knees at 90 degrees.",
+          "Reach arms toward the ceiling.",
+          "Extend the opposite arm and leg away slowly.",
+          "Return and alternate sides."
+        ],
+        "feelItIn": [
+          "core",
+          "abdominals"
+        ],
+        "hold": "Controlled movement",
+        "reps": "6–12 reps per side",
+        "whyUseIt": "Teaches trunk control while the arms and legs move independently."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep ribs down.",
+        "Move slowly.",
+        "Only extend as far as you can control.",
+        "Breathe out during the reach."
+      ],
+      "commonMistakes": [
+        "Lower back arching.",
+        "Moving too fast.",
+        "Holding breath.",
+        "Extending too far."
+      ],
       "aliases": [],
       "implementations": [
         {
@@ -15512,7 +15566,12 @@
           },
           "priority": 1
         }
-      ]
+      ],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_dead_bug.png"
     },
     {
       "id": "inv_elbow_to_knee",
@@ -21531,20 +21590,42 @@
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
-          "calves"
+          "tibialis anterior"
         ],
         "secondary": [
-          "hamstrings",
-          "quadriceps"
+          "foot dorsiflexors"
         ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
+        "stabilizers": [
+          "ankles"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A lower-leg exercise that lifts the toes toward the shins.",
+        "steps": [
+          "Stand with your back against a wall or use a tibialis device.",
+          "Keep heels planted.",
+          "Lift the forefoot and toes upward.",
+          "Lower slowly to the start."
+        ],
+        "feelItIn": [
+          "front of shins"
+        ],
+        "hold": "Controlled movement",
+        "reps": "10–25 reps",
+        "whyUseIt": "Strengthens the tibialis anterior and supports ankle control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep heels down.",
+        "Lift through the whole forefoot.",
+        "Pause at the top.",
+        "Control the lowering."
+      ],
+      "commonMistakes": [
+        "Rocking the body.",
+        "Lifting the heels.",
+        "Using tiny partial reps.",
+        "Dropping quickly."
+      ],
       "aliases": [],
       "implementations": [
         {
@@ -21563,7 +21644,12 @@
           },
           "priority": 1
         }
-      ]
+      ],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_tibialis_raise.png"
     },
     {
       "id": "inv_ankle_circles",
@@ -26620,7 +26706,8 @@
           },
           "priority": 1
         }
-      ]
+      ],
+      "originalVisualPath": "/originals/inv_box_jump.png"
     },
     {
       "id": "inv_broad_jump",
@@ -26666,7 +26753,8 @@
           },
           "priority": 1
         }
-      ]
+      ],
+      "originalVisualPath": "/originals/inv_broad_jump.png"
     },
     {
       "id": "inv_jump_hop",
@@ -33836,25 +33924,50 @@
       "slug": "zercher_squat",
       "movementFamilyId": "fam_squat",
       "technicalPattern": "squat",
-      "difficulty": "beginner",
+      "difficulty": "intermediate",
       "muscleCard": {
         "primary": [
+          "quadriceps",
           "glutes"
         ],
         "secondary": [
-          "quadriceps",
-          "hamstrings",
-          "calves",
-          "core"
+          "upper back",
+          "biceps"
         ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A squat with the bar cradled in the elbows, creating a demanding front-loaded position.",
+        "steps": [
+          "Set the bar in the crooks of your elbows.",
+          "Brace the trunk and stand tall.",
+          "Squat down while keeping the load close.",
+          "Drive through the floor to stand."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "glutes",
+          "core",
+          "upper back"
+        ],
+        "hold": "Controlled movement",
+        "reps": "4–10 reps",
+        "whyUseIt": "Builds squat strength and trunk stiffness with an unusual front-loaded position."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the bar tight.",
+        "Stay tall.",
+        "Brace hard.",
+        "Drive through the whole foot."
+      ],
+      "commonMistakes": [
+        "Letting the bar drift.",
+        "Collapsing the upper back.",
+        "Knees caving.",
+        "Rushing the descent."
+      ],
       "aliases": [],
       "implementations": [
         {
@@ -33889,7 +34002,12 @@
           },
           "priority": 2
         }
-      ]
+      ],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_zercher_squat.png"
     },
     {
       "id": "inv_incline_press",
@@ -34068,17 +34186,59 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hamstrings",
+          "calves",
+          "shoulders"
+        ],
+        "secondary": [
+          "lats",
+          "glutes"
+        ],
+        "stabilizers": [
+          "core",
+          "wrists"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A full-body yoga pose that lengthens the spine, opens the shoulders, and stretches the hamstrings and calves.",
+        "steps": [
+          "Start on your hands and knees with hands under shoulders and knees under hips.",
+          "Tuck your toes under.",
+          "Lift your hips up and back, straightening your legs as comfortably as possible.",
+          "Press your hands into the floor and lengthen your spine; let your head relax between your arms."
+        ],
+        "feelItIn": [
+          "hamstrings",
+          "calves",
+          "shoulders",
+          "lats"
+        ],
+        "hold": "20–45 seconds",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Improves posterior-chain flexibility, shoulder mobility, and whole-body position awareness."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep a long, neutral spine.",
+        "Press evenly through both hands.",
+        "Let your heels move toward the floor without forcing them.",
+        "Keep your shoulders away from your ears.",
+        "Breathe slowly and steadily."
+      ],
+      "commonMistakes": [
+        "Rounding hard through the lower back.",
+        "Forcing the heels to the floor.",
+        "Shrugging the shoulders.",
+        "Holding your breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_downward_dog.png"
     },
     {
       "id": "inv_yoga_childs_pose",
@@ -34088,17 +34248,53 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "lats",
+          "lower back"
+        ],
+        "secondary": [
+          "glutes",
+          "shoulders"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A gentle resting pose that relaxes the back, hips, and shoulders.",
+        "steps": [
+          "Start on hands and knees.",
+          "Bring your hips back toward your heels.",
+          "Reach your arms forward and lower your chest toward the floor.",
+          "Rest your forehead down and breathe slowly."
+        ],
+        "feelItIn": [
+          "lower back",
+          "lats",
+          "hips",
+          "shoulders"
+        ],
+        "hold": "30–60 seconds",
+        "reps": "1–3 rounds",
+        "whyUseIt": "Helps reduce tension through the back and shoulders while encouraging relaxed breathing."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Let your hips sink back comfortably.",
+        "Keep your breathing slow.",
+        "Reach through your fingertips without forcing.",
+        "Relax your neck."
+      ],
+      "commonMistakes": [
+        "Forcing the hips to the heels.",
+        "Holding tension in the shoulders.",
+        "Holding your breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_childs_pose.png"
     },
     {
       "id": "inv_yoga_cat_cow",
@@ -34108,17 +34304,54 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "spinal erectors"
+        ],
+        "secondary": [
+          "abdominals"
+        ],
+        "stabilizers": [
+          "shoulders",
+          "wrists"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A controlled spinal mobility drill that alternates between flexion and extension.",
+        "steps": [
+          "Start on hands and knees.",
+          "Inhale as you gently drop your belly and lift your chest.",
+          "Exhale as you round your back and tuck your chin.",
+          "Move slowly between the two positions."
+        ],
+        "feelItIn": [
+          "spine",
+          "mid back",
+          "lower back"
+        ],
+        "hold": "Move continuously",
+        "reps": "6–10 slow cycles",
+        "whyUseIt": "Improves spinal mobility and helps warm up the back before training."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Move one vertebra at a time if possible.",
+        "Keep the motion smooth.",
+        "Match the movement to your breathing.",
+        "Keep arms straight but not locked."
+      ],
+      "commonMistakes": [
+        "Moving too fast.",
+        "Forcing the neck.",
+        "Shrugging the shoulders.",
+        "Holding the breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_cat_cow.png"
     },
     {
       "id": "inv_yoga_cobra",
@@ -34128,17 +34361,55 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "spinal erectors",
+          "chest"
+        ],
+        "secondary": [
+          "abdominals",
+          "hip flexors"
+        ],
+        "stabilizers": [
+          "glutes"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A prone backbend that opens the chest and gently extends the spine.",
+        "steps": [
+          "Lie face down with your hands near your ribs.",
+          "Keep your legs long and the tops of your feet on the floor.",
+          "Press lightly through your hands and lift your chest.",
+          "Keep your pelvis down and stop before the lower back feels compressed."
+        ],
+        "feelItIn": [
+          "chest",
+          "abdominals",
+          "front of hips"
+        ],
+        "hold": "15–30 seconds",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Opens the front of the body and encourages gentle spinal extension."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Use your back muscles, not just your arms.",
+        "Keep elbows slightly bent.",
+        "Draw your shoulders down.",
+        "Keep the lift comfortable."
+      ],
+      "commonMistakes": [
+        "Overextending the lower back.",
+        "Locking the elbows.",
+        "Shrugging the shoulders.",
+        "Lifting too high."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_cobra.png"
     },
     {
       "id": "inv_yoga_upward_dog",
@@ -34148,17 +34419,56 @@
       "technicalPattern": "yoga",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "chest",
+          "hip flexors"
+        ],
+        "secondary": [
+          "spinal erectors",
+          "triceps"
+        ],
+        "stabilizers": [
+          "shoulders",
+          "glutes"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A stronger backbend that opens the chest and front of the hips while supporting through the arms.",
+        "steps": [
+          "Lie face down with hands beside your ribs.",
+          "Press through your hands and tops of your feet.",
+          "Lift your chest and thighs away from the floor.",
+          "Keep shoulders down and chest tall."
+        ],
+        "feelItIn": [
+          "chest",
+          "hip flexors",
+          "abdominals"
+        ],
+        "hold": "10–30 seconds",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Builds upper-body support while opening the front of the body."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Press the floor away.",
+        "Keep shoulders away from ears.",
+        "Lift through the chest.",
+        "Keep glutes lightly active."
+      ],
+      "commonMistakes": [
+        "Dumping into the lower back.",
+        "Letting shoulders shrug.",
+        "Collapsing through the arms.",
+        "Forcing the range."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_upward_dog.png"
     },
     {
       "id": "inv_yoga_low_lunge",
@@ -34168,17 +34478,54 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hip flexors"
+        ],
+        "secondary": [
+          "quadriceps",
+          "adductors"
+        ],
+        "stabilizers": [
+          "glutes",
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A kneeling lunge pose that opens the hip flexors and front of the thigh.",
+        "steps": [
+          "Start in a half-kneeling position.",
+          "Step the front foot far enough forward that the knee stays comfortable.",
+          "Gently shift your hips forward.",
+          "Stay tall through your torso and breathe."
+        ],
+        "feelItIn": [
+          "hip flexors",
+          "quadriceps"
+        ],
+        "hold": "20–40 seconds per side",
+        "reps": "2 rounds per side",
+        "whyUseIt": "Improves hip extension and can help counter prolonged sitting."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Tuck the pelvis slightly.",
+        "Keep the front foot flat.",
+        "Stay tall through the chest.",
+        "Shift forward gradually."
+      ],
+      "commonMistakes": [
+        "Arching the lower back.",
+        "Letting the front knee collapse inward.",
+        "Forcing the hips forward.",
+        "Losing balance."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_low_lunge.png"
     },
     {
       "id": "inv_yoga_warrior_1",
@@ -34188,17 +34535,57 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps",
+          "glutes"
+        ],
+        "secondary": [
+          "calves",
+          "hip flexors",
+          "shoulders"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A standing pose that combines hip mobility, leg strength, and overhead reach.",
+        "steps": [
+          "Step one foot forward and the other back.",
+          "Turn the back foot slightly outward.",
+          "Bend the front knee while keeping the back leg long.",
+          "Reach both arms overhead and keep your torso tall."
+        ],
+        "feelItIn": [
+          "front thigh",
+          "hip flexors",
+          "calves",
+          "shoulders"
+        ],
+        "hold": "20–40 seconds per side",
+        "reps": "1–2 rounds per side",
+        "whyUseIt": "Builds lower-body endurance while opening the hips and shoulders."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the front knee tracking over the toes.",
+        "Press through the back foot.",
+        "Lift through the chest.",
+        "Reach tall without shrugging."
+      ],
+      "commonMistakes": [
+        "Front knee collapsing inward.",
+        "Overarching the lower back.",
+        "Losing pressure through the back foot.",
+        "Shrugging the shoulders."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_warrior_1.png"
     },
     {
       "id": "inv_yoga_warrior_2",
@@ -34208,17 +34595,57 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps",
+          "glutes"
+        ],
+        "secondary": [
+          "adductors",
+          "shoulders"
+        ],
+        "stabilizers": [
+          "core",
+          "calves"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A wide standing pose that builds leg endurance and opens the hips.",
+        "steps": [
+          "Take a wide stance.",
+          "Turn the front foot out and back foot slightly inward.",
+          "Bend the front knee.",
+          "Reach your arms in opposite directions and look over the front hand."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "glutes",
+          "inner thighs",
+          "shoulders"
+        ],
+        "hold": "20–45 seconds per side",
+        "reps": "1–2 rounds per side",
+        "whyUseIt": "Builds lower-body stamina and improves hip mobility and balance."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the front knee aligned with the toes.",
+        "Stay tall through the torso.",
+        "Reach evenly through both arms.",
+        "Keep weight balanced between both legs."
+      ],
+      "commonMistakes": [
+        "Front knee collapsing inward.",
+        "Leaning too far forward.",
+        "Letting the back foot roll in.",
+        "Shrugging shoulders."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_warrior_2.png"
     },
     {
       "id": "inv_yoga_triangle",
@@ -34228,17 +34655,56 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hamstrings",
+          "adductors"
+        ],
+        "secondary": [
+          "obliques",
+          "calves"
+        ],
+        "stabilizers": [
+          "core",
+          "glutes"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A standing side-bending pose that stretches the hamstrings, adductors, and side body.",
+        "steps": [
+          "Take a wide stance.",
+          "Turn the front foot out and keep both legs mostly straight.",
+          "Reach forward over the front leg.",
+          "Lower one hand toward the shin while reaching the other arm upward."
+        ],
+        "feelItIn": [
+          "hamstrings",
+          "inner thighs",
+          "side body"
+        ],
+        "hold": "20–40 seconds per side",
+        "reps": "1–2 rounds per side",
+        "whyUseIt": "Improves hamstring and hip mobility while training balance and posture."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Lengthen through both sides of your waist.",
+        "Keep the chest open.",
+        "Use the shin for support if needed.",
+        "Move only as far as you can stay controlled."
+      ],
+      "commonMistakes": [
+        "Collapsing the chest toward the floor.",
+        "Locking the knees aggressively.",
+        "Forcing the hand to the floor.",
+        "Twisting the pelvis excessively."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_triangle.png"
     },
     {
       "id": "inv_yoga_pigeon",
@@ -34248,17 +34714,52 @@
       "technicalPattern": "yoga",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes"
+        ],
+        "secondary": [
+          "hip external rotators"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A deeper hip-opening pose that targets the glutes and external rotators.",
+        "steps": [
+          "Start on hands and knees or in Downward Dog.",
+          "Bring one knee forward toward the same-side wrist.",
+          "Extend the opposite leg behind you.",
+          "Stay tall or fold forward depending on comfort."
+        ],
+        "feelItIn": [
+          "glutes",
+          "outer hip"
+        ],
+        "hold": "30–60 seconds per side",
+        "reps": "1–2 rounds per side",
+        "whyUseIt": "Improves hip external rotation and can reduce tightness through the glutes."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the hips as level as possible.",
+        "Use padding under the hip if needed.",
+        "Move into the position gradually.",
+        "Breathe slowly."
+      ],
+      "commonMistakes": [
+        "Forcing the front shin parallel to the mat.",
+        "Dumping weight into one hip.",
+        "Ignoring knee discomfort.",
+        "Holding the breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_pigeon.png"
     },
     {
       "id": "inv_yoga_figure_four",
@@ -34268,17 +34769,50 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "glutes"
+        ],
+        "secondary": [
+          "hip external rotators"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A hip-opening position that gently stretches the glutes and outer hip.",
+        "steps": [
+          "Lie on your back or sit supported.",
+          "Cross one ankle over the opposite thigh.",
+          "Draw the uncrossed leg toward you.",
+          "Keep the crossed foot flexed and breathe."
+        ],
+        "feelItIn": [
+          "glutes",
+          "outer hip"
+        ],
+        "hold": "20–45 seconds per side",
+        "reps": "2 rounds per side",
+        "whyUseIt": "Provides a beginner-friendly alternative to deeper hip-opening poses."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the crossed foot active.",
+        "Relax the shoulders.",
+        "Pull gently, not aggressively.",
+        "Keep the pelvis neutral."
+      ],
+      "commonMistakes": [
+        "Pressing directly on the knee.",
+        "Forcing range.",
+        "Twisting the pelvis.",
+        "Holding the breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_figure_four.png"
     },
     {
       "id": "inv_yoga_happy_baby",
@@ -34288,17 +34822,52 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "adductors",
+          "glutes"
+        ],
+        "secondary": [
+          "lower back"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A supine hip-opening pose that stretches the inner thighs, hips, and lower back.",
+        "steps": [
+          "Lie on your back.",
+          "Bring your knees toward your chest.",
+          "Hold the outside of your feet or behind your thighs.",
+          "Gently draw the knees toward the sides of your torso."
+        ],
+        "feelItIn": [
+          "inner thighs",
+          "hips",
+          "lower back"
+        ],
+        "hold": "20–45 seconds",
+        "reps": "1–3 rounds",
+        "whyUseIt": "Encourages relaxed hip mobility and can decompress the lower back."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep your head and shoulders relaxed.",
+        "Let your lower back settle naturally.",
+        "Hold behind the thighs if reaching the feet is uncomfortable.",
+        "Breathe slowly."
+      ],
+      "commonMistakes": [
+        "Forcing the knees toward the floor.",
+        "Lifting the head and shoulders.",
+        "Pulling too aggressively.",
+        "Holding the breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_happy_baby.png"
     },
     {
       "id": "inv_yoga_thread_needle",
@@ -34308,17 +34877,54 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "thoracic spine",
+          "rear shoulder"
+        ],
+        "secondary": [
+          "lats"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A gentle upper-back rotation and shoulder stretch performed from hands and knees.",
+        "steps": [
+          "Start on hands and knees.",
+          "Slide one arm underneath the opposite arm.",
+          "Lower that shoulder and the side of your head toward the floor.",
+          "Keep the opposite hand planted or reach it forward."
+        ],
+        "feelItIn": [
+          "upper back",
+          "rear shoulder",
+          "lats"
+        ],
+        "hold": "20–40 seconds per side",
+        "reps": "2 rounds per side",
+        "whyUseIt": "Improves thoracic rotation and relieves tension through the upper back and shoulders."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Rotate through the upper back.",
+        "Keep the hips relatively centered.",
+        "Relax your neck.",
+        "Breathe into the upper back."
+      ],
+      "commonMistakes": [
+        "Shifting all the weight into one hip.",
+        "Forcing the shoulder down.",
+        "Twisting through the lower back.",
+        "Holding the breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_thread_needle.png"
     },
     {
       "id": "inv_yoga_seated_forward_fold",
@@ -34328,17 +34934,52 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "hamstrings"
+        ],
+        "secondary": [
+          "calves",
+          "lower back"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A seated hamstring stretch that also lengthens the back of the body.",
+        "steps": [
+          "Sit with your legs extended in front of you.",
+          "Sit tall and reach your arms forward.",
+          "Hinge from the hips.",
+          "Stop when you feel a comfortable stretch in the hamstrings."
+        ],
+        "feelItIn": [
+          "hamstrings",
+          "calves",
+          "lower back"
+        ],
+        "hold": "20–45 seconds",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Improves posterior-chain flexibility and encourages hip-hinge awareness."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Lead with your chest.",
+        "Keep a small bend in the knees if needed.",
+        "Reach forward instead of down.",
+        "Breathe steadily."
+      ],
+      "commonMistakes": [
+        "Rounding aggressively through the lower back.",
+        "Locking the knees.",
+        "Pulling hard on the feet.",
+        "Bouncing."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_seated_forward_fold.png"
     },
     {
       "id": "inv_yoga_bridge_pose",
@@ -34348,17 +34989,54 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes"
+        ],
+        "secondary": [
+          "hamstrings",
+          "hip flexors"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A supine pose that combines glute activation with gentle hip extension.",
+        "steps": [
+          "Lie on your back with knees bent and feet flat.",
+          "Place your feet about hip-width apart.",
+          "Press through your feet and lift your hips.",
+          "Pause at the top while keeping the ribs controlled."
+        ],
+        "feelItIn": [
+          "glutes",
+          "hamstrings",
+          "front of hips"
+        ],
+        "hold": "15–30 seconds",
+        "reps": "2–4 rounds",
+        "whyUseIt": "Builds posterior-chain awareness while opening the front of the hips."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Drive through the whole foot.",
+        "Keep knees tracking forward.",
+        "Squeeze the glutes at the top.",
+        "Keep ribs from flaring."
+      ],
+      "commonMistakes": [
+        "Overarching the lower back.",
+        "Pushing through the toes only.",
+        "Letting knees fall outward.",
+        "Lifting too high."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_bridge_pose.png"
     },
     {
       "id": "inv_yoga_supine_twist",
@@ -34368,17 +35046,53 @@
       "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "lower back",
+          "glutes"
+        ],
+        "secondary": [
+          "chest",
+          "obliques"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A lying spinal rotation that gently stretches the back, hips, and chest.",
+        "steps": [
+          "Lie on your back.",
+          "Bring one knee toward your chest.",
+          "Guide that knee across your body.",
+          "Keep both shoulders as relaxed toward the floor as possible."
+        ],
+        "feelItIn": [
+          "lower back",
+          "glutes",
+          "chest"
+        ],
+        "hold": "20–45 seconds per side",
+        "reps": "1–2 rounds per side",
+        "whyUseIt": "Encourages gentle spinal rotation and can relieve general back tension."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Move slowly into the twist.",
+        "Keep the opposite shoulder relaxed.",
+        "Let gravity do the work.",
+        "Breathe deeply."
+      ],
+      "commonMistakes": [
+        "Forcing the knee to the floor.",
+        "Twisting aggressively.",
+        "Lifting the shoulder excessively.",
+        "Holding the breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_supine_twist.png"
     },
     {
       "id": "inv_yoga_frog_pose",
@@ -34388,17 +35102,54 @@
       "technicalPattern": "yoga",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "adductors"
+        ],
+        "secondary": [
+          "glutes",
+          "hip flexors"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A deeper inner-thigh and hip-opening pose performed from a wide-knee position.",
+        "steps": [
+          "Start on hands and knees.",
+          "Slide your knees wider apart.",
+          "Keep your lower legs angled outward.",
+          "Shift your hips back slowly while staying supported on your hands or forearms."
+        ],
+        "feelItIn": [
+          "adductors",
+          "inner thighs",
+          "hips"
+        ],
+        "hold": "20–45 seconds",
+        "reps": "1–2 rounds",
+        "whyUseIt": "Improves adductor flexibility and hip-opening tolerance."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Use padding under the knees.",
+        "Move gradually.",
+        "Keep the spine neutral.",
+        "Breathe steadily."
+      ],
+      "commonMistakes": [
+        "Forcing the knees too wide.",
+        "Rounding aggressively.",
+        "Bouncing deeper.",
+        "Ignoring knee discomfort."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_frog_pose.png"
     },
     {
       "id": "inv_yoga_lizard_pose",
@@ -34408,17 +35159,55 @@
       "technicalPattern": "yoga",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hip flexors",
+          "adductors"
+        ],
+        "secondary": [
+          "glutes",
+          "hamstrings"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A deep lunge-based hip opener targeting the hip flexors, adductors, and glutes.",
+        "steps": [
+          "Start in a high or low lunge.",
+          "Bring both hands inside the front foot.",
+          "Lower the back knee if needed.",
+          "Stay on your hands or lower to your forearms if comfortable."
+        ],
+        "feelItIn": [
+          "hip flexors",
+          "inner thigh",
+          "glutes"
+        ],
+        "hold": "20–45 seconds per side",
+        "reps": "1–2 rounds per side",
+        "whyUseIt": "Improves hip mobility in multiple directions and prepares the lower body for deeper ranges."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the front foot planted.",
+        "Keep the front knee tracking with the toes.",
+        "Use blocks for support if needed.",
+        "Stay tall through the spine."
+      ],
+      "commonMistakes": [
+        "Front knee collapsing inward.",
+        "Forcing the forearms to the floor.",
+        "Letting the front heel lift.",
+        "Holding the breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "yoga",
+        "mobility",
+        "flexibility"
+      ],
+      "originalVisualPath": "/originals/inv_yoga_lizard_pose.png"
     },
     {
       "id": "inv_stretch_standing_hamstring",
@@ -34428,17 +35217,52 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hamstrings"
+        ],
+        "secondary": [
+          "calves"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A simple standing stretch for the hamstrings that also reinforces a clean hip hinge.",
+        "steps": [
+          "Place one heel slightly in front of you with the toes up.",
+          "Keep the standing leg softly bent.",
+          "Push your hips back and hinge forward with a long spine.",
+          "Stop when you feel a comfortable stretch behind the front thigh."
+        ],
+        "feelItIn": [
+          "hamstrings",
+          "calves"
+        ],
+        "hold": "20–30 seconds per side",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Improves posterior-chain flexibility and can be used in warm-ups or cooldowns."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Hinge from the hips.",
+        "Keep the chest tall.",
+        "Keep the front knee soft.",
+        "Move only until you feel a comfortable stretch."
+      ],
+      "commonMistakes": [
+        "Rounding the lower back.",
+        "Locking the front knee.",
+        "Bouncing.",
+        "Reaching for the toes instead of hinging."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "hamstrings"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_standing_hamstring.png"
     },
     {
       "id": "inv_stretch_seated_hamstring",
@@ -34448,17 +35272,51 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "hamstrings"
+        ],
+        "secondary": [
+          "calves",
+          "lower back"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A seated hamstring stretch that makes it easy to control range and position.",
+        "steps": [
+          "Sit with one or both legs extended.",
+          "Sit tall on your sit bones.",
+          "Hinge forward from the hips.",
+          "Stop when you feel tension behind the thighs."
+        ],
+        "feelItIn": [
+          "hamstrings",
+          "calves"
+        ],
+        "hold": "20–40 seconds",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Provides a controlled way to improve hamstring flexibility."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Lead with the chest.",
+        "Keep a slight bend in the knees if needed.",
+        "Keep breathing.",
+        "Reach forward instead of collapsing down."
+      ],
+      "commonMistakes": [
+        "Rounding hard through the back.",
+        "Locking the knees.",
+        "Pulling aggressively on the feet.",
+        "Bouncing."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "hamstrings"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_seated_hamstring.png"
     },
     {
       "id": "inv_stretch_wall_calf",
@@ -34468,17 +35326,49 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "gastrocnemius"
+        ],
+        "secondary": [
+          "Achilles tendon"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A standing calf stretch that mainly targets the gastrocnemius.",
+        "steps": [
+          "Place your hands on a wall.",
+          "Step one foot back and keep that heel down.",
+          "Keep the back knee straight.",
+          "Lean forward until you feel the calf stretch."
+        ],
+        "feelItIn": [
+          "upper calf"
+        ],
+        "hold": "20–30 seconds per side",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Improves ankle mobility and calf flexibility for walking, running, and squatting."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the back heel heavy.",
+        "Point the back foot straight ahead.",
+        "Keep the back knee straight.",
+        "Lean from the ankles, not the waist."
+      ],
+      "commonMistakes": [
+        "Turning the foot out.",
+        "Letting the heel lift.",
+        "Bending the back knee too much.",
+        "Bouncing."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "calves"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_wall_calf.png"
     },
     {
       "id": "inv_stretch_bent_knee_calf",
@@ -34488,17 +35378,52 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "soleus"
+        ],
+        "secondary": [
+          "Achilles tendon"
+        ],
+        "stabilizers": [
+          "foot muscles"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A bent-knee calf stretch that shifts more emphasis to the soleus and lower calf.",
+        "steps": [
+          "Face a wall with one foot behind you.",
+          "Keep the back heel on the floor.",
+          "Bend both knees slightly.",
+          "Drive the back knee forward while keeping the heel down."
+        ],
+        "feelItIn": [
+          "lower calf",
+          "Achilles area"
+        ],
+        "hold": "20–30 seconds per side",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Improves ankle dorsiflexion and lower-calf mobility."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the heel planted.",
+        "Keep the foot pointing forward.",
+        "Move the knee forward slowly.",
+        "Stay relaxed through the toes."
+      ],
+      "commonMistakes": [
+        "Heel lifting.",
+        "Foot rolling inward.",
+        "Bouncing.",
+        "Pushing into pain."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "calves"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_bent_knee_calf.png"
     },
     {
       "id": "inv_stretch_standing_quad",
@@ -34508,17 +35433,53 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps"
+        ],
+        "secondary": [
+          "hip flexors"
+        ],
+        "stabilizers": [
+          "glutes",
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A basic standing stretch for the front of the thigh.",
+        "steps": [
+          "Stand tall and hold support if needed.",
+          "Bend one knee and bring your heel toward your glute.",
+          "Hold the ankle or foot.",
+          "Keep the knees close and gently tuck the pelvis."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "front of hip"
+        ],
+        "hold": "20–30 seconds per side",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Improves quadriceps flexibility and can help restore comfortable knee flexion."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep knees close together.",
+        "Stand tall.",
+        "Tuck the pelvis slightly.",
+        "Use support for balance if needed."
+      ],
+      "commonMistakes": [
+        "Arching the lower back.",
+        "Pulling the knee out to the side.",
+        "Yanking on the ankle.",
+        "Losing balance."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "quadriceps"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_standing_quad.png"
     },
     {
       "id": "inv_stretch_kneeling_hip_flexor",
@@ -34528,17 +35489,53 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hip flexors"
+        ],
+        "secondary": [
+          "quadriceps"
+        ],
+        "stabilizers": [
+          "glutes",
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A half-kneeling stretch for the hip flexors and front of the thigh.",
+        "steps": [
+          "Kneel with one foot in front.",
+          "Tuck your pelvis slightly.",
+          "Squeeze the glute of the kneeling side.",
+          "Shift your hips forward a small amount."
+        ],
+        "feelItIn": [
+          "hip flexors",
+          "front of thigh"
+        ],
+        "hold": "20–40 seconds per side",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Helps restore hip extension and counter prolonged sitting."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep ribs stacked over pelvis.",
+        "Squeeze the rear glute.",
+        "Stay tall.",
+        "Shift forward only a little."
+      ],
+      "commonMistakes": [
+        "Arching the lower back.",
+        "Leaning too far forward.",
+        "Letting the front knee collapse.",
+        "Forcing the stretch."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "hip flexors"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_kneeling_hip_flexor.png"
     },
     {
       "id": "inv_stretch_couch",
@@ -34548,17 +35545,53 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps",
+          "hip flexors"
+        ],
+        "secondary": [
+          "glutes"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A deeper hip-flexor and quadriceps stretch using a wall, bench, or couch.",
+        "steps": [
+          "Kneel with one shin against a wall or bench.",
+          "Place the opposite foot in front.",
+          "Bring your torso upright as tolerated.",
+          "Squeeze the rear glute and keep the pelvis controlled."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "hip flexors"
+        ],
+        "hold": "20–45 seconds per side",
+        "reps": "1–2 rounds",
+        "whyUseIt": "Provides a strong stretch for athletes with tight quads and hip flexors."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Start farther from the wall if needed.",
+        "Tuck the pelvis.",
+        "Squeeze the rear glute.",
+        "Stay tall instead of leaning back."
+      ],
+      "commonMistakes": [
+        "Overarching the lower back.",
+        "Forcing the shin too close to the wall.",
+        "Losing pelvic position.",
+        "Ignoring knee discomfort."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "hip flexors"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_couch.png"
     },
     {
       "id": "inv_stretch_figure_four",
@@ -34568,17 +35601,50 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "glutes"
+        ],
+        "secondary": [
+          "hip external rotators"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A glute and outer-hip stretch using a figure-four leg position.",
+        "steps": [
+          "Lie on your back.",
+          "Cross one ankle over the opposite thigh.",
+          "Thread your hands behind the uncrossed thigh.",
+          "Draw the leg toward your chest."
+        ],
+        "feelItIn": [
+          "glutes",
+          "outer hip"
+        ],
+        "hold": "20–40 seconds per side",
+        "reps": "2 rounds per side",
+        "whyUseIt": "Improves hip external-rotation mobility and reduces glute tightness."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the crossed foot flexed.",
+        "Relax the shoulders.",
+        "Pull gradually.",
+        "Keep the pelvis level."
+      ],
+      "commonMistakes": [
+        "Pressing directly on the knee.",
+        "Twisting the pelvis.",
+        "Pulling too hard.",
+        "Holding the breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "glutes"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_figure_four.png"
     },
     {
       "id": "inv_stretch_90_90_hip",
@@ -34588,17 +35654,54 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "hip rotators"
+        ],
+        "secondary": [
+          "adductors"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A seated hip stretch that works internal and external rotation at the same time.",
+        "steps": [
+          "Sit with both knees bent about 90 degrees.",
+          "Position one leg in front and one behind.",
+          "Sit tall over the front hip.",
+          "Hinge forward slightly if comfortable."
+        ],
+        "feelItIn": [
+          "glutes",
+          "outer hip",
+          "inner hip"
+        ],
+        "hold": "20–40 seconds per side",
+        "reps": "2 rounds per side",
+        "whyUseIt": "Improves rotational hip mobility useful for squatting, running, and general movement."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stay tall through the spine.",
+        "Keep both sit bones heavy.",
+        "Move slowly.",
+        "Use your hands for support."
+      ],
+      "commonMistakes": [
+        "Forcing both knees flat.",
+        "Rounding excessively.",
+        "Twisting to fake range.",
+        "Pushing through joint pain."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "hips"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_90_90_hip.png"
     },
     {
       "id": "inv_stretch_adductor_rockback",
@@ -34608,17 +35711,53 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "adductors"
+        ],
+        "secondary": [
+          "hamstrings"
+        ],
+        "stabilizers": [
+          "core",
+          "shoulders"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A dynamic inner-thigh mobility drill performed from hands and knees.",
+        "steps": [
+          "Start on hands and knees.",
+          "Extend one leg out to the side with the foot flat or heel down.",
+          "Keep your spine neutral.",
+          "Rock your hips backward slowly, then return."
+        ],
+        "feelItIn": [
+          "inner thigh",
+          "groin"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "8–12 reps per side",
+        "whyUseIt": "Improves adductor mobility without requiring a long static hold."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the extended leg relaxed.",
+        "Maintain a neutral spine.",
+        "Move slowly.",
+        "Rock only as far as comfortable."
+      ],
+      "commonMistakes": [
+        "Rounding the back.",
+        "Turning the hips excessively.",
+        "Moving too fast.",
+        "Forcing the end range."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "adductors"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_adductor_rockback.png"
     },
     {
       "id": "inv_stretch_butterfly",
@@ -34628,17 +35767,50 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "adductors"
+        ],
+        "secondary": [
+          "hip rotators"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A seated groin stretch that gently opens the inner thighs and hips.",
+        "steps": [
+          "Sit tall with the soles of your feet together.",
+          "Let your knees fall outward.",
+          "Hold your ankles or feet.",
+          "Sit tall or lean forward slightly from the hips."
+        ],
+        "feelItIn": [
+          "inner thighs",
+          "groin"
+        ],
+        "hold": "20–40 seconds",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Improves adductor and hip mobility with a simple seated position."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Sit tall.",
+        "Let gravity lower the knees.",
+        "Hinge from the hips if leaning forward.",
+        "Keep breathing."
+      ],
+      "commonMistakes": [
+        "Pushing hard on the knees.",
+        "Rounding the back.",
+        "Bouncing.",
+        "Forcing the feet too close."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "adductors"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_butterfly.png"
     },
     {
       "id": "inv_stretch_doorway_chest",
@@ -34648,17 +35820,50 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "pectorals"
+        ],
+        "secondary": [
+          "front deltoid"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A doorway stretch for the chest and front of the shoulders.",
+        "steps": [
+          "Place one forearm against a doorway.",
+          "Set the elbow around shoulder height or slightly below.",
+          "Step forward gently.",
+          "Turn your chest away slightly until you feel a stretch."
+        ],
+        "feelItIn": [
+          "chest",
+          "front shoulder"
+        ],
+        "hold": "20–30 seconds per side",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Improves chest mobility and can counter rounded-shoulder posture."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the shoulder down.",
+        "Use a gentle step forward.",
+        "Keep ribs controlled.",
+        "Adjust elbow height for comfort."
+      ],
+      "commonMistakes": [
+        "Shrugging the shoulder.",
+        "Twisting aggressively.",
+        "Elbow too high.",
+        "Forcing range."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "chest"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_doorway_chest.png"
     },
     {
       "id": "inv_stretch_cross_body_shoulder",
@@ -34668,17 +35873,50 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "rear deltoid"
+        ],
+        "secondary": [
+          "upper back"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A simple stretch for the rear and side of the shoulder.",
+        "steps": [
+          "Bring one arm across your chest.",
+          "Use the opposite arm to support it above the elbow.",
+          "Draw the arm gently toward your body.",
+          "Keep the shoulder down."
+        ],
+        "feelItIn": [
+          "rear shoulder",
+          "upper back"
+        ],
+        "hold": "20–30 seconds per side",
+        "reps": "2 rounds per side",
+        "whyUseIt": "Improves posterior shoulder flexibility and can reduce shoulder tightness."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the shoulder relaxed.",
+        "Pull gently.",
+        "Stay tall.",
+        "Keep the elbow below shoulder height if more comfortable."
+      ],
+      "commonMistakes": [
+        "Shrugging.",
+        "Pulling on the elbow joint.",
+        "Twisting the torso.",
+        "Forcing the stretch."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "shoulders"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_cross_body_shoulder.png"
     },
     {
       "id": "inv_stretch_overhead_triceps",
@@ -34688,17 +35926,54 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "triceps"
+        ],
+        "secondary": [
+          "lats",
+          "shoulders"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "An overhead stretch for the triceps, lats, and shoulder.",
+        "steps": [
+          "Reach one arm overhead.",
+          "Bend the elbow so your hand moves behind your head.",
+          "Use the opposite hand to gently guide the elbow.",
+          "Keep your ribs down."
+        ],
+        "feelItIn": [
+          "triceps",
+          "lats",
+          "shoulder"
+        ],
+        "hold": "20–30 seconds per side",
+        "reps": "2 rounds per side",
+        "whyUseIt": "Improves overhead mobility and triceps flexibility."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the elbow pointing upward.",
+        "Keep ribs stacked.",
+        "Pull gently.",
+        "Stay tall."
+      ],
+      "commonMistakes": [
+        "Flaring the ribs.",
+        "Cranking on the elbow.",
+        "Leaning sideways.",
+        "Shrugging the shoulder."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "triceps"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_overhead_triceps.png"
     },
     {
       "id": "inv_stretch_kneeling_lat",
@@ -34708,17 +35983,54 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "lats"
+        ],
+        "secondary": [
+          "triceps",
+          "shoulders"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A kneeling stretch that lengthens the lats and upper back.",
+        "steps": [
+          "Kneel in front of a bench or floor space.",
+          "Place your hands forward.",
+          "Sit your hips back.",
+          "Lower your chest while keeping your arms long."
+        ],
+        "feelItIn": [
+          "lats",
+          "upper back",
+          "shoulders"
+        ],
+        "hold": "20–40 seconds",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Improves overhead shoulder mobility and lat flexibility."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep thumbs up if comfortable.",
+        "Sit the hips back.",
+        "Keep ribs controlled.",
+        "Breathe into the sides of your rib cage."
+      ],
+      "commonMistakes": [
+        "Overarching the lower back.",
+        "Shrugging.",
+        "Forcing the chest down.",
+        "Holding breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "lats"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_kneeling_lat.png"
     },
     {
       "id": "inv_stretch_child_pose_side_reach",
@@ -34728,17 +36040,52 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "lats"
+        ],
+        "secondary": [
+          "obliques",
+          "upper back"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "A Child's Pose variation that adds a stronger side-body and lat stretch.",
+        "steps": [
+          "Start in Child's Pose.",
+          "Walk both hands to one side.",
+          "Keep the hips centered over the heels.",
+          "Breathe into the opposite side of your torso."
+        ],
+        "feelItIn": [
+          "lats",
+          "side body",
+          "upper back"
+        ],
+        "hold": "20–30 seconds per side",
+        "reps": "2 rounds per side",
+        "whyUseIt": "Targets one lat at a time and improves side-body mobility."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep hips centered.",
+        "Reach long through the hands.",
+        "Relax the neck.",
+        "Breathe into the stretched side."
+      ],
+      "commonMistakes": [
+        "Letting the hips shift too far.",
+        "Shrugging.",
+        "Forcing the reach.",
+        "Holding breath."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "lats"
+      ],
+      "originalVisualPath": "/originals/inv_stretch_child_pose_side_reach.png"
     },
     {
       "id": "inv_mobility_open_book",
@@ -34748,17 +36095,53 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "thoracic spine"
+        ],
+        "secondary": [
+          "chest",
+          "shoulders"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A side-lying thoracic rotation drill that improves upper-back mobility.",
+        "steps": [
+          "Lie on your side with hips and knees bent.",
+          "Stack your arms straight in front of you.",
+          "Rotate the top arm open toward the opposite side.",
+          "Follow the hand with your eyes while keeping knees together."
+        ],
+        "feelItIn": [
+          "upper back",
+          "chest"
+        ],
+        "hold": "1–2 seconds at end range",
+        "reps": "6–10 reps per side",
+        "whyUseIt": "Improves thoracic rotation without asking the lower back to do the work."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep knees stacked.",
+        "Rotate through the upper back.",
+        "Move slowly.",
+        "Breathe out as you open."
+      ],
+      "commonMistakes": [
+        "Letting the knees separate.",
+        "Forcing the hand to the floor.",
+        "Twisting through the lower back.",
+        "Moving too quickly."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "thoracic spine"
+      ],
+      "originalVisualPath": "/originals/inv_mobility_open_book.png"
     },
     {
       "id": "inv_mobility_thread_needle",
@@ -34768,17 +36151,54 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "thoracic spine"
+        ],
+        "secondary": [
+          "rear shoulder",
+          "lats"
+        ],
+        "stabilizers": [
+          "core",
+          "shoulders"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A quadruped rotation drill for the upper back and shoulders.",
+        "steps": [
+          "Start on hands and knees.",
+          "Slide one arm under the opposite arm.",
+          "Rotate the torso as the shoulder moves toward the floor.",
+          "Return and repeat."
+        ],
+        "feelItIn": [
+          "upper back",
+          "rear shoulder"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "6–10 reps per side",
+        "whyUseIt": "Improves thoracic rotation and shoulder mobility."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep hips relatively square.",
+        "Rotate through the upper back.",
+        "Move smoothly.",
+        "Breathe with the movement."
+      ],
+      "commonMistakes": [
+        "Shifting the hips excessively.",
+        "Forcing the shoulder down.",
+        "Twisting through the lower back.",
+        "Moving too fast."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "thoracic spine"
+      ],
+      "originalVisualPath": "/originals/inv_mobility_thread_needle.png"
     },
     {
       "id": "inv_mobility_wall_ankle",
@@ -34788,17 +36208,52 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "ankle dorsiflexors"
+        ],
+        "secondary": [
+          "soleus"
+        ],
+        "stabilizers": [
+          "foot muscles"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A standing ankle drill that improves dorsiflexion while the heel stays planted.",
+        "steps": [
+          "Stand facing a wall.",
+          "Place one foot a short distance from the wall.",
+          "Drive the knee toward the wall.",
+          "Keep the heel and whole foot down."
+        ],
+        "feelItIn": [
+          "ankle",
+          "lower calf"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "8–12 reps per side",
+        "whyUseIt": "Improves ankle mobility for squats, lunges, running, and stairs."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the heel down.",
+        "Track the knee over the toes.",
+        "Keep the arch controlled.",
+        "Move smoothly."
+      ],
+      "commonMistakes": [
+        "Heel lifting.",
+        "Foot collapsing inward.",
+        "Knee drifting far inside.",
+        "Forcing range."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "ankles"
+      ],
+      "originalVisualPath": "/originals/inv_mobility_wall_ankle.png"
     },
     {
       "id": "inv_mobility_knee_to_wall",
@@ -34808,17 +36263,52 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "ankle dorsiflexors"
+        ],
+        "secondary": [
+          "soleus"
+        ],
+        "stabilizers": [
+          "foot muscles"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A controlled ankle mobilization using the wall as a range target.",
+        "steps": [
+          "Face a wall in a staggered stance.",
+          "Keep the front heel down.",
+          "Drive the front knee toward the wall.",
+          "Move the foot closer or farther to adjust difficulty."
+        ],
+        "feelItIn": [
+          "ankle",
+          "calf"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "8–12 reps per side",
+        "whyUseIt": "Provides an easy way to measure and improve ankle dorsiflexion."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep heel flat.",
+        "Track the knee with the second or third toe.",
+        "Move slowly.",
+        "Use the wall as a target, not something to force into."
+      ],
+      "commonMistakes": [
+        "Heel lifting.",
+        "Foot rolling inward.",
+        "Knee collapsing medially.",
+        "Bouncing."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "ankles"
+      ],
+      "originalVisualPath": "/originals/inv_mobility_knee_to_wall.png"
     },
     {
       "id": "inv_mobility_hip_cars",
@@ -34828,17 +36318,54 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hip rotators"
+        ],
+        "secondary": [
+          "glutes",
+          "hip flexors"
+        ],
+        "stabilizers": [
+          "core",
+          "standing leg"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "Controlled hip circles that move the joint through as much pain-free range as possible.",
+        "steps": [
+          "Stand or kneel with support if needed.",
+          "Lift one knee toward your chest.",
+          "Open the knee out to the side.",
+          "Rotate the leg behind you, then reverse the motion."
+        ],
+        "feelItIn": [
+          "hips",
+          "glutes"
+        ],
+        "hold": "Slow controlled reps",
+        "reps": "3–5 circles each direction per side",
+        "whyUseIt": "Maintains active hip range of motion and improves joint control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Move slowly.",
+        "Keep the pelvis as still as possible.",
+        "Use only pain-free range.",
+        "Make the circle controlled, not large at all costs."
+      ],
+      "commonMistakes": [
+        "Twisting the whole torso.",
+        "Moving quickly.",
+        "Forcing range.",
+        "Losing balance."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "hips"
+      ],
+      "originalVisualPath": "/originals/inv_mobility_hip_cars.png"
     },
     {
       "id": "inv_mobility_shoulder_cars",
@@ -34848,17 +36375,54 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "shoulders"
+        ],
+        "secondary": [
+          "upper back",
+          "chest"
+        ],
+        "stabilizers": [
+          "rotator cuff",
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "Controlled shoulder circles performed through a comfortable active range.",
+        "steps": [
+          "Stand tall with one arm at your side.",
+          "Raise the arm forward and overhead.",
+          "Rotate the shoulder as the arm moves behind you.",
+          "Reverse the motion back to the start."
+        ],
+        "feelItIn": [
+          "shoulder joint",
+          "upper back"
+        ],
+        "hold": "Slow controlled reps",
+        "reps": "3–5 circles each direction per arm",
+        "whyUseIt": "Maintains shoulder range of motion and improves active joint control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Move slowly.",
+        "Keep ribs down.",
+        "Keep the elbow straight but not locked.",
+        "Use only pain-free range."
+      ],
+      "commonMistakes": [
+        "Arching the lower back.",
+        "Shrugging.",
+        "Moving too fast.",
+        "Forcing painful range."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "shoulders"
+      ],
+      "originalVisualPath": "/originals/inv_mobility_shoulder_cars.png"
     },
     {
       "id": "inv_mobility_ankle_cars",
@@ -34868,17 +36432,50 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "ankle stabilizers"
+        ],
+        "secondary": [
+          "foot muscles"
+        ],
         "stabilizers": []
       },
       "description": {
-        "summary": ""
+        "summary": "Slow ankle circles that train controlled movement in every direction.",
+        "steps": [
+          "Sit or stand with one foot unloaded.",
+          "Point the toes.",
+          "Circle the ankle slowly through the largest comfortable range.",
+          "Reverse direction."
+        ],
+        "feelItIn": [
+          "ankle",
+          "foot"
+        ],
+        "hold": "Slow controlled reps",
+        "reps": "5 circles each direction per side",
+        "whyUseIt": "Improves ankle control and exposes stiffness through different ranges."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Move from the ankle, not the whole leg.",
+        "Go slowly.",
+        "Make the circle smooth.",
+        "Stay in a pain-free range."
+      ],
+      "commonMistakes": [
+        "Moving the entire leg.",
+        "Rushing.",
+        "Forcing sharp ranges.",
+        "Making tiny uncontrolled circles."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "ankles"
+      ],
+      "originalVisualPath": "/originals/inv_mobility_ankle_cars.png"
     },
     {
       "id": "inv_mobility_worlds_greatest",
@@ -34888,17 +36485,58 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hip flexors",
+          "adductors",
+          "thoracic spine"
+        ],
+        "secondary": [
+          "hamstrings",
+          "glutes"
+        ],
+        "stabilizers": [
+          "core",
+          "shoulders"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A multi-joint mobility drill combining a lunge, hip opening, and thoracic rotation.",
+        "steps": [
+          "Step into a long lunge.",
+          "Place both hands inside the front foot.",
+          "Rotate the inside arm toward the ceiling.",
+          "Return the hand, then shift as needed before switching sides."
+        ],
+        "feelItIn": [
+          "hips",
+          "hamstrings",
+          "upper back",
+          "groin"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "4–6 reps per side",
+        "whyUseIt": "Warms up several key areas at once before training or sport."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the front foot flat.",
+        "Move slowly.",
+        "Rotate through the upper back.",
+        "Use a shorter stance if needed."
+      ],
+      "commonMistakes": [
+        "Front knee collapsing inward.",
+        "Forcing the rotation.",
+        "Letting the heel lift.",
+        "Moving too fast."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "full body"
+      ],
+      "originalVisualPath": "/originals/inv_mobility_worlds_greatest.png"
     },
     {
       "id": "inv_mobility_deep_squat_hold",
@@ -34908,17 +36546,55 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hips",
+          "ankles"
+        ],
+        "secondary": [
+          "adductors",
+          "glutes"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A supported or unsupported squat hold used to open the hips, ankles, and groin.",
+        "steps": [
+          "Take a comfortable squat stance.",
+          "Sit down into a deep squat.",
+          "Keep your heels down if possible.",
+          "Use a support or counterweight if needed."
+        ],
+        "feelItIn": [
+          "hips",
+          "ankles",
+          "inner thighs"
+        ],
+        "hold": "20–45 seconds",
+        "reps": "2–3 rounds",
+        "whyUseIt": "Improves comfort and mobility in deep squat positions."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep feet planted.",
+        "Let knees track with toes.",
+        "Stay tall through the chest.",
+        "Use support if your heels lift."
+      ],
+      "commonMistakes": [
+        "Forcing depth.",
+        "Feet collapsing inward.",
+        "Knees collapsing.",
+        "Rounding excessively."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "hips"
+      ],
+      "originalVisualPath": "/originals/inv_mobility_deep_squat_hold.png"
     },
     {
       "id": "inv_mobility_90_90_switch",
@@ -34928,17 +36604,54 @@
       "technicalPattern": "stretch",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hip rotators"
+        ],
+        "secondary": [
+          "glutes",
+          "adductors"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A dynamic hip-rotation drill moving from one 90/90 position to the other.",
+        "steps": [
+          "Sit with both knees bent and feet wider than hip width.",
+          "Drop both knees to one side into a 90/90 position.",
+          "Return through center.",
+          "Rotate both knees to the opposite side."
+        ],
+        "feelItIn": [
+          "hips",
+          "glutes",
+          "inner thighs"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "6–10 total switches",
+        "whyUseIt": "Improves active internal and external hip rotation."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Move slowly.",
+        "Keep your chest tall.",
+        "Use your hands behind you if needed.",
+        "Control the motion rather than dropping into it."
+      ],
+      "commonMistakes": [
+        "Forcing the knees to the floor.",
+        "Moving too fast.",
+        "Collapsing the chest.",
+        "Twisting through pain."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "mobility",
+        "stretch",
+        "hips"
+      ],
+      "originalVisualPath": "/originals/inv_mobility_90_90_switch.png"
     },
     {
       "id": "inv_carry_farmer",
@@ -34948,17 +36661,61 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "forearms",
+          "traps",
+          "core"
+        ],
+        "secondary": [
+          "glutes",
+          "quadriceps",
+          "calves"
+        ],
+        "stabilizers": [
+          "obliques",
+          "shoulders"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A loaded carry performed with weight at both sides to build grip, trunk stiffness, and whole-body work capacity.",
+        "steps": [
+          "Stand tall with one weight in each hand.",
+          "Brace your trunk and set your shoulders.",
+          "Walk with controlled, natural steps.",
+          "Keep the weights from swinging excessively."
+        ],
+        "feelItIn": [
+          "grip",
+          "forearms",
+          "upper back",
+          "core",
+          "legs"
+        ],
+        "hold": "20–60 seconds",
+        "reps": "2–5 carries",
+        "whyUseIt": "Builds grip strength, posture, trunk stability, and conditioning."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stand tall.",
+        "Keep ribs stacked over pelvis.",
+        "Walk smoothly.",
+        "Keep shoulders down and back."
+      ],
+      "commonMistakes": [
+        "Shrugging excessively.",
+        "Leaning side to side.",
+        "Taking sloppy steps.",
+        "Letting the weights swing."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "carry",
+        "grip",
+        "core",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_carry_farmer.png"
     },
     {
       "id": "inv_carry_suitcase",
@@ -34968,17 +36725,58 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "obliques",
+          "forearms"
+        ],
+        "secondary": [
+          "traps",
+          "glutes"
+        ],
+        "stabilizers": [
+          "core",
+          "shoulders"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A one-sided loaded carry that challenges anti-lateral-flexion strength and grip.",
+        "steps": [
+          "Hold one weight at your side.",
+          "Stand tall without leaning.",
+          "Walk with controlled steps.",
+          "Switch sides after the set."
+        ],
+        "feelItIn": [
+          "obliques",
+          "grip",
+          "forearms",
+          "core"
+        ],
+        "hold": "20–45 seconds per side",
+        "reps": "2–4 carries per side",
+        "whyUseIt": "Trains the trunk to resist side bending while building grip and gait control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stay tall.",
+        "Keep shoulders level.",
+        "Brace your abs.",
+        "Walk normally."
+      ],
+      "commonMistakes": [
+        "Leaning away from the weight.",
+        "Shrugging the loaded shoulder.",
+        "Rotating the torso.",
+        "Rushing the steps."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "carry",
+        "grip",
+        "core",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_carry_suitcase.png"
     },
     {
       "id": "inv_carry_front_rack",
@@ -34988,17 +36786,58 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "core",
+          "upper back"
+        ],
+        "secondary": [
+          "shoulders",
+          "quadriceps",
+          "glutes"
+        ],
+        "stabilizers": [
+          "obliques"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A carry with the load held at the shoulders that heavily challenges the trunk and upper back.",
+        "steps": [
+          "Bring the weights to the front-rack position.",
+          "Keep elbows slightly forward and ribs down.",
+          "Brace your trunk.",
+          "Walk with short, controlled steps."
+        ],
+        "feelItIn": [
+          "upper back",
+          "core",
+          "shoulders",
+          "legs"
+        ],
+        "hold": "20–45 seconds",
+        "reps": "2–4 carries",
+        "whyUseIt": "Builds front-loaded trunk strength and reinforces upright posture under load."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep ribs down.",
+        "Stay tall.",
+        "Keep the load close.",
+        "Breathe behind the brace."
+      ],
+      "commonMistakes": [
+        "Leaning backward.",
+        "Letting elbows drop excessively.",
+        "Overextending the lower back.",
+        "Walking too fast."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "carry",
+        "grip",
+        "core",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_carry_front_rack.png"
     },
     {
       "id": "inv_carry_waiter",
@@ -35008,17 +36847,58 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "shoulders"
+        ],
+        "secondary": [
+          "triceps",
+          "upper back"
+        ],
+        "stabilizers": [
+          "rotator cuff",
+          "obliques",
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A single-arm overhead carry that emphasizes shoulder stability and anti-rotation control.",
+        "steps": [
+          "Press one weight overhead.",
+          "Keep wrist, elbow, and shoulder stacked.",
+          "Brace your trunk.",
+          "Walk slowly and switch sides after the set."
+        ],
+        "feelItIn": [
+          "shoulder",
+          "rotator cuff",
+          "core",
+          "obliques"
+        ],
+        "hold": "15–30 seconds per side",
+        "reps": "2–4 carries per side",
+        "whyUseIt": "Challenges unilateral overhead stability and trunk control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the arm stacked.",
+        "Stay tall.",
+        "Keep ribs down.",
+        "Walk smoothly."
+      ],
+      "commonMistakes": [
+        "Leaning away from the load.",
+        "Overarching the lower back.",
+        "Letting the wrist fold back.",
+        "Rushing."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "carry",
+        "grip",
+        "core",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_carry_waiter.png"
     },
     {
       "id": "inv_carry_bear_hug",
@@ -35028,17 +36908,58 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "upper back",
+          "core"
+        ],
+        "secondary": [
+          "biceps",
+          "glutes",
+          "quadriceps"
+        ],
+        "stabilizers": [
+          "obliques"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A front-loaded carry using a sandbag or similar object held tightly against the torso.",
+        "steps": [
+          "Hug the sandbag high against your chest.",
+          "Wrap your arms around the load.",
+          "Brace your trunk.",
+          "Walk with short, steady steps."
+        ],
+        "feelItIn": [
+          "upper back",
+          "biceps",
+          "core",
+          "legs"
+        ],
+        "hold": "20–60 seconds",
+        "reps": "2–5 carries",
+        "whyUseIt": "Builds whole-body strength and conditioning under an awkward load."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the bag tight to your body.",
+        "Stay tall.",
+        "Take controlled steps.",
+        "Breathe while maintaining the brace."
+      ],
+      "commonMistakes": [
+        "Letting the bag sag.",
+        "Leaning backward.",
+        "Taking long unstable steps.",
+        "Holding breath too long."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "carry",
+        "grip",
+        "core",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_carry_bear_hug.png"
     },
     {
       "id": "inv_carry_sandbag_shouldered",
@@ -35048,17 +36969,58 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "core",
+          "upper back"
+        ],
+        "secondary": [
+          "glutes",
+          "quadriceps"
+        ],
+        "stabilizers": [
+          "obliques",
+          "shoulders"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "An asymmetrical carry with a sandbag on one shoulder that challenges the trunk and upper back.",
+        "steps": [
+          "Lift the sandbag onto one shoulder.",
+          "Keep the torso upright.",
+          "Brace against the uneven load.",
+          "Walk with controlled steps, then switch sides."
+        ],
+        "feelItIn": [
+          "obliques",
+          "upper back",
+          "core",
+          "legs"
+        ],
+        "hold": "20–45 seconds per side",
+        "reps": "2–4 carries per side",
+        "whyUseIt": "Develops asymmetrical load tolerance, trunk control, and conditioning."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stay tall.",
+        "Keep the bag secure.",
+        "Resist leaning.",
+        "Switch shoulders evenly."
+      ],
+      "commonMistakes": [
+        "Collapsing to one side.",
+        "Letting the bag slide.",
+        "Rushing the walk.",
+        "Twisting excessively."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "carry",
+        "grip",
+        "core",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_carry_sandbag_shouldered.png"
     },
     {
       "id": "inv_sandbag_bear_hug_squat",
@@ -35068,17 +37030,55 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps",
+          "glutes"
+        ],
+        "secondary": [
+          "upper back"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A squat performed while hugging a sandbag to the chest.",
+        "steps": [
+          "Hold the sandbag tightly against your chest.",
+          "Set your feet in a comfortable squat stance.",
+          "Sit down and between your hips.",
+          "Drive through the floor to stand."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "glutes",
+          "core",
+          "upper back"
+        ],
+        "hold": "Controlled reps",
+        "reps": "6–15 reps",
+        "whyUseIt": "Builds leg strength while the awkward front load challenges the trunk and upper back."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the bag tight.",
+        "Keep knees tracking with toes.",
+        "Stay tall through the chest.",
+        "Drive through the whole foot."
+      ],
+      "commonMistakes": [
+        "Letting the bag drop away.",
+        "Knees collapsing inward.",
+        "Heels lifting.",
+        "Rounding excessively."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_sandbag_bear_hug_squat.png"
     },
     {
       "id": "inv_sandbag_front_loaded_squat",
@@ -35088,17 +37088,54 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps",
+          "glutes"
+        ],
+        "secondary": [
+          "upper back"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A front-loaded squat using a sandbag held high across the torso or front rack.",
+        "steps": [
+          "Bring the sandbag to the front-loaded position.",
+          "Brace your trunk.",
+          "Squat to a comfortable depth.",
+          "Stand by driving through the floor."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "glutes",
+          "core"
+        ],
+        "hold": "Controlled reps",
+        "reps": "5–12 reps",
+        "whyUseIt": "Builds squat strength with a front-loaded implement that demands trunk control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the load close.",
+        "Stay upright.",
+        "Keep feet planted.",
+        "Brace before each rep."
+      ],
+      "commonMistakes": [
+        "Leaning too far forward.",
+        "Letting knees collapse.",
+        "Losing the brace.",
+        "Letting the load roll away."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_sandbag_front_loaded_squat.png"
     },
     {
       "id": "inv_sandbag_reverse_lunge",
@@ -35108,17 +37145,53 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "quadriceps"
+        ],
+        "secondary": [
+          "hamstrings"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A reverse lunge performed while holding a sandbag in a front-loaded or bear-hug position.",
+        "steps": [
+          "Hold the sandbag close.",
+          "Step one foot backward.",
+          "Lower under control.",
+          "Drive through the front foot to return."
+        ],
+        "feelItIn": [
+          "glutes",
+          "quadriceps",
+          "core"
+        ],
+        "hold": "Controlled reps",
+        "reps": "6–12 reps per side",
+        "whyUseIt": "Builds single-leg strength with a load that challenges posture and trunk stability."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the front foot planted.",
+        "Step back far enough for balance.",
+        "Stay tall.",
+        "Control the descent."
+      ],
+      "commonMistakes": [
+        "Front knee collapsing inward.",
+        "Rushing the step.",
+        "Leaning excessively.",
+        "Dropping the bag."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ]
     },
     {
       "id": "inv_sandbag_walking_lunge",
@@ -35128,17 +37201,54 @@
       "technicalPattern": "carry",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps",
+          "glutes"
+        ],
+        "secondary": [
+          "hamstrings"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A loaded walking lunge using a sandbag to challenge single-leg strength and work capacity.",
+        "steps": [
+          "Hold the sandbag securely.",
+          "Step forward into a lunge.",
+          "Drive through the front leg to move into the next step.",
+          "Continue alternating sides."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "glutes",
+          "hamstrings",
+          "core"
+        ],
+        "hold": "Continuous movement",
+        "reps": "8–20 total steps",
+        "whyUseIt": "Builds leg endurance and coordination under an awkward load."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Take controlled steps.",
+        "Keep the bag close.",
+        "Keep the front knee aligned.",
+        "Stay tall."
+      ],
+      "commonMistakes": [
+        "Overstriding.",
+        "Knee collapsing inward.",
+        "Rushing.",
+        "Losing balance."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ]
     },
     {
       "id": "inv_sandbag_deadlift",
@@ -35148,17 +37258,56 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "hamstrings"
+        ],
+        "secondary": [
+          "back",
+          "forearms"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A deadlift using a sandbag, emphasizing a strong hip hinge and awkward-object control.",
+        "steps": [
+          "Stand over or just behind the sandbag.",
+          "Hinge down and secure your grip.",
+          "Brace your trunk.",
+          "Drive through the floor and extend the hips to stand."
+        ],
+        "feelItIn": [
+          "glutes",
+          "hamstrings",
+          "back",
+          "grip"
+        ],
+        "hold": "Controlled reps",
+        "reps": "5–12 reps",
+        "whyUseIt": "Builds posterior-chain strength while teaching control of an uneven load."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the bag close.",
+        "Brace before lifting.",
+        "Push the floor away.",
+        "Finish with the hips."
+      ],
+      "commonMistakes": [
+        "Rounding excessively.",
+        "Jerking the bag from the floor.",
+        "Letting the load drift away.",
+        "Overextending at the top."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_sandbag_deadlift.png"
     },
     {
       "id": "inv_sandbag_romanian_deadlift",
@@ -35168,17 +37317,53 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hamstrings",
+          "glutes"
+        ],
+        "secondary": [
+          "back"
+        ],
+        "stabilizers": [
+          "core",
+          "forearms"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A sandbag hip hinge that emphasizes hamstrings and glutes with minimal knee bend.",
+        "steps": [
+          "Hold the sandbag close to your thighs.",
+          "Soften the knees.",
+          "Push your hips backward.",
+          "Lower until the hamstrings are loaded, then stand tall."
+        ],
+        "feelItIn": [
+          "hamstrings",
+          "glutes"
+        ],
+        "hold": "Controlled reps",
+        "reps": "6–12 reps",
+        "whyUseIt": "Builds posterior-chain strength and reinforces hip-hinge mechanics."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the bag close.",
+        "Push hips back.",
+        "Maintain a long spine.",
+        "Stand by driving the hips forward."
+      ],
+      "commonMistakes": [
+        "Squatting the movement.",
+        "Rounding the back.",
+        "Letting the bag drift forward.",
+        "Overextending at the top."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ]
     },
     {
       "id": "inv_sandbag_clean",
@@ -35188,17 +37373,56 @@
       "technicalPattern": "carry",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "quadriceps"
+        ],
+        "secondary": [
+          "upper back",
+          "biceps"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "An explosive lift that moves a sandbag from the floor to a front-loaded position.",
+        "steps": [
+          "Set up over the bag.",
+          "Grip firmly and brace.",
+          "Drive through the legs and hips.",
+          "Guide the bag upward and receive it against the torso."
+        ],
+        "feelItIn": [
+          "glutes",
+          "quadriceps",
+          "upper back",
+          "arms"
+        ],
+        "hold": "Explosive reps",
+        "reps": "3–8 reps",
+        "whyUseIt": "Builds explosive hip power and full-body coordination with an awkward implement."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Drive with the legs and hips.",
+        "Keep the bag close.",
+        "Move fast through the hips.",
+        "Receive the bag under control."
+      ],
+      "commonMistakes": [
+        "Trying to curl the bag.",
+        "Letting it swing far away.",
+        "Rounding at setup.",
+        "Catching it loosely."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_sandbag_clean.png"
     },
     {
       "id": "inv_sandbag_ground_to_shoulder",
@@ -35208,17 +37432,57 @@
       "technicalPattern": "carry",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "quadriceps"
+        ],
+        "secondary": [
+          "upper back",
+          "arms"
+        ],
+        "stabilizers": [
+          "core",
+          "obliques"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A full-body lift that moves a sandbag from the floor onto one shoulder.",
+        "steps": [
+          "Set up over the sandbag.",
+          "Grip and brace.",
+          "Drive through the legs and hips.",
+          "Guide the bag upward and roll it onto one shoulder."
+        ],
+        "feelItIn": [
+          "glutes",
+          "quadriceps",
+          "upper back",
+          "core"
+        ],
+        "hold": "Explosive reps",
+        "reps": "3–6 reps per side",
+        "whyUseIt": "Builds total-body power, awkward-object strength, and conditioning."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the bag close.",
+        "Use the hips.",
+        "Switch shoulders evenly.",
+        "Control the catch."
+      ],
+      "commonMistakes": [
+        "Curling instead of using the hips.",
+        "Twisting excessively.",
+        "Letting the bag drift.",
+        "Rushing setup."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ],
+      "originalVisualPath": "/originals/inv_sandbag_ground_to_shoulder.png"
     },
     {
       "id": "inv_sandbag_shouldering",
@@ -35228,17 +37492,55 @@
       "technicalPattern": "carry",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "quadriceps"
+        ],
+        "secondary": [
+          "upper back",
+          "biceps"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A sandbag lift from the floor to the shoulder using coordinated hip and upper-body effort.",
+        "steps": [
+          "Start with the bag on the floor.",
+          "Grip and brace.",
+          "Extend through the hips and knees.",
+          "Guide the bag onto one shoulder and stabilize it."
+        ],
+        "feelItIn": [
+          "legs",
+          "upper back",
+          "core",
+          "arms"
+        ],
+        "hold": "Explosive reps",
+        "reps": "3–8 reps",
+        "whyUseIt": "Improves awkward-object strength and transfers well to real-world lifting."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Explode through the hips.",
+        "Keep the bag close.",
+        "Receive it securely.",
+        "Alternate shoulders."
+      ],
+      "commonMistakes": [
+        "Muscling it only with the arms.",
+        "Rounding excessively.",
+        "Catching off balance.",
+        "Ignoring even side work."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ]
     },
     {
       "id": "inv_sandbag_over_shoulder",
@@ -35248,17 +37550,55 @@
       "technicalPattern": "carry",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "quadriceps"
+        ],
+        "secondary": [
+          "upper back",
+          "arms"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A powerful sandbag lift that finishes by moving the bag over one shoulder.",
+        "steps": [
+          "Set up over the sandbag.",
+          "Grip securely and brace.",
+          "Drive the bag upward with the legs and hips.",
+          "Guide it over the shoulder and clear the body safely."
+        ],
+        "feelItIn": [
+          "glutes",
+          "quadriceps",
+          "upper back",
+          "core"
+        ],
+        "hold": "Explosive reps",
+        "reps": "3–8 reps",
+        "whyUseIt": "Builds power and conditioning with a simple strongman-style movement."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Drive with the hips.",
+        "Keep the load close.",
+        "Finish aggressively but under control.",
+        "Alternate shoulders when practical."
+      ],
+      "commonMistakes": [
+        "Curling the bag.",
+        "Twisting violently.",
+        "Letting the bag clip the shoulder awkwardly.",
+        "Using a load you cannot control."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ]
     },
     {
       "id": "inv_sandbag_front_carry",
@@ -35268,17 +37608,55 @@
       "technicalPattern": "carry",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "core",
+          "upper back"
+        ],
+        "secondary": [
+          "biceps",
+          "legs"
+        ],
+        "stabilizers": [
+          "obliques"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A loaded carry holding the sandbag against the front of the body.",
+        "steps": [
+          "Lift the sandbag to a secure front position.",
+          "Hug or cradle it tightly.",
+          "Brace your trunk.",
+          "Walk with controlled steps."
+        ],
+        "feelItIn": [
+          "core",
+          "upper back",
+          "arms",
+          "legs"
+        ],
+        "hold": "20–60 seconds",
+        "reps": "2–5 carries",
+        "whyUseIt": "Builds trunk endurance and conditioning under a front-loaded awkward object."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the bag tight.",
+        "Stay tall.",
+        "Take controlled steps.",
+        "Breathe while braced."
+      ],
+      "commonMistakes": [
+        "Leaning backward.",
+        "Letting the bag sag.",
+        "Rushing.",
+        "Holding breath too long."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ]
     },
     {
       "id": "inv_sandbag_get_up",
@@ -35288,17 +37666,56 @@
       "technicalPattern": "carry",
       "difficulty": "advanced",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "core",
+          "glutes"
+        ],
+        "secondary": [
+          "shoulders",
+          "quadriceps"
+        ],
+        "stabilizers": [
+          "obliques",
+          "upper back"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A ground-to-standing movement performed while controlling a sandbag against the body or shoulder.",
+        "steps": [
+          "Start on the floor with the sandbag secured.",
+          "Move to an elbow or hand-supported position.",
+          "Bring one leg underneath you.",
+          "Stand under control, then reverse the sequence if programmed."
+        ],
+        "feelItIn": [
+          "core",
+          "shoulders",
+          "glutes",
+          "legs"
+        ],
+        "hold": "Slow controlled reps",
+        "reps": "1–5 reps per side",
+        "whyUseIt": "Builds total-body control, strength, and coordination through multiple positions."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Move one position at a time.",
+        "Keep the bag secure.",
+        "Stay braced.",
+        "Use a light enough load to stay controlled."
+      ],
+      "commonMistakes": [
+        "Rushing transitions.",
+        "Losing the bag position.",
+        "Collapsing through the shoulder.",
+        "Using too much weight."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "sandbag",
+        "strength",
+        "conditioning"
+      ]
     },
     {
       "id": "inv_agility_lateral_shuffle",
@@ -35308,17 +37725,55 @@
       "technicalPattern": "agility",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "quadriceps",
+          "calves"
+        ],
+        "secondary": [
+          "adductors"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A side-to-side footwork drill that builds lateral speed, control, and athletic movement.",
+        "steps": [
+          "Start in an athletic stance with knees soft and chest tall.",
+          "Push off one foot and shuffle sideways for several quick steps.",
+          "Keep your hips square and feet from crossing.",
+          "Reverse direction under control."
+        ],
+        "feelItIn": [
+          "glutes",
+          "quadriceps",
+          "calves"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "10–20 seconds or 2–4 passes",
+        "whyUseIt": "Builds lateral speed, coordination, and change-of-direction control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stay low.",
+        "Quick feet.",
+        "Hips square.",
+        "Do not cross the feet."
+      ],
+      "commonMistakes": [
+        "Standing too upright.",
+        "Crossing the feet.",
+        "Feet getting too narrow.",
+        "Losing control when changing direction."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_lateral_shuffle.png"
     },
     {
       "id": "inv_agility_carioca",
@@ -35328,17 +37783,55 @@
       "technicalPattern": "agility",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hip rotators",
+          "adductors"
+        ],
+        "secondary": [
+          "calves",
+          "glutes"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A crossover running drill that develops hip rotation, coordination, and lateral rhythm.",
+        "steps": [
+          "Face sideways to the direction of travel.",
+          "Cross the trailing foot in front of the lead foot.",
+          "Step the lead foot outward.",
+          "Cross the trailing foot behind and continue in rhythm."
+        ],
+        "feelItIn": [
+          "hips",
+          "adductors",
+          "calves"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "10–20 yards each direction",
+        "whyUseIt": "Improves coordination, hip rotation, and multidirectional footwork."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stay tall.",
+        "Rotate through the hips.",
+        "Keep the rhythm smooth.",
+        "Use active arms."
+      ],
+      "commonMistakes": [
+        "Moving too fast before learning the pattern.",
+        "Tripping over the feet.",
+        "Twisting only through the knees.",
+        "Losing posture."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_carioca.png"
     },
     {
       "id": "inv_agility_high_knees",
@@ -35348,17 +37841,55 @@
       "technicalPattern": "agility",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hip flexors",
+          "calves"
+        ],
+        "secondary": [
+          "quadriceps",
+          "core"
+        ],
+        "stabilizers": [
+          "ankles"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A quick running drill that improves coordination, rhythm, and warm-up intensity.",
+        "steps": [
+          "Stand tall with arms ready to drive.",
+          "Run in place or forward while lifting one knee at a time.",
+          "Land softly on the balls of your feet.",
+          "Keep a quick rhythm and strong arm action."
+        ],
+        "feelItIn": [
+          "hip flexors",
+          "calves",
+          "core"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "15–30 seconds",
+        "whyUseIt": "Raises body temperature while reinforcing running posture and knee drive."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Tall posture.",
+        "Quick rhythm.",
+        "Drive the knees.",
+        "Soft landings."
+      ],
+      "commonMistakes": [
+        "Leaning backward.",
+        "Reaching the foot far forward.",
+        "Heavy landings.",
+        "Slow inactive arms."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_high_knees.png"
     },
     {
       "id": "inv_agility_butt_kicks",
@@ -35368,17 +37899,53 @@
       "technicalPattern": "agility",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hamstrings"
+        ],
+        "secondary": [
+          "calves",
+          "quadriceps"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A running warm-up drill emphasizing quick heel recovery and hamstring rhythm.",
+        "steps": [
+          "Stand tall and begin jogging lightly.",
+          "Bring one heel toward the glute.",
+          "Alternate legs quickly.",
+          "Keep the knees pointing down and arms moving naturally."
+        ],
+        "feelItIn": [
+          "hamstrings",
+          "calves"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "15–30 seconds",
+        "whyUseIt": "Warms the hamstrings and reinforces quick running-leg recovery."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stay tall.",
+        "Quick heels.",
+        "Keep knees under the hips.",
+        "Use relaxed arms."
+      ],
+      "commonMistakes": [
+        "Kicking the feet outward.",
+        "Leaning forward excessively.",
+        "Slow rhythm.",
+        "Overstriding."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_butt_kicks.png"
     },
     {
       "id": "inv_agility_a_skip",
@@ -35388,17 +37955,54 @@
       "technicalPattern": "agility",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hip flexors",
+          "calves"
+        ],
+        "secondary": [
+          "quadriceps"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A skipping drill that teaches posture, rhythm, and knee-drive mechanics.",
+        "steps": [
+          "Stand tall and begin moving forward.",
+          "Drive one knee up while the opposite arm swings forward.",
+          "Skip forward with a light rhythmic bounce.",
+          "Alternate sides and keep the movement smooth."
+        ],
+        "feelItIn": [
+          "hip flexors",
+          "calves",
+          "core"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "10–20 yards or 2–3 passes",
+        "whyUseIt": "Builds running rhythm, posture, and front-side mechanics."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Tall posture.",
+        "Toes up.",
+        "Active arms.",
+        "Smooth rhythm."
+      ],
+      "commonMistakes": [
+        "Leaning backward.",
+        "Dragging the foot.",
+        "Overjumping.",
+        "Losing arm-leg timing."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_a_skip.png"
     },
     {
       "id": "inv_agility_b_skip",
@@ -35408,17 +38012,54 @@
       "technicalPattern": "agility",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hamstrings",
+          "hip flexors"
+        ],
+        "secondary": [
+          "calves",
+          "quadriceps"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A running-mechanics drill that adds lower-leg extension and paw-back action to the A-skip pattern.",
+        "steps": [
+          "Begin with an A-skip knee drive.",
+          "Extend the lower leg slightly forward.",
+          "Sweep the foot down and back under the body.",
+          "Alternate sides with a smooth skipping rhythm."
+        ],
+        "feelItIn": [
+          "hamstrings",
+          "hip flexors",
+          "calves"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "10–20 yards or 2–3 passes",
+        "whyUseIt": "Teaches front-side mechanics, active foot strike, and running rhythm."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Knee up first.",
+        "Extend then sweep down.",
+        "Land under the hips.",
+        "Stay rhythmic."
+      ],
+      "commonMistakes": [
+        "Kicking straight out too early.",
+        "Reaching too far forward.",
+        "Landing in front of the body.",
+        "Losing posture."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ]
     },
     {
       "id": "inv_agility_power_skip",
@@ -35428,17 +38069,55 @@
       "technicalPattern": "agility",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "calves"
+        ],
+        "secondary": [
+          "quadriceps",
+          "hip flexors"
+        ],
+        "stabilizers": [
+          "core",
+          "ankles"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "An explosive skipping drill that develops vertical force, knee drive, and coordination.",
+        "steps": [
+          "Start with a light forward jog.",
+          "Drive one knee and the opposite arm upward.",
+          "Push forcefully off the ground into a high skip.",
+          "Land softly and alternate sides."
+        ],
+        "feelItIn": [
+          "glutes",
+          "calves",
+          "hip flexors"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "10–20 yards or 2–3 passes",
+        "whyUseIt": "Develops elastic power and coordinated single-leg force production."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Drive up, not forward.",
+        "Use strong arms.",
+        "Land softly.",
+        "Stay tall."
+      ],
+      "commonMistakes": [
+        "Overstriding.",
+        "Landing stiff.",
+        "Leaning backward.",
+        "Losing rhythm."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ]
     },
     {
       "id": "inv_agility_backpedal",
@@ -35448,17 +38127,55 @@
       "technicalPattern": "agility",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps",
+          "calves"
+        ],
+        "secondary": [
+          "glutes",
+          "hamstrings"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A backward-running drill that develops coordination, deceleration skill, and athletic movement.",
+        "steps": [
+          "Start in an athletic stance.",
+          "Push backward with short quick steps.",
+          "Keep the chest tall and hips slightly lowered.",
+          "Stay light on the feet and look forward."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "calves",
+          "glutes"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "10–20 yards or 2–4 passes",
+        "whyUseIt": "Improves backward movement skill and lower-body coordination."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Short quick steps.",
+        "Stay low.",
+        "Eyes forward.",
+        "Keep feet under the body."
+      ],
+      "commonMistakes": [
+        "Reaching too far backward.",
+        "Standing too tall.",
+        "Looking down.",
+        "Crossing the feet."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_backpedal.png"
     },
     {
       "id": "inv_agility_forward_backward_shuttle",
@@ -35468,17 +38185,55 @@
       "technicalPattern": "agility",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps",
+          "glutes"
+        ],
+        "secondary": [
+          "hamstrings",
+          "calves"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A short shuttle that alternates acceleration and controlled backward movement.",
+        "steps": [
+          "Set two markers several yards apart.",
+          "Sprint or accelerate forward to the far marker.",
+          "Decelerate under control.",
+          "Backpedal to the start and repeat."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "glutes",
+          "calves"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "3–6 rounds",
+        "whyUseIt": "Builds acceleration, deceleration, and transition skill."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Accelerate smoothly.",
+        "Lower the hips to stop.",
+        "Quick transition.",
+        "Stay controlled backward."
+      ],
+      "commonMistakes": [
+        "Stopping upright.",
+        "Slipping during the turn.",
+        "Overstriding backward.",
+        "Rushing the transition."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_forward_backward_shuttle.png"
     },
     {
       "id": "inv_agility_5_10_5_shuttle",
@@ -35488,17 +38243,56 @@
       "technicalPattern": "agility",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "quadriceps"
+        ],
+        "secondary": [
+          "hamstrings",
+          "calves",
+          "adductors"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A three-cone change-of-direction drill that trains acceleration, braking, and lateral cutting.",
+        "steps": [
+          "Set three cones five yards apart.",
+          "Start at the middle cone.",
+          "Sprint five yards to one side and touch the line.",
+          "Sprint ten yards across, touch the far line, then sprint five yards back through the middle."
+        ],
+        "feelItIn": [
+          "glutes",
+          "quadriceps",
+          "calves"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "2–5 reps",
+        "whyUseIt": "Develops rapid change of direction and efficient deceleration."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stay low into cuts.",
+        "Plant outside the body.",
+        "Push hard out of each turn.",
+        "Run through the finish."
+      ],
+      "commonMistakes": [
+        "Standing up before cuts.",
+        "Reaching instead of lowering the hips.",
+        "Slipping at the plant.",
+        "Decelerating too late."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_5_10_5_shuttle.png"
     },
     {
       "id": "inv_agility_t_drill",
@@ -35508,17 +38302,55 @@
       "technicalPattern": "agility",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "quadriceps"
+        ],
+        "secondary": [
+          "adductors",
+          "calves"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A cone drill combining forward sprinting, lateral shuffling, and backpedaling.",
+        "steps": [
+          "Set four cones in a T shape.",
+          "Sprint forward to the center cone.",
+          "Shuffle laterally to each outside cone and back to center.",
+          "Backpedal through the starting cone."
+        ],
+        "feelItIn": [
+          "glutes",
+          "quadriceps",
+          "calves"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "2–5 reps",
+        "whyUseIt": "Builds multidirectional speed and transitions between movement patterns."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stay low during shuffles.",
+        "Do not cross the feet.",
+        "Touch each cone under control.",
+        "Backpedal with short steps."
+      ],
+      "commonMistakes": [
+        "Standing tall during cuts.",
+        "Crossing feet in the shuffle.",
+        "Missing cone positions.",
+        "Rushing transitions."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_t_drill.png"
     },
     {
       "id": "inv_agility_cone_weave",
@@ -35528,17 +38360,54 @@
       "technicalPattern": "agility",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "glutes",
+          "quadriceps"
+        ],
+        "secondary": [
+          "calves",
+          "adductors"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A weaving drill that develops body control and efficient change of direction.",
+        "steps": [
+          "Set several cones in a straight or staggered line.",
+          "Approach the first cone under control.",
+          "Cut around each cone with short steps.",
+          "Accelerate out after the last cone."
+        ],
+        "feelItIn": [
+          "glutes",
+          "quadriceps",
+          "calves"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "2–4 passes",
+        "whyUseIt": "Improves footwork, balance, and repeated direction changes."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Lower the hips before each cut.",
+        "Use short steps near cones.",
+        "Keep eyes up.",
+        "Accelerate between cones."
+      ],
+      "commonMistakes": [
+        "Wide looping turns.",
+        "Crossing feet awkwardly.",
+        "Looking down constantly.",
+        "Entering too fast to control."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ]
     },
     {
       "id": "inv_agility_ladder_one_in",
@@ -35548,17 +38417,53 @@
       "technicalPattern": "agility",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "calves"
+        ],
+        "secondary": [
+          "quadriceps",
+          "hip flexors"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A simple ladder drill that builds quick feet, coordination, and rhythm.",
+        "steps": [
+          "Face the ladder and stand tall on the balls of your feet.",
+          "Step one foot into the first box, then the other.",
+          "Continue with one foot in each square as you move forward.",
+          "Stay light and keep your steps quick."
+        ],
+        "feelItIn": [
+          "calves",
+          "quadriceps"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "2–4 passes",
+        "whyUseIt": "Improves foot speed, coordination, and body control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Quick feet.",
+        "Small steps.",
+        "Eyes forward.",
+        "Stay light."
+      ],
+      "commonMistakes": [
+        "Stepping on the ladder.",
+        "Looking down the whole time.",
+        "Heavy foot contacts.",
+        "Moving faster than you can control."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_ladder_one_in.png"
     },
     {
       "id": "inv_agility_ladder_two_in",
@@ -35568,17 +38473,53 @@
       "technicalPattern": "agility",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "calves",
+          "hip flexors"
+        ],
+        "secondary": [
+          "quadriceps"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A forward ladder drill using two quick foot contacts in every square.",
+        "steps": [
+          "Face the ladder.",
+          "Step both feet into the first square one after the other.",
+          "Repeat the two-foot pattern in each square.",
+          "Maintain quick, controlled rhythm to the end."
+        ],
+        "feelItIn": [
+          "calves",
+          "quadriceps",
+          "hip flexors"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "2–4 passes",
+        "whyUseIt": "Builds cadence, quick-foot coordination, and running rhythm."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Two contacts each box.",
+        "Stay light.",
+        "Pump the arms.",
+        "Keep moving forward."
+      ],
+      "commonMistakes": [
+        "Skipping squares.",
+        "Feet getting tangled.",
+        "Heavy contacts.",
+        "Looking down continuously."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ]
     },
     {
       "id": "inv_agility_ladder_icky_shuffle",
@@ -35588,17 +38529,55 @@
       "technicalPattern": "agility",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "calves",
+          "hip abductors"
+        ],
+        "secondary": [
+          "quadriceps",
+          "adductors"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A three-step lateral-forward ladder pattern that challenges rhythm and coordination.",
+        "steps": [
+          "Start beside the ladder.",
+          "Step the inside foot into a square.",
+          "Bring the outside foot into the same square, then step the first foot outside the opposite side.",
+          "Repeat the pattern down the ladder."
+        ],
+        "feelItIn": [
+          "calves",
+          "hips",
+          "quadriceps"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "2–4 passes each direction",
+        "whyUseIt": "Improves complex footwork, coordination, and lateral rhythm."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Learn slowly first.",
+        "Stay light.",
+        "Keep hips controlled.",
+        "Find a steady rhythm."
+      ],
+      "commonMistakes": [
+        "Trying to sprint before learning the pattern.",
+        "Crossing feet incorrectly.",
+        "Stepping on rungs.",
+        "Losing posture."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_ladder_icky_shuffle.png"
     },
     {
       "id": "inv_agility_lateral_ladder",
@@ -35608,17 +38587,55 @@
       "technicalPattern": "agility",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "calves",
+          "glutes"
+        ],
+        "secondary": [
+          "adductors",
+          "quadriceps"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A sideways ladder drill that trains lateral foot speed and coordination.",
+        "steps": [
+          "Stand sideways to the ladder.",
+          "Step the lead foot into the first square.",
+          "Bring the trail foot into the same square.",
+          "Continue laterally through each box without crossing your feet."
+        ],
+        "feelItIn": [
+          "calves",
+          "glutes",
+          "adductors"
+        ],
+        "hold": "Dynamic movement",
+        "reps": "2–4 passes each direction",
+        "whyUseIt": "Develops lateral foot speed, rhythm, and hip control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stay square.",
+        "Quick light steps.",
+        "Do not cross over.",
+        "Train both directions."
+      ],
+      "commonMistakes": [
+        "Crossing the feet.",
+        "Standing too upright.",
+        "Stepping on the ladder.",
+        "Only practicing one direction."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "agility",
+        "athletic",
+        "footwork"
+      ],
+      "originalVisualPath": "/originals/inv_agility_lateral_ladder.png"
     },
     {
       "id": "inv_strength_zercher_carry",
@@ -35628,17 +38645,56 @@
       "technicalPattern": "carry",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "core",
+          "upper back"
+        ],
+        "secondary": [
+          "biceps",
+          "quadriceps",
+          "glutes"
+        ],
+        "stabilizers": [
+          "obliques"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A front-loaded carry with a barbell or sandbag cradled in the elbows.",
+        "steps": [
+          "Secure the load in the elbow crease.",
+          "Stand tall and brace.",
+          "Walk with short controlled steps.",
+          "Keep the load close throughout."
+        ],
+        "feelItIn": [
+          "core",
+          "upper back",
+          "biceps",
+          "legs"
+        ],
+        "hold": "Controlled movement",
+        "reps": "20–40 seconds",
+        "whyUseIt": "Builds trunk stiffness and loaded-carry tolerance in a demanding front position."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Stay tall.",
+        "Keep the load tight.",
+        "Short steps.",
+        "Breathe behind the brace."
+      ],
+      "commonMistakes": [
+        "Leaning backward.",
+        "Letting elbows separate.",
+        "Rushing.",
+        "Holding the breath too long."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_strength_zercher_carry.png"
     },
     {
       "id": "inv_strength_landmine_squat",
@@ -35648,17 +38704,53 @@
       "technicalPattern": "squat",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps",
+          "glutes"
+        ],
+        "secondary": [
+          "upper back"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A front-loaded squat using a barbell anchored in a landmine.",
+        "steps": [
+          "Hold the end of the bar near your chest.",
+          "Set your feet in a comfortable squat stance.",
+          "Sit down between the hips.",
+          "Drive through the floor to stand."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "glutes",
+          "core"
+        ],
+        "hold": "Controlled movement",
+        "reps": "6–15 reps",
+        "whyUseIt": "Provides a beginner-friendly squat pattern with a guided bar path."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the bar close.",
+        "Stay tall.",
+        "Knees track with toes.",
+        "Keep heels down."
+      ],
+      "commonMistakes": [
+        "Leaning too far back.",
+        "Letting knees cave.",
+        "Heels lifting.",
+        "Losing the brace."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_strength_landmine_squat.png"
     },
     {
       "id": "inv_strength_landmine_press",
@@ -35668,17 +38760,54 @@
       "technicalPattern": "vertical_press",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "shoulders",
+          "triceps"
+        ],
+        "secondary": [
+          "upper chest"
+        ],
+        "stabilizers": [
+          "core",
+          "serratus"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A standing angled press using a landmine setup.",
+        "steps": [
+          "Hold the end of the bar at shoulder height.",
+          "Brace your trunk.",
+          "Press the bar up and forward.",
+          "Lower it under control."
+        ],
+        "feelItIn": [
+          "shoulder",
+          "triceps",
+          "upper chest"
+        ],
+        "hold": "Controlled movement",
+        "reps": "6–12 reps per side",
+        "whyUseIt": "Offers an overhead-press alternative with a shoulder-friendly angled path."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Ribs down.",
+        "Press up and forward.",
+        "Keep the shoulder packed.",
+        "Control the return."
+      ],
+      "commonMistakes": [
+        "Overarching the back.",
+        "Shrugging excessively.",
+        "Letting the elbow flare wildly.",
+        "Using momentum."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_strength_landmine_press.png"
     },
     {
       "id": "inv_strength_half_kneeling_landmine_press",
@@ -35688,17 +38817,53 @@
       "technicalPattern": "vertical_press",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "shoulders",
+          "triceps"
+        ],
+        "secondary": [
+          "upper chest"
+        ],
+        "stabilizers": [
+          "core",
+          "glutes"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A half-kneeling landmine press that adds trunk and hip-position control.",
+        "steps": [
+          "Set up half-kneeling with the bar at shoulder height.",
+          "Squeeze the rear glute and brace.",
+          "Press the bar up and forward.",
+          "Return slowly."
+        ],
+        "feelItIn": [
+          "shoulder",
+          "triceps",
+          "core"
+        ],
+        "hold": "Controlled movement",
+        "reps": "6–12 reps per side",
+        "whyUseIt": "Combines pressing strength with pelvic and trunk stability."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Squeeze rear glute.",
+        "Keep ribs down.",
+        "Press smoothly.",
+        "Stay tall."
+      ],
+      "commonMistakes": [
+        "Arching the back.",
+        "Rotating the torso.",
+        "Losing the half-kneeling position.",
+        "Rushing reps."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ]
     },
     {
       "id": "inv_strength_landmine_row",
@@ -35708,17 +38873,54 @@
       "technicalPattern": "horizontal_pull",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "lats",
+          "mid back"
+        ],
+        "secondary": [
+          "biceps",
+          "rear delts"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A rowing movement using a barbell anchored at one end.",
+        "steps": [
+          "Straddle or stand beside the bar as appropriate.",
+          "Hinge at the hips and brace.",
+          "Pull the bar toward the torso.",
+          "Lower under control."
+        ],
+        "feelItIn": [
+          "lats",
+          "mid back",
+          "biceps"
+        ],
+        "hold": "Controlled movement",
+        "reps": "6–15 reps",
+        "whyUseIt": "Builds pulling strength with a stable, loadable setup."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep the spine long.",
+        "Pull elbows back.",
+        "Keep the bar path controlled.",
+        "Do not yank."
+      ],
+      "commonMistakes": [
+        "Rounding the back.",
+        "Standing up during the row.",
+        "Shrugging.",
+        "Using excessive momentum."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_strength_landmine_row.png"
     },
     {
       "id": "inv_strength_meadows_row",
@@ -35728,17 +38930,54 @@
       "technicalPattern": "horizontal_pull",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "lats",
+          "mid back"
+        ],
+        "secondary": [
+          "rear delts",
+          "biceps"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A one-arm landmine row performed from a staggered stance with the bar perpendicular to the body.",
+        "steps": [
+          "Stand beside the end of the landmine bar.",
+          "Hinge and grip the sleeve with one hand.",
+          "Brace the free hand on the thigh if needed.",
+          "Row the bar toward the hip and lower slowly."
+        ],
+        "feelItIn": [
+          "lats",
+          "upper back",
+          "rear shoulder"
+        ],
+        "hold": "Controlled movement",
+        "reps": "6–12 reps per side",
+        "whyUseIt": "Builds unilateral back strength through a distinct landmine angle."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Drive the elbow toward the hip.",
+        "Keep the torso stable.",
+        "Use a full controlled stretch.",
+        "Do not twist to finish."
+      ],
+      "commonMistakes": [
+        "Rotating excessively.",
+        "Shrugging.",
+        "Yanking the bar.",
+        "Standing up during reps."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_strength_meadows_row.png"
     },
     {
       "id": "inv_strength_nordic_curl",
@@ -35748,17 +38987,50 @@
       "technicalPattern": "leg_accessory",
       "difficulty": "advanced",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "hamstrings"
+        ],
+        "secondary": [
+          "glutes"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "An advanced bodyweight hamstring exercise using controlled knee extension.",
+        "steps": [
+          "Kneel with ankles securely anchored.",
+          "Keep hips extended and torso straight.",
+          "Lower the body forward slowly.",
+          "Use the hamstrings to resist, then assist the return as needed."
+        ],
+        "feelItIn": [
+          "hamstrings"
+        ],
+        "hold": "Controlled movement",
+        "reps": "3–8 reps",
+        "whyUseIt": "Builds high levels of eccentric hamstring strength."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Keep hips extended.",
+        "Lower slowly.",
+        "Stay rigid from knees to shoulders.",
+        "Use assistance when needed."
+      ],
+      "commonMistakes": [
+        "Bending at the hips.",
+        "Dropping too quickly.",
+        "Using no assistance before ready.",
+        "Losing ankle security."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_strength_nordic_curl.png"
     },
     {
       "id": "inv_strength_reverse_nordic",
@@ -35768,17 +39040,51 @@
       "technicalPattern": "leg_accessory",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps"
+        ],
+        "secondary": [
+          "hip flexors"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A bodyweight quadriceps exercise performed by leaning backward from a tall-kneeling position.",
+        "steps": [
+          "Kneel tall with hips extended.",
+          "Brace the trunk.",
+          "Lean backward from the knees while keeping the body straight.",
+          "Use the quadriceps to return upright."
+        ],
+        "feelItIn": [
+          "quadriceps",
+          "front of thighs"
+        ],
+        "hold": "Controlled movement",
+        "reps": "5–12 reps",
+        "whyUseIt": "Builds quadriceps strength through a long muscle length with minimal equipment."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Squeeze glutes.",
+        "Keep hips open.",
+        "Lean as one unit.",
+        "Control the depth."
+      ],
+      "commonMistakes": [
+        "Folding at the hips.",
+        "Dropping quickly.",
+        "Going deeper than you can control.",
+        "Arching the back."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_strength_reverse_nordic.png"
     },
     {
       "id": "inv_strength_spanish_squat",
@@ -35788,17 +39094,50 @@
       "technicalPattern": "leg_accessory",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "quadriceps"
+        ],
+        "secondary": [
+          "glutes"
+        ],
+        "stabilizers": [
+          "core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "A squat performed with a strong band behind the knees to emphasize the quadriceps.",
+        "steps": [
+          "Anchor a thick band securely behind knee height.",
+          "Step into the band so it supports behind both knees.",
+          "Sit back and down while keeping the torso tall.",
+          "Drive through the feet to stand."
+        ],
+        "feelItIn": [
+          "quadriceps"
+        ],
+        "hold": "Controlled movement",
+        "reps": "8–20 reps or 20–45 second hold",
+        "whyUseIt": "Loads the quadriceps while allowing a more upright torso."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Sit back into the band.",
+        "Keep shins relatively upright.",
+        "Stay tall.",
+        "Keep feet planted."
+      ],
+      "commonMistakes": [
+        "Weak or unsafe anchor.",
+        "Letting knees cave.",
+        "Losing band tension.",
+        "Rushing reps."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_strength_spanish_squat.png"
     },
     {
       "id": "inv_core_hollow_hold",
@@ -35808,17 +39147,51 @@
       "technicalPattern": "core_flexion",
       "difficulty": "intermediate",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
-        "stabilizers": []
+        "primary": [
+          "rectus abdominis"
+        ],
+        "secondary": [
+          "hip flexors"
+        ],
+        "stabilizers": [
+          "deep core"
+        ]
       },
       "description": {
-        "summary": ""
+        "summary": "An isometric core exercise that teaches full-body tension and rib-to-pelvis control.",
+        "steps": [
+          "Lie on your back.",
+          "Flatten the lower back gently toward the floor.",
+          "Lift shoulders and legs to a manageable height.",
+          "Hold while maintaining the same trunk position."
+        ],
+        "feelItIn": [
+          "abdominals",
+          "deep core"
+        ],
+        "hold": "Controlled movement",
+        "reps": "15–40 seconds",
+        "whyUseIt": "Builds anterior core endurance and body-line control."
       },
-      "coachingCues": [],
-      "commonMistakes": [],
+      "coachingCues": [
+        "Ribs down.",
+        "Lower back stays controlled.",
+        "Reach long.",
+        "Regress by bending knees."
+      ],
+      "commonMistakes": [
+        "Lower back arching.",
+        "Holding the breath.",
+        "Legs too low for control.",
+        "Neck straining."
+      ],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_core_hollow_hold.png"
     },
     {
       "id": "inv_core_bird_dog",
@@ -35828,8 +39201,114 @@
       "technicalPattern": "core_flexion",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [],
-        "secondary": [],
+        "primary": [
+          "core",
+          "glutes"
+        ],
+        "secondary": [
+          "upper back"
+        ],
+        "stabilizers": [
+          "shoulders",
+          "obliques"
+        ]
+      },
+      "description": {
+        "summary": "A hands-and-knees core drill combining opposite arm and leg reach.",
+        "steps": [
+          "Start on hands and knees.",
+          "Brace lightly.",
+          "Reach one arm forward and the opposite leg backward.",
+          "Return with control and switch sides."
+        ],
+        "feelItIn": [
+          "core",
+          "glutes",
+          "upper back"
+        ],
+        "hold": "Controlled movement",
+        "reps": "6–12 reps per side",
+        "whyUseIt": "Builds cross-body trunk stability and coordination."
+      },
+      "coachingCues": [
+        "Keep hips square.",
+        "Reach long, not high.",
+        "Move slowly.",
+        "Keep ribs controlled."
+      ],
+      "commonMistakes": [
+        "Rotating the pelvis.",
+        "Arching the lower back.",
+        "Lifting the leg too high.",
+        "Rushing."
+      ],
+      "aliases": [],
+      "implementations": [],
+      "browseTags": [
+        "involved-original",
+        "gap-fill"
+      ],
+      "originalVisualPath": "/originals/inv_core_bird_dog.png"
+    },
+    {
+      "id": "inv_carry_bottoms_up",
+      "name": "Bottoms-Up Carry",
+      "slug": "bottoms_up_carry",
+      "movementFamilyId": "fam_carries",
+      "technicalPattern": "carry",
+      "difficulty": "intermediate",
+      "browseTags": [
+        "carry",
+        "kettlebell",
+        "stability",
+        "shoulder"
+      ],
+      "muscleCard": {
+        "primary": [
+          "shoulders",
+          "forearms"
+        ],
+        "secondary": [
+          "core",
+          "traps"
+        ],
+        "stabilizers": [
+          "rotator cuff"
+        ]
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [],
+      "originalVisualPath": "/originals/inv_carry_bottoms_up.png"
+    },
+    {
+      "id": "inv_agility_linear_sprint",
+      "name": "Linear Sprint",
+      "slug": "linear_sprint",
+      "movementFamilyId": "fam_agility",
+      "technicalPattern": "agility",
+      "difficulty": "beginner",
+      "browseTags": [
+        "agility",
+        "speed",
+        "conditioning",
+        "athleticism"
+      ],
+      "muscleCard": {
+        "primary": [
+          "glutes",
+          "hamstrings",
+          "calves"
+        ],
+        "secondary": [
+          "quads",
+          "core",
+          "hip flexors"
+        ],
         "stabilizers": []
       },
       "description": {
@@ -35838,7 +39317,43 @@
       "coachingCues": [],
       "commonMistakes": [],
       "aliases": [],
-      "implementations": []
+      "implementations": [],
+      "originalVisualPath": "/originals/inv_agility_linear_sprint.png"
+    },
+    {
+      "id": "inv_agility_lateral_bound",
+      "name": "Lateral Bound",
+      "slug": "lateral_bound",
+      "movementFamilyId": "fam_agility",
+      "technicalPattern": "agility",
+      "difficulty": "intermediate",
+      "browseTags": [
+        "agility",
+        "plyometric",
+        "lateral",
+        "athleticism"
+      ],
+      "muscleCard": {
+        "primary": [
+          "glutes",
+          "quads",
+          "calves"
+        ],
+        "secondary": [
+          "core",
+          "adductors",
+          "hamstrings"
+        ],
+        "stabilizers": []
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [],
+      "originalVisualPath": "/originals/inv_agility_lateral_bound.png"
     }
   ]
 }

@@ -47,10 +47,13 @@ export interface CanonicalMuscleCard {
 
 export interface CanonicalDescription {
   summary: string
+  steps?: string[]
+  feelItIn?: string[]
+  hold?: string
+  reps?: string
+  whyUseIt?: string
   /** Present in v0.2 seeds; optional going forward */
   whatItTrains?: string
-  /** Present in v0.2 seeds; optional going forward */
-  whyUseIt?: string
 }
 
 export interface CanonicalExercise {
@@ -69,6 +72,8 @@ export interface CanonicalExercise {
   aliases: string[]
   implementations: CanonicalImplementation[]
   sourceGap?: CanonicalSourceGap
+  /** Path under /public for Involved-original placeholder visuals, e.g. /originals/inv_yoga_downward_dog.png */
+  originalVisualPath?: string
 }
 
 export interface CanonicalFamily {
