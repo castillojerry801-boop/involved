@@ -304,48 +304,6 @@
       ]
     },
     {
-      "id": "inv_barbell_lying_extension",
-      "name": "Barbell Lying Extension",
-      "slug": "barbell_lying_extension",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0057",
-          "displayLabel": "Barbell Lying Extension",
-          "equipment": "barbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0057",
-            "sourceName": "barbell lying extension"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0057.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_barbell_pin_presses",
       "name": "Barbell Pin Presses",
       "slug": "barbell_pin_presses",
@@ -2092,48 +2050,6 @@
       ]
     },
     {
-      "id": "inv_cable_high_pulley_overhead_tricep_extension",
-      "name": "Cable High Pulley Overhead Tricep Extension",
-      "slug": "cable_high_pulley_overhead_tricep_extension",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1722",
-          "displayLabel": "Cable High Pulley Overhead Tricep Extension",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1722",
-            "sourceName": "cable high pulley overhead tricep extension"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1722.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_cable_rear_drive",
       "name": "Cable Rear Drive",
       "slug": "cable_rear_drive",
@@ -2177,90 +2093,6 @@
       ]
     },
     {
-      "id": "inv_cable_rope_high_pulley_overhead_tricep_extension",
-      "name": "Cable Rope High Pulley Overhead Tricep Extension",
-      "slug": "cable_rope_high_pulley_overhead_tricep_extension",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1724",
-          "displayLabel": "Cable Rope High Pulley Overhead Tricep Extension",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1724",
-            "sourceName": "cable rope high pulley overhead tricep extension"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1724.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_cable_rope_incline_tricep_extension",
-      "name": "Cable Rope Incline Tricep Extension",
-      "slug": "cable_rope_incline_tricep_extension",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1725",
-          "displayLabel": "Cable Rope Incline Tricep Extension",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1725",
-            "sourceName": "cable rope incline tricep extension"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1725.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_cable_rope_lying_on_floor_tricep_extension",
       "name": "Cable Rope Lying On Floor Tricep Extension",
       "slug": "cable_rope_lying_on_floor_tricep_extension",
@@ -2296,48 +2128,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/1726.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_cable_standing_reverse_grip_single_arm_overhead_tricep_extension",
-      "name": "Cable Standing Reverse Grip Single-Arm Overhead Tricep Extension",
-      "slug": "cable_standing_reverse_grip_single_arm_overhead_tricep_extension",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1727",
-          "displayLabel": "Cable Standing Reverse Grip Single-Arm Overhead Tricep Extension",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1727",
-            "sourceName": "cable standing reverse grip one arm overhead tricep extension"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1727.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -2665,49 +2455,6 @@
       ]
     },
     {
-      "id": "inv_dumbbell_finger_curls",
-      "name": "Dumbbell Finger Curls",
-      "slug": "dumbbell_finger_curls",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "forearms"
-        ],
-        "secondary": [
-          "wrist flexors",
-          "wrist extensors"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1437",
-          "displayLabel": "Dumbbell Finger Curls",
-          "equipment": "dumbbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1437",
-            "sourceName": "dumbbell finger curls"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1437.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_dumbbell_hammer_curls_with_arm_blaster",
       "name": "Dumbbell Hammer Curls (With Arm Blaster)",
       "slug": "dumbbell_hammer_curls_with_arm_blaster",
@@ -2829,49 +2576,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/1619.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_dumbbell_incline_single_arm_hammer_press_on_exercise_ball",
-      "name": "Dumbbell Incline Single-Arm Hammer Press On Exercise Ball",
-      "slug": "dumbbell_incline_single_arm_hammer_press_on_exercise_ball",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders",
-          "chest"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1620",
-          "displayLabel": "Dumbbell Incline Single-Arm Hammer Press On Exercise Ball",
-          "equipment": "dumbbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1620",
-            "sourceName": "dumbbell incline one arm hammer press on exercise ball"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1620.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -3042,48 +2746,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/0338.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_dumbbell_lying_extension_across_face",
-      "name": "Dumbbell Lying Extension (Across Face)",
-      "slug": "dumbbell_lying_extension_across_face",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0337",
-          "displayLabel": "Dumbbell Lying Extension (Across Face)",
-          "equipment": "dumbbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0337",
-            "sourceName": "dumbbell lying extension (across face)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0337.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -3347,48 +3009,6 @@
       ]
     },
     {
-      "id": "inv_dumbbell_seated_reverse_grip_single_arm_overhead_tricep_extension",
-      "name": "Dumbbell Seated Reverse Grip Single-Arm Overhead Tricep Extension",
-      "slug": "dumbbell_seated_reverse_grip_single_arm_overhead_tricep_extension",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1738",
-          "displayLabel": "Dumbbell Seated Reverse Grip Single-Arm Overhead Tricep Extension",
-          "equipment": "dumbbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1738",
-            "sourceName": "dumbbell seated reverse grip one arm overhead tricep extension"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1738.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_dumbbell_seated_single_arm_rotate",
       "name": "Dumbbell Seated Single-Arm Rotate",
       "slug": "dumbbell_seated_single_arm_rotate",
@@ -3601,90 +3221,6 @@
       ]
     },
     {
-      "id": "inv_ez_bar_french_press_on_exercise_ball",
-      "name": "EZ Bar French Press On Exercise Ball",
-      "slug": "ez_bar_french_press_on_exercise_ball",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1747",
-          "displayLabel": "EZ Bar French Press On Exercise Ball",
-          "equipment": "ez barbell, exercise ball",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1747",
-            "sourceName": "ez bar french press on exercise ball"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1747.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_ez_bar_standing_french_press",
-      "name": "EZ Bar Standing French Press",
-      "slug": "ez_bar_standing_french_press",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1749",
-          "displayLabel": "EZ Bar Standing French Press",
-          "equipment": "ez bar",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1749",
-            "sourceName": "ez bar standing french press"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1749.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_ez_barbell_decline_close_grip_face_press",
       "name": "EZ Barbell Decline Close Grip Face Press",
       "slug": "ez_barbell_decline_close_grip_face_press",
@@ -3849,6 +3385,60 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/0455.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        },
+        {
+          "implementationId": "edb_1437",
+          "displayLabel": "Dumbbell Finger Curls",
+          "equipment": "dumbbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1437",
+            "sourceName": "dumbbell finger curls"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1437.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 2
+        }
+      ]
+    },
+    {
+      "id": "inv_grip_squeeze",
+      "name": "Grip Squeeze",
+      "slug": "grip_squeeze",
+      "movementFamilyId": "fam_arms",
+      "technicalPattern": "arm_isolation",
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [],
+        "secondary": [],
+        "stabilizers": [],
+        "status": "NEEDS_REVIEW"
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [
+        {
+          "implementationId": "edb_0854",
+          "displayLabel": "Weighted Standing Hand Squeeze",
+          "equipment": "weighted",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0854",
+            "sourceName": "weighted standing hand squeeze"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0854.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -4596,6 +4186,38 @@
             "replacementStatus": "temporary"
           },
           "priority": 8
+        },
+        {
+          "implementationId": "edb_0057",
+          "displayLabel": "Barbell Lying Extension",
+          "equipment": "barbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0057",
+            "sourceName": "barbell lying extension"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0057.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 9
+        },
+        {
+          "implementationId": "edb_0337",
+          "displayLabel": "Dumbbell Lying Extension (Across Face)",
+          "equipment": "dumbbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0337",
+            "sourceName": "dumbbell lying extension (across face)"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0337.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 10
         }
       ]
     },
@@ -4805,6 +4427,102 @@
             "replacementStatus": "temporary"
           },
           "priority": 3
+        },
+        {
+          "implementationId": "edb_1722",
+          "displayLabel": "Cable High Pulley Overhead Tricep Extension",
+          "equipment": "cable",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1722",
+            "sourceName": "cable high pulley overhead tricep extension"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1722.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 4
+        },
+        {
+          "implementationId": "edb_1724",
+          "displayLabel": "Cable Rope High Pulley Overhead Tricep Extension",
+          "equipment": "cable",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1724",
+            "sourceName": "cable rope high pulley overhead tricep extension"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1724.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 5
+        },
+        {
+          "implementationId": "edb_1727",
+          "displayLabel": "Cable Standing Reverse Grip Single-Arm Overhead Tricep Extension",
+          "equipment": "cable",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1727",
+            "sourceName": "cable standing reverse grip one arm overhead tricep extension"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1727.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 6
+        },
+        {
+          "implementationId": "edb_1738",
+          "displayLabel": "Dumbbell Seated Reverse Grip Single-Arm Overhead Tricep Extension",
+          "equipment": "dumbbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1738",
+            "sourceName": "dumbbell seated reverse grip one arm overhead tricep extension"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1738.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 7
+        },
+        {
+          "implementationId": "edb_1747",
+          "displayLabel": "EZ Bar French Press On Exercise Ball",
+          "equipment": "ez barbell, exercise ball",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1747",
+            "sourceName": "ez bar french press on exercise ball"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1747.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 8
+        },
+        {
+          "implementationId": "edb_1749",
+          "displayLabel": "EZ Bar Standing French Press",
+          "equipment": "ez bar",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1749",
+            "sourceName": "ez bar standing french press"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1749.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 9
         }
       ]
     },
@@ -5558,48 +5276,6 @@
       ]
     },
     {
-      "id": "inv_smith_machine_incline_tricep_extension",
-      "name": "Smith Machine Incline Tricep Extension",
-      "slug": "smith_machine_incline_tricep_extension",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1752",
-          "displayLabel": "Smith Machine Incline Tricep Extension",
-          "equipment": "smith machine",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1752",
-            "sourceName": "smith machine incline tricep extension"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1752.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_spider_curl",
       "name": "Spider Curl",
       "slug": "spider_curl",
@@ -6185,6 +5861,38 @@
             "replacementStatus": "temporary"
           },
           "priority": 24
+        },
+        {
+          "implementationId": "edb_1725",
+          "displayLabel": "Cable Rope Incline Tricep Extension",
+          "equipment": "cable",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1725",
+            "sourceName": "cable rope incline tricep extension"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1725.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 25
+        },
+        {
+          "implementationId": "edb_1752",
+          "displayLabel": "Smith Machine Incline Tricep Extension",
+          "equipment": "smith machine",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1752",
+            "sourceName": "smith machine incline tricep extension"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1752.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 26
         }
       ]
     },
@@ -6590,135 +6298,6 @@
             "replacementStatus": "temporary"
           },
           "priority": 9
-        }
-      ]
-    },
-    {
-      "id": "inv_weighted_standing_hand_squeeze",
-      "name": "Weighted Standing Hand Squeeze",
-      "slug": "weighted_standing_hand_squeeze",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "forearms"
-        ],
-        "secondary": [
-          "biceps",
-          "triceps"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0854",
-          "displayLabel": "Weighted Standing Hand Squeeze",
-          "equipment": "weighted",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0854",
-            "sourceName": "weighted standing hand squeeze"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0854.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_weighted_three_bench_dips",
-      "name": "Weighted Three Bench Dips",
-      "slug": "weighted_three_bench_dips",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "chest",
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1754",
-          "displayLabel": "Weighted Three Bench Dips",
-          "equipment": "weighted",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1754",
-            "sourceName": "weighted three bench dips"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1754.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_weighted_tricep_dips",
-      "name": "Weighted Tricep Dips",
-      "slug": "weighted_tricep_dips",
-      "movementFamilyId": "fam_arms",
-      "technicalPattern": "arm_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "triceps"
-        ],
-        "secondary": [
-          "chest",
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1755",
-          "displayLabel": "Weighted Tricep Dips",
-          "equipment": "weighted",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1755",
-            "sourceName": "weighted tricep dips"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1755.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
         }
       ]
     },
@@ -7501,6 +7080,38 @@
             "replacementStatus": "temporary"
           },
           "priority": 1
+        },
+        {
+          "implementationId": "edb_3286",
+          "displayLabel": "Weighted Muscle Up",
+          "equipment": "weighted",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "3286",
+            "sourceName": "weighted muscle up"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/3286.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 2
+        },
+        {
+          "implementationId": "edb_3312",
+          "displayLabel": "Weighted Muscle Up (On Bar)",
+          "equipment": "weighted",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "3312",
+            "sourceName": "weighted muscle up (on bar)"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/3312.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 3
         }
       ]
     },
@@ -7973,96 +7584,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/1366.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_weighted_muscle_up",
-      "name": "Weighted Muscle Up",
-      "slug": "weighted_muscle_up",
-      "movementFamilyId": "fam_back",
-      "technicalPattern": "back_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "lats"
-        ],
-        "secondary": [
-          "biceps",
-          "triceps",
-          "shoulders",
-          "chest"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_3286",
-          "displayLabel": "Weighted Muscle Up",
-          "equipment": "weighted",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "3286",
-            "sourceName": "weighted muscle up"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/3286.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_weighted_muscle_up_on_bar",
-      "name": "Weighted Muscle Up (On Bar)",
-      "slug": "weighted_muscle_up_on_bar",
-      "movementFamilyId": "fam_back",
-      "technicalPattern": "back_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "lats"
-        ],
-        "secondary": [
-          "biceps",
-          "triceps",
-          "shoulders",
-          "forearms"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_3312",
-          "displayLabel": "Weighted Muscle Up (On Bar)",
-          "equipment": "weighted",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "3312",
-            "sourceName": "weighted muscle up (on bar)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/3312.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -9365,6 +8886,44 @@
       ]
     },
     {
+      "id": "inv_band_resisted_shuttle",
+      "name": "Band-Resisted Shuttle",
+      "slug": "band_resisted_shuttle",
+      "movementFamilyId": "fam_carries",
+      "technicalPattern": "carry",
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [],
+        "secondary": [],
+        "stabilizers": [],
+        "status": "NEEDS_REVIEW"
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [
+        {
+          "implementationId": "edb_4241",
+          "displayLabel": "Resistance Band Shuttle",
+          "equipment": "band",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "4241",
+            "sourceName": "resistance band shuttle"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/4241.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        }
+      ]
+    },
+    {
       "id": "inv_overhead_carry",
       "name": "Overhead Carry",
       "slug": "overhead_carry",
@@ -9465,49 +9024,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/0036.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_barbell_incline_shoulder_raise",
-      "name": "Barbell Incline Shoulder Raise",
-      "slug": "barbell_incline_shoulder_raise",
-      "movementFamilyId": "fam_chest",
-      "technicalPattern": "chest_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "serratus anterior"
-        ],
-        "secondary": [
-          "deltoids",
-          "trapezius"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0050",
-          "displayLabel": "Barbell Incline Shoulder Raise",
-          "equipment": "barbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0050",
-            "sourceName": "barbell incline shoulder raise"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0050.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -9644,49 +9160,6 @@
       ]
     },
     {
-      "id": "inv_cable_press_on_exercise_ball",
-      "name": "Cable Press On Exercise Ball",
-      "slug": "cable_press_on_exercise_ball",
-      "movementFamilyId": "fam_chest",
-      "technicalPattern": "chest_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "pectorals"
-        ],
-        "secondary": [
-          "shoulders",
-          "triceps"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1268",
-          "displayLabel": "Cable Press On Exercise Ball",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1268",
-            "sourceName": "cable press on exercise ball"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1268.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_cable_single_arm_incline_press",
       "name": "Cable Single-Arm Incline Press",
       "slug": "cable_single_arm_incline_press",
@@ -9809,49 +9282,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/0191.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_cable_single_arm_press_on_exercise_ball",
-      "name": "Cable Single-Arm Press On Exercise Ball",
-      "slug": "cable_single_arm_press_on_exercise_ball",
-      "movementFamilyId": "fam_chest",
-      "technicalPattern": "chest_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "pectorals"
-        ],
-        "secondary": [
-          "shoulders",
-          "triceps"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1267",
-          "displayLabel": "Cable Single-Arm Press On Exercise Ball",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1267",
-            "sourceName": "cable one arm press on exercise ball"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1267.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -10744,49 +10174,6 @@
       ]
     },
     {
-      "id": "inv_dumbbell_incline_shoulder_raise",
-      "name": "Dumbbell Incline Shoulder Raise",
-      "slug": "dumbbell_incline_shoulder_raise",
-      "movementFamilyId": "fam_chest",
-      "technicalPattern": "chest_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "serratus anterior"
-        ],
-        "secondary": [
-          "deltoids",
-          "trapezius"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0328",
-          "displayLabel": "Dumbbell Incline Shoulder Raise",
-          "equipment": "dumbbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0328",
-            "sourceName": "dumbbell incline shoulder raise"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0328.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_dumbbell_incline_single_arm_press",
       "name": "Dumbbell Incline Single-Arm Press",
       "slug": "dumbbell_incline_single_arm_press",
@@ -11018,93 +10405,6 @@
       ]
     },
     {
-      "id": "inv_dumbbell_press_on_exercise_ball",
-      "name": "Dumbbell Press On Exercise Ball",
-      "slug": "dumbbell_press_on_exercise_ball",
-      "movementFamilyId": "fam_chest",
-      "technicalPattern": "chest_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "pectorals"
-        ],
-        "secondary": [
-          "shoulders",
-          "triceps"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1293",
-          "displayLabel": "Dumbbell Press On Exercise Ball",
-          "equipment": "dumbbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1293",
-            "sourceName": "dumbbell press on exercise ball"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1293.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_dumbbell_single_arm_press_on_exercise_ball",
-      "name": "Dumbbell Single-Arm Press On Exercise Ball",
-      "slug": "dumbbell_single_arm_press_on_exercise_ball",
-      "movementFamilyId": "fam_chest",
-      "technicalPattern": "chest_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "pectorals"
-        ],
-        "secondary": [
-          "shoulders",
-          "triceps",
-          "core"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_1290",
-          "displayLabel": "Dumbbell Single-Arm Press On Exercise Ball",
-          "equipment": "dumbbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "1290",
-            "sourceName": "dumbbell one arm press on exercise ball"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/1290.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_dumbbell_single_arm_reverse_grip_press",
       "name": "Dumbbell Single-Arm Reverse Grip Press",
       "slug": "dumbbell_single_arm_reverse_grip_press",
@@ -11327,6 +10627,76 @@
             "replacementStatus": "temporary"
           },
           "priority": 7
+        }
+      ]
+    },
+    {
+      "id": "inv_incline_shoulder_raise",
+      "name": "Incline Shoulder Raise",
+      "slug": "incline_shoulder_raise",
+      "movementFamilyId": "fam_chest",
+      "technicalPattern": "chest_isolation",
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [],
+        "secondary": [],
+        "stabilizers": [],
+        "status": "NEEDS_REVIEW"
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [
+        {
+          "implementationId": "edb_0050",
+          "displayLabel": "Barbell Incline Shoulder Raise",
+          "equipment": "barbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0050",
+            "sourceName": "barbell incline shoulder raise"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0050.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        },
+        {
+          "implementationId": "edb_0328",
+          "displayLabel": "Dumbbell Incline Shoulder Raise",
+          "equipment": "dumbbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0328",
+            "sourceName": "dumbbell incline shoulder raise"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0328.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 2
+        },
+        {
+          "implementationId": "edb_0759",
+          "displayLabel": "Smith Incline Shoulder Raises",
+          "equipment": "smith machine",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0759",
+            "sourceName": "smith incline shoulder raises"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0759.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 3
         }
       ]
     },
@@ -12197,92 +11567,6 @@
       ]
     },
     {
-      "id": "inv_smith_incline_reverse_grip_press",
-      "name": "Smith Incline Reverse-Grip Press",
-      "slug": "smith_incline_reverse_grip_press",
-      "movementFamilyId": "fam_chest",
-      "technicalPattern": "chest_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "pectorals"
-        ],
-        "secondary": [
-          "triceps",
-          "shoulders"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0758",
-          "displayLabel": "Smith Incline Reverse-Grip Press",
-          "equipment": "smith machine",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0758",
-            "sourceName": "smith incline reverse-grip press"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0758.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_smith_incline_shoulder_raises",
-      "name": "Smith Incline Shoulder Raises",
-      "slug": "smith_incline_shoulder_raises",
-      "movementFamilyId": "fam_chest",
-      "technicalPattern": "chest_isolation",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "serratus anterior"
-        ],
-        "secondary": [
-          "deltoids",
-          "trapezius"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0759",
-          "displayLabel": "Smith Incline Shoulder Raises",
-          "equipment": "smith machine",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0759",
-            "sourceName": "smith incline shoulder raises"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0759.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_smith_reverse_grip_press",
       "name": "Smith Reverse-Grip Press",
       "slug": "smith_reverse_grip_press",
@@ -12326,22 +11610,17 @@
       ]
     },
     {
-      "id": "inv_weighted_svend_press",
-      "name": "Weighted Svend Press",
-      "slug": "weighted_svend_press",
+      "id": "inv_svend_press",
+      "name": "Svend Press",
+      "slug": "svend_press",
       "movementFamilyId": "fam_chest",
       "technicalPattern": "chest_isolation",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [
-          "pectorals"
-        ],
-        "secondary": [
-          "shoulders",
-          "triceps"
-        ],
+        "primary": [],
+        "secondary": [],
         "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
+        "status": "NEEDS_REVIEW"
       },
       "description": {
         "summary": ""
@@ -12456,6 +11735,22 @@
             "replacementStatus": "temporary"
           },
           "priority": 4
+        },
+        {
+          "implementationId": "edb_1754",
+          "displayLabel": "Weighted Three Bench Dips",
+          "equipment": "weighted",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1754",
+            "sourceName": "weighted three bench dips"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1754.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 5
         }
       ]
     },
@@ -12977,6 +12272,70 @@
             "replacementStatus": "temporary"
           },
           "priority": 7
+        },
+        {
+          "implementationId": "edb_1268",
+          "displayLabel": "Cable Press On Exercise Ball",
+          "equipment": "cable",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1268",
+            "sourceName": "cable press on exercise ball"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1268.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 8
+        },
+        {
+          "implementationId": "edb_1293",
+          "displayLabel": "Dumbbell Press On Exercise Ball",
+          "equipment": "dumbbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1293",
+            "sourceName": "dumbbell press on exercise ball"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1293.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 9
+        },
+        {
+          "implementationId": "edb_1267",
+          "displayLabel": "Cable Single-Arm Press On Exercise Ball",
+          "equipment": "cable",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1267",
+            "sourceName": "cable one arm press on exercise ball"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1267.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 10
+        },
+        {
+          "implementationId": "edb_1290",
+          "displayLabel": "Dumbbell Single-Arm Press On Exercise Ball",
+          "equipment": "dumbbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1290",
+            "sourceName": "dumbbell one arm press on exercise ball"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1290.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 11
         }
       ]
     },
@@ -13532,6 +12891,22 @@
             "replacementStatus": "temporary"
           },
           "priority": 12
+        },
+        {
+          "implementationId": "edb_1755",
+          "displayLabel": "Weighted Tricep Dips",
+          "equipment": "weighted",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1755",
+            "sourceName": "weighted tricep dips"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1755.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 13
         }
       ]
     },
@@ -13808,6 +13183,38 @@
             "replacementStatus": "temporary"
           },
           "priority": 3
+        },
+        {
+          "implementationId": "edb_0758",
+          "displayLabel": "Smith Incline Reverse-Grip Press",
+          "equipment": "smith machine",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0758",
+            "sourceName": "smith incline reverse-grip press"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0758.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 4
+        },
+        {
+          "implementationId": "edb_1620",
+          "displayLabel": "Dumbbell Incline Single-Arm Hammer Press On Exercise Ball",
+          "equipment": "dumbbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "1620",
+            "sourceName": "dumbbell incline one arm hammer press on exercise ball"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/1620.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 5
         }
       ]
     },
@@ -15127,49 +14534,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/0083.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_barbell_side_bent",
-      "name": "Barbell Side Bent",
-      "slug": "barbell_side_bent",
-      "movementFamilyId": "fam_core",
-      "technicalPattern": "core_flexion",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "abs"
-        ],
-        "secondary": [
-          "obliques",
-          "lower back"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0096",
-          "displayLabel": "Barbell Side Bent",
-          "equipment": "barbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0096",
-            "sourceName": "barbell side bent v. 2"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0096.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -16597,6 +15961,22 @@
             "replacementStatus": "temporary"
           },
           "priority": 1
+        },
+        {
+          "implementationId": "edb_0866",
+          "displayLabel": "Weighted Hanging Leg-Hip Raise",
+          "equipment": "weighted",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0866",
+            "sourceName": "weighted hanging leg-hip raise"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0866.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 2
         }
       ]
     },
@@ -16822,6 +16202,44 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/0476.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        }
+      ]
+    },
+    {
+      "id": "inv_hip_raise",
+      "name": "Hip Raise",
+      "slug": "hip_raise",
+      "movementFamilyId": "fam_core",
+      "technicalPattern": "core_flexion",
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [],
+        "secondary": [],
+        "stabilizers": [],
+        "status": "NEEDS_REVIEW"
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [
+        {
+          "implementationId": "edb_0756",
+          "displayLabel": "Smith Hip Raise",
+          "equipment": "smith machine",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0756",
+            "sourceName": "smith hip raise"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0756.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -18398,49 +17816,6 @@
       ]
     },
     {
-      "id": "inv_side_bridge",
-      "name": "Side Bridge",
-      "slug": "side_bridge",
-      "movementFamilyId": "fam_core",
-      "technicalPattern": "core_flexion",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "abs"
-        ],
-        "secondary": [
-          "obliques",
-          "glutes"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0705",
-          "displayLabel": "Side Bridge",
-          "equipment": "bodyweight",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0705",
-            "sourceName": "side bridge v. 2"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0705.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_side_hip_on_parallel_bars",
       "name": "Side Hip (On Parallel Bars)",
       "slug": "side_hip_on_parallel_bars",
@@ -18971,49 +18346,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/1496.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_smith_hip_raise",
-      "name": "Smith Hip Raise",
-      "slug": "smith_hip_raise",
-      "movementFamilyId": "fam_core",
-      "technicalPattern": "core_flexion",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "abs"
-        ],
-        "secondary": [
-          "glutes",
-          "hamstrings"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0756",
-          "displayLabel": "Smith Hip Raise",
-          "equipment": "smith machine",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0756",
-            "sourceName": "smith hip raise"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0756.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -19801,49 +19133,6 @@
       ]
     },
     {
-      "id": "inv_weighted_hanging_leg_hip_raise",
-      "name": "Weighted Hanging Leg-Hip Raise",
-      "slug": "weighted_hanging_leg_hip_raise",
-      "movementFamilyId": "fam_core",
-      "technicalPattern": "core_flexion",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "abs"
-        ],
-        "secondary": [
-          "hip flexors",
-          "lower back"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0866",
-          "displayLabel": "Weighted Hanging Leg-Hip Raise",
-          "equipment": "weighted",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0866",
-            "sourceName": "weighted hanging leg-hip raise"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0866.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_wind_sprints",
       "name": "Wind Sprints",
       "slug": "wind_sprints",
@@ -20466,6 +19755,98 @@
             "replacementStatus": "temporary"
           },
           "priority": 5
+        }
+      ]
+    },
+    {
+      "id": "inv_hip_thrust",
+      "name": "Hip Thrust",
+      "slug": "hip_thrust",
+      "movementFamilyId": "fam_hip_hinge",
+      "technicalPattern": "hinge",
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [],
+        "secondary": [],
+        "stabilizers": [],
+        "status": "NEEDS_REVIEW"
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [
+        {
+          "implementationId": "edb_3236",
+          "displayLabel": "Resistance Band Hip Thrusts On Knees",
+          "equipment": "band",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "3236",
+            "sourceName": "resistance band hip thrusts on knees (female)"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/3236.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        }
+      ]
+    },
+    {
+      "id": "inv_pull_through",
+      "name": "Pull Through",
+      "slug": "pull_through",
+      "movementFamilyId": "fam_hip_hinge",
+      "technicalPattern": "hinge",
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [],
+        "secondary": [],
+        "stabilizers": [],
+        "status": "NEEDS_REVIEW"
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [
+        {
+          "implementationId": "edb_0991",
+          "displayLabel": "Band Pull Through",
+          "equipment": "band",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0991",
+            "sourceName": "band pull through"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0991.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        },
+        {
+          "implementationId": "edb_0196",
+          "displayLabel": "Cable Pull Through (With Rope)",
+          "equipment": "cable",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0196",
+            "sourceName": "cable pull through (with rope)"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0196.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 2
         }
       ]
     },
@@ -21472,6 +20853,82 @@
       ]
     },
     {
+      "id": "inv_foot_eversion",
+      "name": "Foot Eversion",
+      "slug": "foot_eversion",
+      "movementFamilyId": "fam_leg_accessories",
+      "technicalPattern": "leg_accessory",
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [],
+        "secondary": [],
+        "stabilizers": [],
+        "status": "NEEDS_REVIEW"
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [
+        {
+          "implementationId": "edb_3127",
+          "displayLabel": "Resistance Band Foot Eversion",
+          "equipment": "band",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "3127",
+            "sourceName": "resistance band foot eversion"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/3127.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        }
+      ]
+    },
+    {
+      "id": "inv_foot_inversion",
+      "name": "Foot Inversion",
+      "slug": "foot_inversion",
+      "movementFamilyId": "fam_leg_accessories",
+      "technicalPattern": "leg_accessory",
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [],
+        "secondary": [],
+        "stabilizers": [],
+        "status": "NEEDS_REVIEW"
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [
+        {
+          "implementationId": "edb_3128",
+          "displayLabel": "Resistance Band Foot Inversion",
+          "equipment": "band",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "3128",
+            "sourceName": "resistance band foot inversion"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/3128.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        }
+      ]
+    },
+    {
       "id": "inv_hip_abduction",
       "name": "Hip Abduction",
       "slug": "hip_abduction",
@@ -21925,6 +21382,44 @@
       ]
     },
     {
+      "id": "inv_plantar_flexion",
+      "name": "Plantar Flexion",
+      "slug": "plantar_flexion",
+      "movementFamilyId": "fam_leg_accessories",
+      "technicalPattern": "leg_accessory",
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [],
+        "secondary": [],
+        "stabilizers": [],
+        "status": "NEEDS_REVIEW"
+      },
+      "description": {
+        "summary": ""
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [],
+      "implementations": [
+        {
+          "implementationId": "edb_3126",
+          "displayLabel": "Resistance Band Foot Plantar Flexion",
+          "equipment": "band",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "3126",
+            "sourceName": "resistance band foot plantar flexion"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/3126.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        }
+      ]
+    },
+    {
       "id": "inv_step_up",
       "name": "Step-Up",
       "slug": "step_up",
@@ -22364,49 +21859,6 @@
       ]
     },
     {
-      "id": "inv_band_pull_through",
-      "name": "Band Pull Through",
-      "slug": "band_pull_through",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "glutes"
-        ],
-        "secondary": [
-          "hamstrings",
-          "lower back"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0991",
-          "displayLabel": "Band Pull Through",
-          "equipment": "band",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0991",
-            "sourceName": "band pull through"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0991.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_barbell_lying_lifting_on_hip",
       "name": "Barbell Lying Lifting (On Hip)",
       "slug": "barbell_lying_lifting_on_hip",
@@ -22661,49 +22113,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/1494.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_cable_pull_through_with_rope",
-      "name": "Cable Pull Through (With Rope)",
-      "slug": "cable_pull_through_with_rope",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "glutes"
-        ],
-        "secondary": [
-          "hamstrings",
-          "lower back"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0196",
-          "displayLabel": "Cable Pull Through (With Rope)",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0196",
-            "sourceName": "cable pull through (with rope)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0196.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -23347,48 +22756,6 @@
       ]
     },
     {
-      "id": "inv_machine_hip_extension",
-      "name": "Machine Hip Extension",
-      "slug": "machine_hip_extension",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "glutes"
-        ],
-        "secondary": [
-          "hamstrings"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_2286",
-          "displayLabel": "Machine Hip Extension",
-          "equipment": "machine",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "2286",
-            "sourceName": "lever hip extension v. 2"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/2286.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_machine_rotary_calf",
       "name": "Machine Rotary Calf",
       "slug": "machine_rotary_calf",
@@ -23557,49 +22924,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/3197.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_quick_feet",
-      "name": "Quick Feet",
-      "slug": "quick_feet",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "quads"
-        ],
-        "secondary": [
-          "calves",
-          "hamstrings"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_3552",
-          "displayLabel": "Quick Feet",
-          "equipment": "bodyweight",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "3552",
-            "sourceName": "quick feet v. 2"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/3552.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -23780,230 +23104,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/1582.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_resistance_band_foot_eversion",
-      "name": "Resistance Band Foot Eversion",
-      "slug": "resistance_band_foot_eversion",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "calves"
-        ],
-        "secondary": [
-          "tibialis anterior",
-          "extensor digitorum longus",
-          "extensor hallucis longus"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_3127",
-          "displayLabel": "Resistance Band Foot Eversion",
-          "equipment": "band",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "3127",
-            "sourceName": "resistance band foot eversion"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/3127.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_resistance_band_foot_inversion",
-      "name": "Resistance Band Foot Inversion",
-      "slug": "resistance_band_foot_inversion",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "calves"
-        ],
-        "secondary": [
-          "tibialis anterior",
-          "flexor digitorum longus",
-          "flexor hallucis longus",
-          "gastrocnemius",
-          "soleus"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_3128",
-          "displayLabel": "Resistance Band Foot Inversion",
-          "equipment": "band",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "3128",
-            "sourceName": "resistance band foot inversion"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/3128.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_resistance_band_foot_plantar_flexion",
-      "name": "Resistance Band Foot Plantar Flexion",
-      "slug": "resistance_band_foot_plantar_flexion",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "calves"
-        ],
-        "secondary": [
-          "tibialis posterior",
-          "flexor hallucis longus",
-          "flexor digitorum longus",
-          "peroneus longus"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_3126",
-          "displayLabel": "Resistance Band Foot Plantar Flexion",
-          "equipment": "band",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "3126",
-            "sourceName": "resistance band foot plantar flexion"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/3126.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_resistance_band_hip_thrusts_on_knees",
-      "name": "Resistance Band Hip Thrusts On Knees",
-      "slug": "resistance_band_hip_thrusts_on_knees",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "glutes"
-        ],
-        "secondary": [
-          "hamstrings",
-          "quadriceps"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_3236",
-          "displayLabel": "Resistance Band Hip Thrusts On Knees",
-          "equipment": "band",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "3236",
-            "sourceName": "resistance band hip thrusts on knees (female)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/3236.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_resistance_band_shuttle",
-      "name": "Resistance Band Shuttle",
-      "slug": "resistance_band_shuttle",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "abductors"
-        ],
-        "secondary": [
-          "glutes",
-          "quads",
-          "hamstrings",
-          "calves",
-          "abs"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_4241",
-          "displayLabel": "Resistance Band Shuttle",
-          "equipment": "band",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "4241",
-            "sourceName": "resistance band shuttle"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/4241.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -24739,50 +23839,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/3307.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_swimmer_kicks",
-      "name": "Swimmer Kicks",
-      "slug": "swimmer_kicks",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "glutes"
-        ],
-        "secondary": [
-          "hamstrings",
-          "quadriceps",
-          "calves"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_3433",
-          "displayLabel": "Swimmer Kicks",
-          "equipment": "bodyweight",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "3433",
-            "sourceName": "swimmer kicks v. 2 (male)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/3433.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -26580,94 +25636,6 @@
       ]
     },
     {
-      "id": "inv_cable_seated_neck_extension_with_head_harness",
-      "name": "Cable Seated Neck Extension (With Head Harness)",
-      "slug": "cable_seated_neck_extension_with_head_harness",
-      "movementFamilyId": "fam_neck",
-      "technicalPattern": "neck",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "levator scapulae"
-        ],
-        "secondary": [
-          "traps",
-          "upper back"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_2411",
-          "displayLabel": "Cable Seated Neck Extension (With Head Harness)",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "2411",
-            "sourceName": "cable seated neck extension (with head harness)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/2411.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_cable_seated_neck_flexion_with_head_harness",
-      "name": "Cable Seated Neck Flexion (With Head Harness)",
-      "slug": "cable_seated_neck_flexion_with_head_harness",
-      "movementFamilyId": "fam_neck",
-      "technicalPattern": "neck",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "levator scapulae"
-        ],
-        "secondary": [
-          "sternocleidomastoid",
-          "scalenes",
-          "longus colli",
-          "longus capitis"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_2412",
-          "displayLabel": "Cable Seated Neck Flexion (With Head Harness)",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "2412",
-            "sourceName": "cable seated neck flexion (with head harness)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/2412.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_chin_tuck",
       "name": "Chin Tuck",
       "slug": "chin_tuck",
@@ -26705,136 +25673,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/3149.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_machine_neck_extension_plate_loaded",
-      "name": "Machine Neck Extension (Plate Loaded)",
-      "slug": "machine_neck_extension_plate_loaded",
-      "movementFamilyId": "fam_neck",
-      "technicalPattern": "neck",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "levator scapulae"
-        ],
-        "secondary": [
-          "traps",
-          "upper back"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_2282",
-          "displayLabel": "Machine Neck Extension (Plate Loaded)",
-          "equipment": "machine",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "2282",
-            "sourceName": "lever neck extension (plate loaded)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/2282.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_machine_neck_left_side_flexion_plate_loaded",
-      "name": "Machine Neck Left Side Flexion (Plate Loaded)",
-      "slug": "machine_neck_left_side_flexion_plate_loaded",
-      "movementFamilyId": "fam_neck",
-      "technicalPattern": "neck",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "levator scapulae"
-        ],
-        "secondary": [
-          "sternocleidomastoid",
-          "traps",
-          "scalenes"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_2283",
-          "displayLabel": "Machine Neck Left Side Flexion (Plate Loaded)",
-          "equipment": "machine",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "2283",
-            "sourceName": "lever neck left side flexion (plate loaded)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/2283.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_machine_neck_right_side_flexion_plate_loaded",
-      "name": "Machine Neck Right Side Flexion (Plate Loaded)",
-      "slug": "machine_neck_right_side_flexion_plate_loaded",
-      "movementFamilyId": "fam_neck",
-      "technicalPattern": "neck",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "levator scapulae"
-        ],
-        "secondary": [
-          "traps",
-          "upper back"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_2284",
-          "displayLabel": "Machine Neck Right Side Flexion (Plate Loaded)",
-          "equipment": "machine",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "2284",
-            "sourceName": "lever neck right side flexion (plate loaded)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/2284.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -26886,22 +25724,17 @@
       ]
     },
     {
-      "id": "inv_weighted_lying_neck_extension_with_head_harness",
-      "name": "Weighted Lying Neck Extension (With Head Harness)",
-      "slug": "weighted_lying_neck_extension_with_head_harness",
+      "id": "inv_neck_extension",
+      "name": "Neck Extension",
+      "slug": "neck_extension",
       "movementFamilyId": "fam_neck",
       "technicalPattern": "neck",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [
-          "levator scapulae"
-        ],
-        "secondary": [
-          "traps",
-          "upper back"
-        ],
+        "primary": [],
+        "secondary": [],
         "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
+        "status": "NEEDS_REVIEW"
       },
       "description": {
         "summary": ""
@@ -26910,6 +25743,22 @@
       "commonMistakes": [],
       "aliases": [],
       "implementations": [
+        {
+          "implementationId": "edb_2411",
+          "displayLabel": "Cable Seated Neck Extension (With Head Harness)",
+          "equipment": "cable",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "2411",
+            "sourceName": "cable seated neck extension (with head harness)"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/2411.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        },
         {
           "implementationId": "edb_2408",
           "displayLabel": "Weighted Lying Neck Extension (With Head Harness)",
@@ -26924,30 +25773,70 @@
             "gifPath": "/exercise-gifs/2408.gif",
             "replacementStatus": "temporary"
           },
-          "priority": 1
+          "priority": 2
+        },
+        {
+          "implementationId": "edb_0848",
+          "displayLabel": "Weighted Seated Neck Extension (With Head Harness)",
+          "equipment": "weighted",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0848",
+            "sourceName": "weighted seated neck extension (with head harness)"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0848.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 3
+        },
+        {
+          "implementationId": "edb_2410",
+          "displayLabel": "Weighted Standing Neck Extension (With Head Harness)",
+          "equipment": "weighted",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "2410",
+            "sourceName": "weighted standing neck extension (with head harness)"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/2410.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 4
+        },
+        {
+          "implementationId": "edb_2282",
+          "displayLabel": "Machine Neck Extension (Plate Loaded)",
+          "equipment": "machine",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "2282",
+            "sourceName": "lever neck extension (plate loaded)"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/2282.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 5
         }
       ]
     },
     {
-      "id": "inv_weighted_lying_neck_flexion_with_head_harness",
-      "name": "Weighted Lying Neck Flexion (With Head Harness)",
-      "slug": "weighted_lying_neck_flexion_with_head_harness",
+      "id": "inv_neck_flexion",
+      "name": "Neck Flexion",
+      "slug": "neck_flexion",
       "movementFamilyId": "fam_neck",
       "technicalPattern": "neck",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [
-          "levator scapulae"
-        ],
-        "secondary": [
-          "scalenes",
-          "longus colli",
-          "longus capitis",
-          "upper trapezius",
-          "deep cervical flexors"
-        ],
+        "primary": [],
+        "secondary": [],
         "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
+        "status": "NEEDS_REVIEW"
       },
       "description": {
         "summary": ""
@@ -26971,26 +25860,37 @@
             "replacementStatus": "temporary"
           },
           "priority": 1
+        },
+        {
+          "implementationId": "edb_2412",
+          "displayLabel": "Cable Seated Neck Flexion (With Head Harness)",
+          "equipment": "cable",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "2412",
+            "sourceName": "cable seated neck flexion (with head harness)"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/2412.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 2
         }
       ]
     },
     {
-      "id": "inv_weighted_lying_side_lifting_head_with_head_harness",
-      "name": "Weighted Lying Side Lifting Head (With Head Harness)",
-      "slug": "weighted_lying_side_lifting_head_with_head_harness",
+      "id": "inv_neck_lateral_flexion",
+      "name": "Neck Lateral Flexion",
+      "slug": "neck_lateral_flexion",
       "movementFamilyId": "fam_neck",
       "technicalPattern": "neck",
       "difficulty": "beginner",
       "muscleCard": {
-        "primary": [
-          "levator scapulae"
-        ],
-        "secondary": [
-          "traps",
-          "upper back"
-        ],
+        "primary": [],
+        "secondary": [],
         "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
+        "status": "NEEDS_REVIEW"
       },
       "description": {
         "summary": ""
@@ -27014,95 +25914,38 @@
             "replacementStatus": "temporary"
           },
           "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_weighted_seated_neck_extension_with_head_harness",
-      "name": "Weighted Seated Neck Extension (With Head Harness)",
-      "slug": "weighted_seated_neck_extension_with_head_harness",
-      "movementFamilyId": "fam_neck",
-      "technicalPattern": "neck",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "levator scapulae"
-        ],
-        "secondary": [
-          "traps",
-          "splenius capitis",
-          "splenius cervicis",
-          "semispinalis capitis"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
+        },
         {
-          "implementationId": "edb_0848",
-          "displayLabel": "Weighted Seated Neck Extension (With Head Harness)",
-          "equipment": "weighted",
+          "implementationId": "edb_2283",
+          "displayLabel": "Machine Neck Left Side Flexion (Plate Loaded)",
+          "equipment": "machine",
           "source": {
             "provider": "ExerciseDB",
-            "exerciseId": "0848",
-            "sourceName": "weighted seated neck extension (with head harness)"
+            "exerciseId": "2283",
+            "sourceName": "lever neck left side flexion (plate loaded)"
           },
           "media": {
             "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0848.gif",
+            "gifPath": "/exercise-gifs/2283.gif",
             "replacementStatus": "temporary"
           },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_weighted_standing_neck_extension_with_head_harness",
-      "name": "Weighted Standing Neck Extension (With Head Harness)",
-      "slug": "weighted_standing_neck_extension_with_head_harness",
-      "movementFamilyId": "fam_neck",
-      "technicalPattern": "neck",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "levator scapulae"
-        ],
-        "secondary": [
-          "traps",
-          "upper back",
-          "spine"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
+          "priority": 2
+        },
         {
-          "implementationId": "edb_2410",
-          "displayLabel": "Weighted Standing Neck Extension (With Head Harness)",
-          "equipment": "weighted",
+          "implementationId": "edb_2284",
+          "displayLabel": "Machine Neck Right Side Flexion (Plate Loaded)",
+          "equipment": "machine",
           "source": {
             "provider": "ExerciseDB",
-            "exerciseId": "2410",
-            "sourceName": "weighted standing neck extension (with head harness)"
+            "exerciseId": "2284",
+            "sourceName": "lever neck right side flexion (plate loaded)"
           },
           "media": {
             "source": "exercisedb",
-            "gifPath": "/exercise-gifs/2410.gif",
+            "gifPath": "/exercise-gifs/2284.gif",
             "replacementStatus": "temporary"
           },
-          "priority": 1
+          "priority": 3
         }
       ]
     },
@@ -31189,49 +30032,6 @@
       ]
     },
     {
-      "id": "inv_barbell_rear_delt_raise",
-      "name": "Barbell Rear Delt Raise",
-      "slug": "barbell_rear_delt_raise",
-      "movementFamilyId": "fam_shoulders",
-      "technicalPattern": "shoulder_accessory",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "delts"
-        ],
-        "secondary": [
-          "traps",
-          "rhomboids"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0075",
-          "displayLabel": "Barbell Rear Delt Raise",
-          "equipment": "barbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0075",
-            "sourceName": "barbell rear delt raise"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0075.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
       "id": "inv_barbell_seated_bradford_rocky_press",
       "name": "Barbell Seated Bradford Rocky Press",
       "slug": "barbell_seated_bradford_rocky_press",
@@ -31932,49 +30732,6 @@
           "media": {
             "source": "exercisedb",
             "gifPath": "/exercise-gifs/0376.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_dumbbell_rear_delt_raise",
-      "name": "Dumbbell Rear Delt Raise",
-      "slug": "dumbbell_rear_delt_raise",
-      "movementFamilyId": "fam_shoulders",
-      "technicalPattern": "shoulder_accessory",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "delts"
-        ],
-        "secondary": [
-          "trapezius",
-          "rhomboids"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_2292",
-          "displayLabel": "Dumbbell Rear Delt Raise",
-          "equipment": "dumbbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "2292",
-            "sourceName": "dumbbell rear delt raise"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/2292.gif",
             "replacementStatus": "temporary"
           },
           "priority": 1
@@ -33174,6 +31931,63 @@
       ]
     },
     {
+      "id": "inv_reverse_fly",
+      "name": "Reverse Fly",
+      "slug": "reverse_fly",
+      "movementFamilyId": "fam_shoulders",
+      "technicalPattern": "shoulder_accessory",
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [],
+        "secondary": [],
+        "stabilizers": [],
+        "status": "NEEDS_REVIEW"
+      },
+      "description": {
+        "summary": "A common reverse fly variation used in strength and fitness training."
+      },
+      "coachingCues": [],
+      "commonMistakes": [],
+      "aliases": [
+        "rear delt fly",
+        "reverse fly"
+      ],
+      "implementations": [
+        {
+          "implementationId": "edb_0075",
+          "displayLabel": "Barbell Rear Delt Raise",
+          "equipment": "barbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0075",
+            "sourceName": "barbell rear delt raise"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0075.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        },
+        {
+          "implementationId": "edb_2292",
+          "displayLabel": "Dumbbell Rear Delt Raise",
+          "equipment": "dumbbell",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "2292",
+            "sourceName": "dumbbell rear delt raise"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/2292.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 2
+        }
+      ]
+    },
+    {
       "id": "inv_shrug",
       "name": "Shrug",
       "slug": "shrug",
@@ -33393,178 +32207,6 @@
             "replacementStatus": "temporary"
           },
           "priority": 12
-        }
-      ]
-    },
-    {
-      "id": "inv_smith_behind_neck_press",
-      "name": "Smith Behind Neck Press",
-      "slug": "smith_behind_neck_press",
-      "movementFamilyId": "fam_shoulders",
-      "technicalPattern": "shoulder_accessory",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "delts"
-        ],
-        "secondary": [
-          "triceps",
-          "upper back"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0747",
-          "displayLabel": "Smith Behind Neck Press",
-          "equipment": "smith machine",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0747",
-            "sourceName": "smith behind neck press"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0747.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_standing_behind_neck_press",
-      "name": "Standing Behind Neck Press",
-      "slug": "standing_behind_neck_press",
-      "movementFamilyId": "fam_shoulders",
-      "technicalPattern": "shoulder_accessory",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "delts"
-        ],
-        "secondary": [
-          "triceps",
-          "upper back"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0788",
-          "displayLabel": "Standing Behind Neck Press",
-          "equipment": "barbell",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0788",
-            "sourceName": "standing behind neck press"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0788.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_weighted_kneeling_step_with_swing",
-      "name": "Weighted Kneeling Step With Swing",
-      "slug": "weighted_kneeling_step_with_swing",
-      "movementFamilyId": "fam_shoulders",
-      "technicalPattern": "shoulder_accessory",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "delts"
-        ],
-        "secondary": [
-          "triceps",
-          "core"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_3641",
-          "displayLabel": "Weighted Kneeling Step With Swing",
-          "equipment": "weighted",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "3641",
-            "sourceName": "weighted kneeling step with swing"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/3641.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
-        }
-      ]
-    },
-    {
-      "id": "inv_weighted_round_arm",
-      "name": "Weighted Round Arm",
-      "slug": "weighted_round_arm",
-      "movementFamilyId": "fam_shoulders",
-      "technicalPattern": "shoulder_accessory",
-      "difficulty": "beginner",
-      "muscleCard": {
-        "primary": [
-          "delts"
-        ],
-        "secondary": [
-          "triceps",
-          "upper back"
-        ],
-        "stabilizers": [],
-        "status": "AUTO_DERIVED_NEEDS_REVIEW"
-      },
-      "description": {
-        "summary": ""
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [],
-      "implementations": [
-        {
-          "implementationId": "edb_0844",
-          "displayLabel": "Weighted Round Arm",
-          "equipment": "weighted",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0844",
-            "sourceName": "weighted round arm"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0844.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
         }
       ]
     },
@@ -35315,83 +33957,6 @@
             "replacementStatus": "temporary"
           },
           "priority": 2
-        }
-      ]
-    },
-    {
-      "id": "inv_reverse_fly",
-      "name": "Reverse Fly",
-      "slug": "reverse-fly",
-      "movementFamilyId": "fam_shoulders",
-      "technicalPattern": "horizontal_pull",
-      "browseTags": [
-        "shoulders",
-        "back"
-      ],
-      "difficulty": "beginner",
-      "mechanics": {
-        "loadPosition": "hands",
-        "stance": "varies",
-        "support": "varies"
-      },
-      "muscleCard": {
-        "primary": [
-          "rear deltoids"
-        ],
-        "secondary": [
-          "rhomboids",
-          "middle trapezius"
-        ],
-        "stabilizers": [
-          "core"
-        ],
-        "bodyMap": {
-          "front": [],
-          "back": [],
-          "status": "ready_for_visual_mapping"
-        }
-      },
-      "description": {
-        "summary": "A common reverse fly variation used in strength and fitness training."
-      },
-      "coachingCues": [],
-      "commonMistakes": [],
-      "aliases": [
-        "rear delt fly",
-        "reverse fly"
-      ],
-      "implementations": [
-        {
-          "implementationId": "edb_0993",
-          "displayLabel": "Band Reverse Fly",
-          "equipment": "band",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0993",
-            "sourceName": "band reverse fly"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0993.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 2
-        },
-        {
-          "implementationId": "edb_0154",
-          "displayLabel": "Cable Reverse Fly",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0154",
-            "sourceName": "cable cross-over reverse fly"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0154.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 1
         }
       ]
     },
