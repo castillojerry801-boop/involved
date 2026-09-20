@@ -195,17 +195,6 @@ export function ExerciseBrowser({
       {/* Mode switcher */}
       <div className="flex p-1 mb-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800/80">
         <button
-          onClick={() => { setMode('search'); setSelected(null) }}
-          className={cn(
-            'flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
-            mode === 'search'
-              ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-          )}
-        >
-          Search
-        </button>
-        <button
           onClick={() => setMode('browse')}
           className={cn(
             'flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
@@ -215,6 +204,17 @@ export function ExerciseBrowser({
           )}
         >
           Browse
+        </button>
+        <button
+          onClick={() => { setMode('search'); setSelected(null) }}
+          className={cn(
+            'flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
+            mode === 'search'
+              ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+          )}
+        >
+          Search
         </button>
       </div>
 
