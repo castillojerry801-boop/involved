@@ -45,9 +45,25 @@ export function PhotoAnalyzer({ mealType, logDate, onLogged, onClose }: Props) {
   const handleFile = (file: File) => {
     const reader = new FileReader()
     reader.onload = e => {
-      setPreview(e.target?.result as string)
-      setResult(null)
-      setError(null)
+      const dataUrl = e.target?.result as string
+      // Resize to max 1024px before sending — mobile photos can be 5–8MB as base64
+      const img = new window.Image()
+      img.onload = () => {
+        const MAX = 1024
+        let { width, height } = img
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round(height * MAX / width); width = MAX }
+          else { width = Math.round(width * MAX / height); height = MAX }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+        setPreview(canvas.toDataURL('image/jpeg', 0.82))
+        setResult(null)
+        setError(null)
+      }
+      img.src = dataUrl
     }
     reader.readAsDataURL(file)
   }

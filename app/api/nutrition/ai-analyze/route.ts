@@ -59,7 +59,9 @@ export async function POST(req: NextRequest) {
       ],
     })
 
-    const text = response.choices[0]?.message?.content ?? ''
+    let text = response.choices[0]?.message?.content ?? ''
+    // GPT-4o sometimes wraps JSON in markdown code blocks despite instructions
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
     const analysis = JSON.parse(text)
     return NextResponse.json(analysis)
   } catch (err) {
