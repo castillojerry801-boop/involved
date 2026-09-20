@@ -39,6 +39,9 @@ yarn-error.log*
 # exercise GIFs — large files, serve from Supabase Storage in production
 /public/exercises/
 
+# migration review files — reference documents, not app code
+data/involved-migration-*.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
