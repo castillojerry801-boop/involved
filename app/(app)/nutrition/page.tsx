@@ -49,7 +49,8 @@ function pct(consumed: number, target: number) {
 }
 
 function toDateString(d: Date) {
-  return d.toISOString().slice(0, 10)
+  // Use local getters — toISOString() is UTC and rolls over at midnight UTC, not local midnight
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function formatDisplayDate(dateStr: string) {
