@@ -133,6 +133,10 @@ export const MOVEMENT_PATTERN_LABELS: Record<string, string> = {
   lateral_plyometric:   'Plyometric',
   upper_body_plyometric:'Plyometric',
   carry:                'Carry',
+  // v1.1 base + Involved-original additions
+  neck:                 'Neck',
+  yoga:                 'Yoga',
+  agility:              'Agility / Athletic',
 }
 
 export function getCanonicalFamily(id: string): CanonicalFamily | undefined {
