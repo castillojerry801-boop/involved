@@ -1,11 +1,26 @@
+import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { FatSecretProvider } from '@/lib/nutrition/providers/fatsecret'
 import { OpenFoodFactsProvider } from '@/lib/nutrition/providers/open-food-facts'
 import { UsdaFoodDataProvider } from '@/lib/nutrition/providers/usda-fooddata'
 import { prisma } from '@/lib/prisma'
 import type { ExternalFoodDetail } from '@/lib/nutrition/providers/types'
 
+const fatsecret = new FatSecretProvider()
 const off = new OpenFoodFactsProvider()
 const usda = new UsdaFoodDataProvider()
+
+// EAN-13 (13-digit) ↔ UPC-A (12-digit) normalization.
+// Scanners often return EAN-13 for products stored as UPC-A (and vice versa).
+// A leading zero bridges them: "0" + UPC-A = EAN-13, EAN-13 without "0" = UPC-A.
+function barcodeVariants(barcode: string): string[] {
+  const clean = barcode.replace(/\s/g, '').replace(/^0+(?=\d{12}$)/, '')
+  const variants = new Set<string>([barcode, clean])
+  if (clean.length === 12) variants.add('0' + clean)      // UPC-A → EAN-13
+  if (clean.length === 13 && clean.startsWith('0')) variants.add(clean.slice(1))  // EAN-13 → UPC-A
+  return [...variants].filter(v => v.length >= 8)
+}
 
 // Rebuild an ExternalFoodDetail from a cached FoodItem row
 function foodItemToDetail(item: {
@@ -38,9 +53,7 @@ async function cacheResult(result: ExternalFoodDetail) {
   const barcodeKey = result.barcode ?? undefined
   if (!barcodeKey) return
   try {
-    const existing = await prisma.foodItem.findFirst({
-      where: { barcode: barcodeKey },
-    })
+    const existing = await prisma.foodItem.findFirst({ where: { barcode: barcodeKey } })
     if (existing) {
       await prisma.foodItem.update({
         where: { id: existing.id },
@@ -71,32 +84,42 @@ async function cacheResult(result: ExternalFoodDetail) {
 }
 
 export async function GET(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const upc = req.nextUrl.searchParams.get('upc')?.trim()
   if (!upc) return NextResponse.json({ error: 'Missing upc' }, { status: 400 })
 
-  // 1. Check local cache — barcode data changes slowly, any cached entry is fine
+  const variants = barcodeVariants(upc)
+
+  // 1. Check local cache for any barcode variant
   try {
-    const cached = await prisma.foodItem.findFirst({ where: { barcode: upc } })
-    if (cached) {
-      return NextResponse.json({ result: foodItemToDetail(cached) })
-    }
+    const cached = await prisma.foodItem.findFirst({
+      where: { barcode: { in: variants } },
+    })
+    if (cached) return NextResponse.json({ result: foodItemToDetail(cached) })
   } catch { /* DB unavailable — fall through to network */ }
 
-  // 2. OFF is the barcode specialist — try it first
-  const offResult = await off.searchByBarcode(upc)
-  if (offResult) {
-    void cacheResult(offResult)
-    return NextResponse.json({ result: offResult })
+  // 2. Fan out to all three barcode providers concurrently for every barcode variant.
+  //    FatSecret has the broadest consumer barcode coverage; OFF is the barcode specialist;
+  //    USDA covers US branded products with UPC. First non-null result wins.
+  const lookups = variants.flatMap(bc => [
+    fatsecret.searchByBarcode(bc).catch(() => null),
+    off.searchByBarcode(bc).catch(() => null),
+    usda.searchByBarcode(bc).catch(() => null),
+  ])
+  const allResults = await Promise.all(lookups)
+  const result = allResults.find(r => r != null) ?? null
+
+  if (result) {
+    // Ensure the matched barcode is recorded (use the original scanner value)
+    if (!result.barcode) result.barcode = upc
+    void cacheResult(result)
+    return NextResponse.json({ result })
   }
 
-  // 3. USDA as a fallback (some US branded products are indexed by UPC)
-  const usdaResult = await usda.searchByBarcode(upc)
-  if (usdaResult) {
-    void cacheResult(usdaResult)
-    return NextResponse.json({ result: usdaResult })
-  }
-
-  // 4. Genuinely not found — tell the client to fall back to manual search
+  // 3. Genuinely not found — return the original barcode so the client can offer fallbacks
   return NextResponse.json(
     { notFound: true, barcode: upc, message: 'Barcode not found. Try searching by product name.' },
     { status: 404 },

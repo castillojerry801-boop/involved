@@ -1,15 +1,17 @@
 // FatSecret Platform API — largest global food database, 5,000 calls/day free.
-// Uses OAuth 2.0 client credentials flow. Token is cached in memory per process.
-// Attribution required per FatSecret terms — show "Powered by FatSecret" near food search.
+// OAuth 2.0 client credentials flow. Token cached in memory per process.
+// Attribution: "Powered by FatSecret" must be displayed near search results
+// that include FatSecret-sourced foods per their Terms of Service.
 
 import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail } from './types'
 
 const BASE_URL = 'https://platform.fatsecret.com/rest/server.api'
 const TOKEN_URL = 'https://oauth.fatsecret.com/connect/token'
+const FETCH_TIMEOUT_MS = 5000
 
 interface FatSecretToken {
   access_token: string
-  expires_at: number // ms timestamp
+  expires_at: number
 }
 
 interface FatSecretServing {
@@ -38,7 +40,7 @@ interface FatSecretServing {
 interface FatSecretFood {
   food_id: string
   food_name: string
-  food_type?: string // 'Generic' | 'Brand'
+  food_type?: string
   brand_name?: string
   food_url?: string
   servings?: { serving: FatSecretServing | FatSecretServing[] }
@@ -49,10 +51,9 @@ interface FatSecretSearchResult {
   food_name: string
   food_type?: string
   brand_name?: string
-  food_description?: string // "Per 100g - Calories: 52kcal | Fat: 0.17g | Carbs: 13.81g | Protein: 0.26g"
+  food_description?: string
 }
 
-// Singleton token cache — avoids re-fetching on every request within a warm function instance
 let cachedToken: FatSecretToken | null = null
 
 async function getAccessToken(clientId: string, clientSecret: string): Promise<string> {
@@ -60,75 +61,123 @@ async function getAccessToken(clientId: string, clientSecret: string): Promise<s
     return cachedToken.access_token
   }
 
-  const body = new URLSearchParams({
-    grant_type: 'client_credentials',
-    scope: 'basic',
-  })
-
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
-  const res = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${credentials}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: body.toString(),
-  })
-
-  if (!res.ok) throw new Error(`FatSecret token request failed: ${res.status}`)
-
-  const data = await res.json() as { access_token: string; expires_in: number }
-  cachedToken = {
-    access_token: data.access_token,
-    expires_at: Date.now() + data.expires_in * 1000,
+  try {
+    const res = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'grant_type=client_credentials&scope=basic',
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`FatSecret token failed: ${res.status}`)
+    const data = await res.json() as { access_token: string; expires_in: number }
+    cachedToken = {
+      access_token: data.access_token,
+      expires_at: Date.now() + data.expires_in * 1000,
+    }
+    return cachedToken.access_token
+  } finally {
+    clearTimeout(timer)
   }
-  return cachedToken.access_token
 }
 
-// Parse the inline description string FatSecret returns in search results.
-// Format: "Per 100g - Calories: 52kcal | Fat: 0.17g | Carbs: 13.81g | Protein: 0.26g"
-function parseDescription(desc: string): { calories: number; fat: number; carbs: number; protein: number } | null {
+// Parse FatSecret inline description:
+// "Per 100g - Calories: 52kcal | Fat: 0.17g | Carbs: 13.81g | Protein: 0.26g"
+// "Per 1 serving (65g) - Calories: 240kcal | Fat: 9g | Carbs: 24g | Protein: 20g"
+function parseDescription(desc: string): {
+  calories: number; fat: number; carbs: number; protein: number
+  servingSize: number; servingUnit: string; householdText: string | undefined
+} | null {
   try {
     const cal     = parseFloat(desc.match(/Calories:\s*([\d.]+)/i)?.[1] ?? '')
     const fat     = parseFloat(desc.match(/Fat:\s*([\d.]+)/i)?.[1] ?? '')
     const carbs   = parseFloat(desc.match(/Carbs:\s*([\d.]+)/i)?.[1] ?? '')
     const protein = parseFloat(desc.match(/Protein:\s*([\d.]+)/i)?.[1] ?? '')
     if (isNaN(cal) && isNaN(protein) && isNaN(carbs) && isNaN(fat)) return null
-    return { calories: cal || 0, fat: fat || 0, carbs: carbs || 0, protein: protein || 0 }
+
+    // Detect serving context from the "Per X" prefix
+    const perMatch = desc.match(/^Per\s+(.+?)\s+-\s+/i)
+    const perText = perMatch?.[1] ?? '100g'
+
+    let servingSize = 100
+    let servingUnit = 'g'
+    let householdText: string | undefined
+
+    if (perText.toLowerCase() === '100g') {
+      // Normalized to 100g — standard for generic foods
+      servingSize = 100
+      servingUnit = 'g'
+    } else {
+      // "1 serving (65g)" or "1 piece (130g)" or "1 cup (240ml)" etc.
+      const gramMatch = perText.match(/([\d.]+)\s*g\b/i)
+      const mlMatch   = perText.match(/([\d.]+)\s*ml\b/i)
+      if (gramMatch) {
+        servingSize = parseFloat(gramMatch[1])
+        servingUnit = 'g'
+      } else if (mlMatch) {
+        servingSize = parseFloat(mlMatch[1])
+        servingUnit = 'ml'
+      }
+      // Extract human-readable part: "1 serving" from "1 serving (65g)"
+      const labelMatch = perText.match(/^(.+?)\s*\(/)
+      householdText = (labelMatch?.[1] ?? perText).trim() || undefined
+    }
+
+    return {
+      calories: cal || 0, fat: fat || 0, carbs: carbs || 0, protein: protein || 0,
+      servingSize, servingUnit, householdText,
+    }
   } catch {
     return null
   }
 }
 
-// Pick the best serving — prefer "100g" or "1 serving" for generic foods
+// Pick the most useful serving for display.
+// Preference: first serving that represents a real consumer portion (not 100g).
+// Fallback: 100g metric serving. Final fallback: first serving.
 function pickServing(servings: FatSecretServing | FatSecretServing[]): FatSecretServing {
   const arr = Array.isArray(servings) ? servings : [servings]
-  // Prefer 100g serving for normalized comparison
+  if (arr.length === 0) return { serving_id: '', serving_description: '100g' }
+
+  // Prefer a natural serving (not the 100g metric one) when available
+  const natural = arr.find(s => {
+    const amount = parseFloat(s.metric_serving_amount ?? '0')
+    return amount > 0 && amount !== 100
+  })
+  if (natural) return natural
+
+  // Fall back to 100g metric serving
   const per100 = arr.find(s =>
     s.metric_serving_unit === 'g' &&
     parseFloat(s.metric_serving_amount ?? '0') === 100
   )
   if (per100) return per100
-  // Fall back to first serving
+
   return arr[0]
 }
 
 function mapSearchResult(item: FatSecretSearchResult): ExternalFoodResult {
-  const macros = item.food_description ? parseDescription(item.food_description) : null
+  const parsed = item.food_description ? parseDescription(item.food_description) : null
 
   return {
-    provider: 'fatsecret',
-    externalId: item.food_id,
-    name: item.food_name,
-    brand: item.brand_name ?? undefined,
-    servingSize: 100,
-    servingUnit: 'g',
+    provider:    'fatsecret',
+    externalId:  item.food_id,
+    name:        item.food_name,
+    brand:       item.brand_name ?? undefined,
+    servingSize: parsed?.servingSize ?? 100,
+    servingUnit: parsed?.servingUnit ?? 'g',
+    householdServingText: parsed?.householdText,
     coreNutrients: {
-      calories:      Math.round(macros?.calories ?? 0),
-      proteinG:      Math.round((macros?.protein ?? 0) * 10) / 10,
-      carbohydrateG: Math.round((macros?.carbs ?? 0) * 10) / 10,
-      fatG:          Math.round((macros?.fat ?? 0) * 10) / 10,
+      calories:      Math.round(parsed?.calories ?? 0),
+      proteinG:      Math.round((parsed?.protein ?? 0) * 10) / 10,
+      carbohydrateG: Math.round((parsed?.carbs ?? 0) * 10) / 10,
+      fatG:          Math.round((parsed?.fat ?? 0) * 10) / 10,
     },
   }
 }
@@ -148,13 +197,24 @@ function mapFoodDetail(food: FatSecretFood): ExternalFoodDetail {
   const carbs    = parseFloat(serving?.carbohydrate ?? '0') || 0
   const fat      = parseFloat(serving?.fat ?? '0') || 0
 
+  // Build household serving text from description + metric amount
+  let householdServingText: string | undefined
+  if (serving?.serving_description) {
+    const desc = serving.serving_description.trim()
+    // If description already contains gram info or is "100g", skip
+    if (!desc.match(/^\d+\s*g$/i) && desc !== '100g') {
+      householdServingText = desc
+    }
+  }
+
   return {
-    provider: 'fatsecret',
-    externalId: food.food_id,
-    name: food.food_name,
-    brand: food.brand_name ?? undefined,
+    provider:    'fatsecret',
+    externalId:  food.food_id,
+    name:        food.food_name,
+    brand:       food.brand_name ?? undefined,
     servingSize,
     servingUnit,
+    householdServingText,
     coreNutrients: {
       calories:      Math.round(calories),
       proteinG:      Math.round(protein * 10) / 10,
@@ -187,12 +247,39 @@ export class FatSecretProvider implements FoodProvider {
       for (const [k, v] of Object.entries({ ...params, format: 'json' })) {
         url.searchParams.set(k, v)
       }
-      const res = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) return null
-      return await res.json() as T
-    } catch {
+
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+      try {
+        const res = await fetch(url.toString(), {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!res.ok) return null
+        const data = await res.json() as T & { error?: { code: number; message: string } }
+
+        // Detect FatSecret API-level errors (returned as HTTP 200 with error body)
+        if (data && typeof data === 'object' && 'error' in data && data.error) {
+          const err = data.error as { code: number; message: string }
+          if (err.code === 21) {
+            console.warn('[fatsecret] IP allowlist restriction (Error 21) — propagation pending')
+          } else {
+            console.error(`[fatsecret] API error ${err.code}: ${err.message}`)
+          }
+          return null
+        }
+
+        return data as T
+      } finally {
+        clearTimeout(timer)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!msg.includes('abort')) {
+        console.error(`[fatsecret] request error: ${msg}`)
+      } else {
+        console.warn('[fatsecret] request timed out')
+      }
       return null
     }
   }
@@ -206,7 +293,6 @@ export class FatSecretProvider implements FoodProvider {
       max_results: String(options?.limit ?? 20),
       page_number: '0',
     })
-
     if (!data?.foods?.food) return []
     const foods = Array.isArray(data.foods.food) ? data.foods.food : [data.foods.food]
     return foods.map(mapSearchResult)
@@ -222,7 +308,6 @@ export class FatSecretProvider implements FoodProvider {
   }
 
   async searchByBarcode(barcode: string): Promise<ExternalFoodDetail | null> {
-    // FatSecret barcode lookup via food.find_id_for_barcode
     const data = await this.request<{ food_id?: { value?: string } }>({
       method: 'food.find_id_for_barcode',
       barcode,

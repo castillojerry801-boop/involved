@@ -10,6 +10,7 @@ interface FoodResult {
   brand?: string
   servingSize: number
   servingUnit: string
+  householdServingText?: string
   coreNutrients: { calories: number; proteinG: number; carbohydrateG: number; fatG: number }
   extendedNutrients?: Record<string, number>
   nutriScore?: string
@@ -31,6 +32,12 @@ function ProviderBadge({ provider }: { provider?: string }) {
   )
   if (provider === 'open_food_facts') return (
     <span className="rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">OFF</span>
+  )
+  if (provider === 'fatsecret') return (
+    <span className="rounded-full bg-orange-100 dark:bg-orange-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide">FS</span>
+  )
+  if (provider === 'nih_dsld') return (
+    <span className="rounded-full bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300 uppercase tracking-wide">DSLD</span>
   )
   return null
 }
@@ -54,6 +61,7 @@ export function BarcodeScanner({ onFound }: Props) {
   const [status, setStatus] = useState<'idle' | 'scanning' | 'found' | 'notfound' | 'error'>('idle')
   const [foundFood, setFoundFood] = useState<FoodResult | null>(null)
   const [lastScanned, setLastScanned] = useState('')
+  const [notFoundBarcode, setNotFoundBarcode] = useState('')
   const [fallbackQuery, setFallbackQuery] = useState('')
   const [fallbackResults, setFallbackResults] = useState<FoodResult[]>([])
   const [fallbackSearching, setFallbackSearching] = useState(false)
@@ -87,6 +95,8 @@ export function BarcodeScanner({ onFound }: Props) {
             setFoundFood(data.result)
             setStatus('found')
           } else {
+            const body = await res.json().catch(() => ({})) as { barcode?: string }
+            setNotFoundBarcode(body.barcode ?? decodedText)
             setStatus('notfound')
           }
         },
@@ -108,6 +118,7 @@ export function BarcodeScanner({ onFound }: Props) {
     setStatus('idle')
     setFoundFood(null)
     setLastScanned('')
+    setNotFoundBarcode('')
     setShowFallback(false)
     setFallbackResults([])
 
@@ -132,6 +143,8 @@ export function BarcodeScanner({ onFound }: Props) {
           setFoundFood(data.result)
           setStatus('found')
         } else {
+          const body = await res.json().catch(() => ({})) as { barcode?: string }
+          setNotFoundBarcode(body.barcode ?? decodedText)
           setStatus('notfound')
         }
       },
@@ -182,7 +195,11 @@ export function BarcodeScanner({ onFound }: Props) {
               </div>
               {foundFood.brand && <p className="text-xs text-zinc-500">{foundFood.brand}</p>}
               <p className="text-xs text-zinc-500 mt-1">
-                {foundFood.coreNutrients.calories} cal · {foundFood.servingSize}{foundFood.servingUnit}
+                {foundFood.coreNutrients.calories} cal ·{' '}
+                {foundFood.householdServingText
+                  ? `${foundFood.householdServingText} (${foundFood.servingSize}${foundFood.servingUnit})`
+                  : `${foundFood.servingSize}${foundFood.servingUnit}`
+                }
               </p>
               <p className="text-xs text-zinc-400 mt-0.5">
                 P {foundFood.coreNutrients.proteinG}g · C {foundFood.coreNutrients.carbohydrateG}g · F {foundFood.coreNutrients.fatG}g
@@ -214,12 +231,15 @@ export function BarcodeScanner({ onFound }: Props) {
       {/* Not found */}
       {status === 'notfound' && !showFallback && (
         <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
             <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Barcode not found</p>
           </div>
+          {notFoundBarcode && (
+            <p className="text-[11px] text-zinc-400 font-mono mb-2">Scanned: {notFoundBarcode}</p>
+          )}
           <p className="text-xs text-zinc-500 mb-3">
-            This product isn&apos;t in our database yet. Search by name to find it.
+            This product isn&apos;t in our database yet. Search by name or snap a photo to log it.
           </p>
           <div className="flex gap-2">
             <button
@@ -285,7 +305,11 @@ export function BarcodeScanner({ onFound }: Props) {
                   </div>
                   {food.brand && <p className="text-xs text-zinc-400 truncate">{food.brand}</p>}
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    {food.coreNutrients.calories} cal · {food.servingSize}{food.servingUnit}
+                    {food.coreNutrients.calories} cal ·{' '}
+                    {food.householdServingText
+                      ? `${food.householdServingText} (${food.servingSize}${food.servingUnit})`
+                      : `${food.servingSize}${food.servingUnit}`
+                    }
                   </p>
                 </div>
               </button>

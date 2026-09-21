@@ -2,54 +2,72 @@
 // Purpose-built for supplements: protein powders, vitamins, creatine, herbs, etc.
 // Label data is pulled directly from product labels, so serving info is accurate.
 // https://api.ods.od.nih.gov/dsld/
+//
+// Working endpoints (confirmed 2026-09-20):
+//   Search:  GET /v9/search-filter?q={term}&size={n}
+//   Detail:  GET /v9/label/{id}
+// Barcode lookup via DSLD is not supported — upcSku exists in detail but there
+// is no search-by-barcode path to reach the product without already knowing the ID.
 
 import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail } from './types'
 
 const BASE_URL = 'https://api.ods.od.nih.gov/dsld/v9'
+const FETCH_TIMEOUT_MS = 5000
 
-interface DsldProduct {
-  id: number
-  productName: string
-  brandName?: string
-  upcSku?: string
-  servingSize?: string
-  servingsPerContainer?: number
-  ingredients?: DsldIngredient[]
-}
-
-interface DsldIngredient {
-  name: string
-  quantity?: number
-  unit?: string
-}
-
+// Search response: { hits: Array<{ _id, _score, _source }>, stats: { count } }
 interface DsldSearchHit {
   _id: string
+  _score: number
   _source: {
-    productName: string
+    fullName: string
     brandName?: string
-    upcSku?: string
   }
 }
 
-// Map DSLD ingredient names to our nutrient fields
+// Detail response from /v9/label/{id}
+interface DsldLabel {
+  id: number
+  fullName: string
+  brandName?: string
+  upcSku?: string
+  servingsPerContainer?: number
+  servingSizes?: Array<{
+    minQuantity?: number
+    maxQuantity?: number
+    unit?: string
+    notes?: string
+  }>
+  ingredientRows?: Array<{
+    name: string
+    category?: string
+    quantity?: Array<{
+      quantity?: number
+      unit?: string
+      servingSizeUnit?: string
+    }>
+  }>
+}
+
+// Map DSLD ingredient row names (lowercased) → our nutrient accumulator keys
 const NUTRIENT_MAP: Record<string, keyof NutrientAccum> = {
-  'calories':          'calories',
-  'energy':            'calories',
-  'total fat':         'fatG',
-  'fat':               'fatG',
-  'total carbohydrate':'carbohydrateG',
-  'total carbs':       'carbohydrateG',
-  'carbohydrate':      'carbohydrateG',
-  'protein':           'proteinG',
-  'dietary fiber':     'fiberG',
-  'fiber':             'fiberG',
-  'total sugars':      'sugarG',
-  'sugars':            'sugarG',
-  'sodium':            'sodiumMg',
-  'saturated fat':     'saturatedFatG',
-  'trans fat':         'transFatG',
-  'cholesterol':       'cholesterolMg',
+  'calories':           'calories',
+  'energy':             'calories',
+  'total fat':          'fatG',
+  'fat':                'fatG',
+  'total carbohydrate': 'carbohydrateG',
+  'total carbohydrates':'carbohydrateG',
+  'total carbs':        'carbohydrateG',
+  'carbohydrate':       'carbohydrateG',
+  'protein':            'proteinG',
+  'dietary fiber':      'fiberG',
+  'fiber':              'fiberG',
+  'total sugars':       'sugarG',
+  'sugars':             'sugarG',
+  'added sugars':       'sugarG',
+  'sodium':             'sodiumMg',
+  'saturated fat':      'saturatedFatG',
+  'trans fat':          'transFatG',
+  'cholesterol':        'cholesterolMg',
 }
 
 interface NutrientAccum {
@@ -65,48 +83,64 @@ interface NutrientAccum {
   cholesterolMg: number
 }
 
-function extractNutrients(ingredients: DsldIngredient[]): NutrientAccum {
+function extractNutrients(rows: DsldLabel['ingredientRows']): NutrientAccum | null {
+  if (!rows?.length) return null
   const acc: NutrientAccum = {
     calories: 0, proteinG: 0, carbohydrateG: 0, fatG: 0,
     fiberG: 0, sugarG: 0, sodiumMg: 0, saturatedFatG: 0, transFatG: 0, cholesterolMg: 0,
   }
-
-  for (const ing of ingredients) {
-    const key = NUTRIENT_MAP[ing.name.toLowerCase().trim()]
-    if (key && ing.quantity != null) {
-      acc[key] += ing.quantity
-    }
+  let found = false
+  for (const row of rows) {
+    const key = NUTRIENT_MAP[row.name.toLowerCase().trim()]
+    if (!key) continue
+    const qty = row.quantity?.[0]?.quantity
+    if (qty == null) continue
+    acc[key] += qty
+    found = true
   }
-
-  return acc
+  return found ? acc : null
 }
 
-function mapProduct(product: DsldProduct): ExternalFoodDetail {
-  const nutrients = product.ingredients ? extractNutrients(product.ingredients) : null
+async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
-  // Parse serving size string e.g. "1 scoop (30g)" → 30, "g"
-  let servingSize = 100
+function mapLabel(label: DsldLabel): ExternalFoodDetail {
+  const nutrients = extractNutrients(label.ingredientRows)
+
+  // Serving size from servingSizes array
+  let servingSize = 1
   let servingUnit = 'serving'
-  if (product.servingSize) {
-    const gramMatch = product.servingSize.match(/([\d.]+)\s*g\b/i)
-    const mlMatch   = product.servingSize.match(/([\d.]+)\s*ml\b/i)
-    if (gramMatch) { servingSize = parseFloat(gramMatch[1]); servingUnit = 'g' }
-    else if (mlMatch) { servingSize = parseFloat(mlMatch[1]); servingUnit = 'ml' }
-    else {
-      const numMatch = product.servingSize.match(/^([\d.]+)/)
-      if (numMatch) servingSize = parseFloat(numMatch[1])
+  let householdServingText: string | undefined
+
+  const sz = label.servingSizes?.[0]
+  if (sz) {
+    const qty = sz.minQuantity ?? sz.maxQuantity
+    if (qty != null && qty > 0) servingSize = qty
+    if (sz.unit) {
+      const u = sz.unit.toLowerCase()
+      if (u.startsWith('gram')) servingUnit = 'g'
+      else if (u.startsWith('ml') || u.includes('milliliter')) servingUnit = 'ml'
+      else servingUnit = sz.unit
     }
+    if (sz.notes?.trim()) householdServingText = sz.notes.trim()
   }
 
   return {
     provider: 'nih_dsld',
-    externalId: String(product.id),
-    name: product.productName,
-    brand: product.brandName ?? undefined,
-    barcode: product.upcSku ?? undefined,
+    externalId: String(label.id),
+    name: label.fullName,
+    brand: label.brandName ?? undefined,
     servingSize,
     servingUnit,
-    servingsPerContainer: product.servingsPerContainer ?? undefined,
+    householdServingText,
+    servingsPerContainer: label.servingsPerContainer ?? undefined,
     coreNutrients: {
       calories:      Math.round(nutrients?.calories ?? 0),
       proteinG:      Math.round((nutrients?.proteinG ?? 0) * 10) / 10,
@@ -130,63 +164,47 @@ export class NihDsldProvider implements FoodProvider {
 
   async search(query: string, options?: { limit?: number }): Promise<ExternalFoodResult[]> {
     try {
-      const url = new URL(`${BASE_URL}/products/search`)
-      url.searchParams.set('q', query)
-      url.searchParams.set('size', String(options?.limit ?? 20))
-
-      const res = await fetch(url.toString(), { next: { revalidate: 3600 } })
-      if (!res.ok) return []
-
-      const data = await res.json() as { hits?: { hits?: DsldSearchHit[] } }
-      const hits = data.hits?.hits ?? []
-
-      return hits.map(hit => ({
+      const url = `${BASE_URL}/search-filter?q=${encodeURIComponent(query)}&size=${options?.limit ?? 20}`
+      const res = await fetchWithTimeout(url, { next: { revalidate: 3600 } })
+      if (!res.ok) {
+        console.error(`[dsld] search failed: HTTP ${res.status} for query "${query}"`)
+        return []
+      }
+      const data = await res.json() as { hits?: DsldSearchHit[] }
+      return (data.hits ?? []).map(hit => ({
         provider: 'nih_dsld',
         externalId: hit._id,
-        name: hit._source.productName,
+        name: hit._source.fullName,
         brand: hit._source.brandName ?? undefined,
-        barcode: hit._source.upcSku ?? undefined,
         servingSize: 1,
         servingUnit: 'serving',
+        // Nutrition not available in search stubs — fetched on detail view
         coreNutrients: { calories: 0, proteinG: 0, carbohydrateG: 0, fatG: 0 },
       }))
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!msg.includes('abort')) console.error(`[dsld] search error: ${msg}`)
       return []
     }
   }
 
   async getById(externalId: string): Promise<ExternalFoodDetail | null> {
     try {
-      const res = await fetch(`${BASE_URL}/products/${externalId}`, {
+      const res = await fetchWithTimeout(`${BASE_URL}/label/${externalId}`, {
         next: { revalidate: 3600 },
       })
       if (!res.ok) return null
-      const product = await res.json() as DsldProduct
-      return mapProduct(product)
-    } catch {
+      const label = await res.json() as DsldLabel
+      return mapLabel(label)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!msg.includes('abort')) console.error(`[dsld] getById error: ${msg}`)
       return null
     }
   }
 
-  async searchByBarcode(barcode: string): Promise<ExternalFoodDetail | null> {
-    try {
-      const url = new URL(`${BASE_URL}/products/search`)
-      url.searchParams.set('q', barcode)
-      url.searchParams.set('size', '1')
-
-      const res = await fetch(url.toString())
-      if (!res.ok) return null
-
-      const data = await res.json() as { hits?: { hits?: DsldSearchHit[] } }
-      const hit = data.hits?.hits?.[0]
-      if (!hit) return null
-
-      // Verify barcode matches before returning
-      if (hit._source.upcSku && hit._source.upcSku !== barcode) return null
-
-      return this.getById(hit._id)
-    } catch {
-      return null
-    }
+  // DSLD does not expose a barcode search endpoint.
+  async searchByBarcode(_barcode: string): Promise<ExternalFoodDetail | null> {
+    return null
   }
 }

@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getOpenAI } from '@/lib/ai/client'
+import type OpenAI from 'openai'
 
 const SYSTEM_PROMPT = `You are a nutrition expert and dietitian. When given a photo of food, analyze it and estimate the nutritional content as accurately as possible.
+
+CONFIDENCE HIERARCHY — apply strictly in this order:
+1. User-stated information (portions, brands, ingredients, cooking method) — HIGHEST AUTHORITY, always overrides visual estimates
+2. Visible text or labels in the photo
+3. Visual portion estimation
+4. Standard portion assumptions — only when nothing else is available
+
+When user notes are provided about the meal:
+- Use them to correct or refine your visual estimates
+- Set portionSource to "user_stated" when the user specified the portion
+- Set foodSource to "user_stated" when the user identified the food
+- Set cookingMethodSource to "user_stated" when the user described the cooking method
+- If the user's description clearly contradicts what you see in the image, set conflictNote to a brief explanation
 
 Respond ONLY with a JSON object in this exact format (no markdown, no extra text):
 {
@@ -16,7 +30,12 @@ Respond ONLY with a JSON object in this exact format (no markdown, no extra text
       "fiberG": 3,
       "sodiumMg": 400,
       "confidence": "high|medium|low",
-      "notes": "Any relevant notes about the estimate"
+      "portionSource": "user_stated|visual_estimate|standard_portion",
+      "foodSource": "user_stated|visual_identified|ai_inferred",
+      "brandSource": "user_stated|visual_label|unknown",
+      "cookingMethodSource": "user_stated|visual_inferred|assumed",
+      "notes": "Any relevant notes about the estimate",
+      "conflictNote": "Only include if user notes clearly conflict with the image"
     }
   ],
   "totalCalories": 250,
@@ -25,9 +44,8 @@ Respond ONLY with a JSON object in this exact format (no markdown, no extra text
 
 export async function POST(req: NextRequest) {
   try {
-    // Client sends JSON: { imageBase64: "data:image/jpeg;base64,..." }
-    const body = await req.json() as { imageBase64?: string }
-    const imageBase64 = body.imageBase64
+    const body = await req.json() as { imageBase64?: string; userContext?: string }
+    const { imageBase64, userContext } = body
 
     if (!imageBase64) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 })
@@ -38,29 +56,26 @@ export async function POST(req: NextRequest) {
 
     const openai = getOpenAI()
 
+    const userContent: OpenAI.ChatCompletionContentPart[] = []
+    if (userContext?.trim()) {
+      userContent.push({ type: 'text', text: `User notes about this meal: ${userContext.trim()}` })
+    }
+    userContent.push({ type: 'image_url', image_url: { url: imageBase64, detail: 'high' } })
+    userContent.push({
+      type: 'text',
+      text: 'Analyze this food photo and provide nutritional estimates. Apply the confidence hierarchy from the system prompt.',
+    })
+
     const response = await openai.chat.completions.create({
       model: process.env.AI_MODEL_VISION ?? 'gpt-4o',
-      max_tokens: 1024,
+      max_tokens: 1200,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: { url: imageBase64, detail: 'high' },
-            },
-            {
-              type: 'text',
-              text: 'Please analyze this food photo and provide detailed nutritional estimates.',
-            },
-          ],
-        },
+        { role: 'user', content: userContent },
       ],
     })
 
     let text = response.choices[0]?.message?.content ?? ''
-    // GPT-4o sometimes wraps JSON in markdown code blocks despite instructions
     text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
     const analysis = JSON.parse(text)
     return NextResponse.json(analysis)

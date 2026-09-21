@@ -1,6 +1,14 @@
+// Nutritionix — NOT registered in FOOD_PROVIDERS until credentials are configured.
+// Set NUTRITIONIX_APP_ID and NUTRITIONIX_APP_KEY in .env.local to activate.
+// All methods return empty/null gracefully when credentials are absent.
+
 import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail } from './types'
 
 const BASE_URL = 'https://trackapi.nutritionix.com/v2'
+
+function hasCredentials(): boolean {
+  return !!(process.env.NUTRITIONIX_APP_ID && process.env.NUTRITIONIX_APP_KEY)
+}
 
 function headers() {
   return {
@@ -21,15 +29,15 @@ function mapFood(f: Record<string, unknown>): ExternalFoodDetail {
     servingSize: (f.serving_qty as number) ?? 1,
     servingUnit: f.serving_unit as string,
     coreNutrients: {
-      calories: f.nf_calories as number,
-      proteinG: f.nf_protein as number,
-      carbohydrateG: f.nf_total_carbohydrate as number,
-      fatG: f.nf_total_fat as number,
+      calories:      (f.nf_calories as number) ?? 0,
+      proteinG:      (f.nf_protein as number) ?? 0,
+      carbohydrateG: (f.nf_total_carbohydrate as number) ?? 0,
+      fatG:          (f.nf_total_fat as number) ?? 0,
     },
     extendedNutrients: {
-      fiberG: f.nf_dietary_fiber as number | undefined,
-      sugarG: f.nf_sugars as number | undefined,
-      sodiumMg: f.nf_sodium as number | undefined,
+      fiberG:        f.nf_dietary_fiber as number | undefined,
+      sugarG:        f.nf_sugars as number | undefined,
+      sodiumMg:      f.nf_sodium as number | undefined,
       saturatedFatG: f.nf_saturated_fat as number | undefined,
       cholesterolMg: f.nf_cholesterol as number | undefined,
     },
@@ -41,43 +49,61 @@ export class NutritionixProvider implements FoodProvider {
   readonly providerId = 'nutritionix'
 
   async search(query: string, options?: { limit?: number }): Promise<ExternalFoodResult[]> {
+    if (!hasCredentials()) return []
     const limit = options?.limit ?? 20
     const url = `${BASE_URL}/search/instant?query=${encodeURIComponent(query)}&detailed=true&branded=true&common=true`
-    const res = await fetch(url, { headers: headers() })
-    if (!res.ok) return []
-    const data = await res.json() as { branded?: unknown[]; common?: unknown[] }
-
-    const branded = (data.branded ?? []).slice(0, Math.ceil(limit / 2)) as Record<string, unknown>[]
-    const common = (data.common ?? []).slice(0, Math.floor(limit / 2)) as Record<string, unknown>[]
-
-    return [...branded, ...common].map(mapFood)
+    try {
+      const res = await fetch(url, { headers: headers() })
+      if (!res.ok) return []
+      const data = await res.json() as { branded?: unknown[]; common?: unknown[] }
+      const branded = (data.branded ?? []).slice(0, Math.ceil(limit / 2)) as Record<string, unknown>[]
+      const common  = (data.common  ?? []).slice(0, Math.floor(limit / 2)) as Record<string, unknown>[]
+      return [...branded, ...common].map(mapFood)
+    } catch {
+      return []
+    }
   }
 
   // Natural language: "2 scrambled eggs and a banana"
   async searchNatural(query: string): Promise<ExternalFoodDetail[]> {
-    const res = await fetch(`${BASE_URL}/natural/nutrients`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ query }),
-    })
-    if (!res.ok) return []
-    const data = await res.json() as { foods?: unknown[] }
-    return ((data.foods ?? []) as Record<string, unknown>[]).map(mapFood)
+    if (!hasCredentials()) return []
+    try {
+      const res = await fetch(`${BASE_URL}/natural/nutrients`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ query }),
+      })
+      if (!res.ok) return []
+      const data = await res.json() as { foods?: unknown[] }
+      return ((data.foods ?? []) as Record<string, unknown>[]).map(mapFood)
+    } catch {
+      return []
+    }
   }
 
   async getById(externalId: string): Promise<ExternalFoodDetail | null> {
-    const res = await fetch(`${BASE_URL}/search/item?nix_item_id=${externalId}`, { headers: headers() })
-    if (!res.ok) return null
-    const data = await res.json() as { foods?: unknown[] }
-    const f = (data.foods ?? [])[0] as Record<string, unknown> | undefined
-    return f ? mapFood(f) : null
+    if (!hasCredentials()) return null
+    try {
+      const res = await fetch(`${BASE_URL}/search/item?nix_item_id=${externalId}`, { headers: headers() })
+      if (!res.ok) return null
+      const data = await res.json() as { foods?: unknown[] }
+      const f = (data.foods ?? [])[0] as Record<string, unknown> | undefined
+      return f ? mapFood(f) : null
+    } catch {
+      return null
+    }
   }
 
   async searchByBarcode(barcode: string): Promise<ExternalFoodDetail | null> {
-    const res = await fetch(`${BASE_URL}/search/item?upc=${barcode}`, { headers: headers() })
-    if (!res.ok) return null
-    const data = await res.json() as { foods?: unknown[] }
-    const f = (data.foods ?? [])[0] as Record<string, unknown> | undefined
-    return f ? mapFood(f) : null
+    if (!hasCredentials()) return null
+    try {
+      const res = await fetch(`${BASE_URL}/search/item?upc=${barcode}`, { headers: headers() })
+      if (!res.ok) return null
+      const data = await res.json() as { foods?: unknown[] }
+      const f = (data.foods ?? [])[0] as Record<string, unknown> | undefined
+      return f ? mapFood(f) : null
+    } catch {
+      return null
+    }
   }
 }

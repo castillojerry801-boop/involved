@@ -18,6 +18,7 @@ interface FoodResult {
   barcode?: string
   servingSize: number
   servingUnit: string
+  householdServingText?: string
   coreNutrients: {
     calories: number
     proteinG: number
@@ -46,6 +47,12 @@ function ProviderBadge({ provider }: { provider?: string }) {
   )
   if (provider === 'open_food_facts') return (
     <span className="rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">OFF</span>
+  )
+  if (provider === 'fatsecret') return (
+    <span className="rounded-full bg-orange-100 dark:bg-orange-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide">FS</span>
+  )
+  if (provider === 'nih_dsld') return (
+    <span className="rounded-full bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300 uppercase tracking-wide">DSLD</span>
   )
   return null
 }
@@ -98,7 +105,11 @@ function FoodCard({
           </div>
           {food.brand && <p className="text-xs text-zinc-400 truncate">{food.brand}</p>}
           <p className="text-xs text-zinc-500 mt-0.5">
-            {food.coreNutrients.calories} cal · {food.servingSize}{food.servingUnit}
+            {food.coreNutrients.calories} cal ·{' '}
+            {food.householdServingText
+              ? `${food.householdServingText} (${food.servingSize}${food.servingUnit})`
+              : `${food.servingSize}${food.servingUnit}`
+            }
             {' · '}P {food.coreNutrients.proteinG}g · C {food.coreNutrients.carbohydrateG}g · F {food.coreNutrients.fatG}g
           </p>
         </div>
@@ -147,7 +158,10 @@ function FoodCard({
               </button>
             </div>
             <span className="text-xs text-zinc-400">
-              = {servings * food.servingSize}{food.servingUnit}
+              = {Math.round(servings * food.servingSize * 10) / 10}{food.servingUnit}
+              {food.householdServingText && servings === 1 && (
+                <> · {food.householdServingText}</>
+              )}
             </span>
           </div>
 
@@ -392,6 +406,11 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
                       logging={logging === food.externalId}
                     />
                   ))}
+                  {results.some(r => r.provider === 'fatsecret') && (
+                    <p className="pt-2 text-[10px] text-zinc-400 text-center">
+                      Powered by FatSecret
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -423,7 +442,7 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
 
               {!query && recentFoods.length === 0 && (
                 <div className="py-6 text-center">
-                  <p className="text-xs text-zinc-400">Results come from USDA FoodData Central + Open Food Facts</p>
+                  <p className="text-xs text-zinc-400">Results from FatSecret · USDA · NIH DSLD · Open Food Facts</p>
                 </div>
               )}
             </div>
