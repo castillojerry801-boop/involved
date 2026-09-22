@@ -207,6 +207,16 @@ export async function GET(req: NextRequest) {
     await Promise.all(activeProviders.map(p => p.search(query, { limit: 20 }).catch(() => [])))
   ).flat()
 
+  // Dev logging — which providers fired and how many raw results each returned
+  if (process.env.NODE_ENV === 'development') {
+    const raw: Record<string, number> = {}
+    for (const r of providerResults) raw[r.provider] = (raw[r.provider] ?? 0) + 1
+    console.log(`[nutrition/search] q="${query}" supplement=${isSupplement}`)
+    for (const p of activeProviders) {
+      console.log(`  [${p.providerId}] ${raw[p.providerId] ?? 0} raw`)
+    }
+  }
+
   // 3. Drop zero-nutrition results (except DSLD stubs — their nutrition is detail-only)
   const withNutrition = providerResults.filter(r => {
     if (r.provider === 'nih_dsld') return true
@@ -248,6 +258,14 @@ export async function GET(req: NextRequest) {
     const key = `${normDedup(r.name)}|${normDedup(r.brand ?? '')}`
     return !cachedNameBrand.has(key)
   })
+
+  // Dev logging — survivors at each gate and final provider breakdown
+  if (process.env.NODE_ENV === 'development') {
+    const finalByProvider: Record<string, number> = {}
+    for (const r of external) finalByProvider[r.provider] = (finalByProvider[r.provider] ?? 0) + 1
+    console.log(`  → ${withNutrition.length} with nutrition → ${relevant.length} passed quality gate → ${external.length} external (${cachedResults.length} library)`)
+    for (const [p, n] of Object.entries(finalByProvider)) console.log(`    [${p}] ${n} in final`)
+  }
 
   return NextResponse.json({
     results: [

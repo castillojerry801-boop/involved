@@ -93,12 +93,21 @@ export async function GET(req: NextRequest) {
 
   const variants = barcodeVariants(upc)
 
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[nutrition/barcode] upc="${upc}" variants=[${variants.join(', ')}]`)
+  }
+
   // 1. Check local cache for any barcode variant
   try {
     const cached = await prisma.foodItem.findFirst({
       where: { barcode: { in: variants } },
     })
-    if (cached) return NextResponse.json({ result: foodItemToDetail(cached) })
+    if (cached) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`  → cache hit (${cached.sourceProvider ?? 'library'})`)
+      }
+      return NextResponse.json({ result: foodItemToDetail(cached) })
+    }
   } catch { /* DB unavailable — fall through to network */ }
 
   // 2. Fan out to all three barcode providers concurrently for every barcode variant.
@@ -113,10 +122,17 @@ export async function GET(req: NextRequest) {
   const result = allResults.find(r => r != null) ?? null
 
   if (result) {
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`  → found via ${result.provider}: "${result.name}"`)
+    }
     // Ensure the matched barcode is recorded (use the original scanner value)
     if (!result.barcode) result.barcode = upc
     void cacheResult(result)
     return NextResponse.json({ result })
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log('  → not found in any provider')
   }
 
   // 3. Genuinely not found — return the original barcode so the client can offer fallbacks

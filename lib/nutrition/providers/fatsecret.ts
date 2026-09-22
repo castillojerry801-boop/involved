@@ -1,9 +1,9 @@
-// FatSecret Platform API — largest global food database, 5,000 calls/day free.
+// FatSecret Platform API — largest global food database, Premier tier.
 // OAuth 2.0 client credentials flow. Token cached in memory per process.
 // Attribution: "Powered by FatSecret" must be displayed near search results
 // that include FatSecret-sourced foods per their Terms of Service.
 
-import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail } from './types'
+import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail, AutocompleteResult } from './types'
 
 const BASE_URL = 'https://platform.fatsecret.com/rest/server.api'
 const TOKEN_URL = 'https://oauth.fatsecret.com/connect/token'
@@ -315,5 +315,22 @@ export class FatSecretProvider implements FoodProvider {
     const foodId = data?.food_id?.value
     if (!foodId) return null
     return this.getById(foodId)
+  }
+
+  // Returns name-only suggestions (no nutrition) — useful for type-ahead UX.
+  // FatSecret autocomplete does not return IDs; callers should follow with search().
+  async autocomplete(query: string, options?: { limit?: number }): Promise<AutocompleteResult[]> {
+    const data = await this.request<{
+      suggestions?: { suggestion?: string | string[] }
+    }>({
+      method: 'foods.autocomplete',
+      expression: query,
+      max_results: String(options?.limit ?? 10),
+    })
+    if (!data?.suggestions?.suggestion) return []
+    const list = Array.isArray(data.suggestions.suggestion)
+      ? data.suggestions.suggestion
+      : [data.suggestions.suggestion]
+    return list.map(name => ({ name }))
   }
 }

@@ -50,10 +50,17 @@ export interface ExternalFoodDetail extends ExternalFoodResult {
   incompleteData?: boolean
 }
 
+export interface AutocompleteResult {
+  id?: string
+  name: string
+  brand?: string
+}
+
 export interface FoodProvider {
   readonly name: string
   readonly providerId: string
   search(query: string, options?: { limit?: number }): Promise<ExternalFoodResult[]>
   getById(externalId: string): Promise<ExternalFoodDetail | null>
   searchByBarcode(barcode: string): Promise<ExternalFoodDetail | null>
+  autocomplete?(query: string, options?: { limit?: number }): Promise<AutocompleteResult[]>
 }
