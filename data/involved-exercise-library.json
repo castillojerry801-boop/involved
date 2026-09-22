@@ -7559,10 +7559,10 @@
     },
     {
       "id": "inv_upward_facing_dog",
-      "name": "Upward Facing Dog",
+      "name": "Upward-Facing Dog",
       "slug": "upward_facing_dog",
-      "movementFamilyId": "fam_back",
-      "technicalPattern": "back_general",
+      "movementFamilyId": "fam_yoga",
+      "technicalPattern": "yoga",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -14713,8 +14713,8 @@
       "id": "inv_boxing_left_uppercut",
       "name": "Boxing Left Uppercut",
       "slug": "boxing_left_uppercut",
-      "movementFamilyId": "fam_core",
-      "technicalPattern": "core_flexion",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -22367,8 +22367,8 @@
       "id": "inv_flutter_kicks",
       "name": "Flutter Kicks",
       "slug": "flutter_kicks",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_core",
+      "technicalPattern": "core_flexion",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -22410,8 +22410,8 @@
       "id": "inv_front_groin_kick",
       "name": "Front Groin Kick",
       "slug": "front_groin_kick",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -22456,8 +22456,8 @@
       "id": "inv_front_leg_hook_kick",
       "name": "Front Leg Hook Kick",
       "slug": "front_leg_hook_kick",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -22503,8 +22503,8 @@
       "id": "inv_front_snap_kick",
       "name": "Front Snap Kick",
       "slug": "front_snap_kick",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -22680,8 +22680,8 @@
       "id": "inv_heel_push_kick",
       "name": "Heel Push Kick",
       "slug": "heel_push_kick",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -23030,8 +23030,8 @@
       "id": "inv_rear_axe_kick",
       "name": "Rear Axe Kick",
       "slug": "rear_axe_kick",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -23120,8 +23120,8 @@
       "id": "inv_rear_leg_hook_kick",
       "name": "Rear Leg Hook Kick",
       "slug": "rear_leg_hook_kick",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -23210,8 +23210,8 @@
       "id": "inv_roundhouse_kick",
       "name": "Roundhouse Kick",
       "slug": "roundhouse_kick",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -23300,8 +23300,8 @@
       "id": "inv_side_kick",
       "name": "Side Kick",
       "slug": "side_kick",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -23578,8 +23578,8 @@
       "id": "inv_spin_back_kick",
       "name": "Spin Back Kick",
       "slug": "spin_back_kick",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -23625,8 +23625,8 @@
       "id": "inv_spin_hook_kick",
       "name": "Spin Hook Kick",
       "slug": "spin_hook_kick",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -23672,8 +23672,8 @@
       "id": "inv_split_squats",
       "name": "Split Squats",
       "slug": "split_squats",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_squat",
+      "technicalPattern": "squat",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -23989,8 +23989,8 @@
       "id": "inv_zigzag_hops",
       "name": "Zigzag Hops",
       "slug": "zigzag_hops",
-      "movementFamilyId": "fam_legs",
-      "technicalPattern": "leg_general",
+      "movementFamilyId": "fam_plyometrics",
+      "technicalPattern": "lateral_plyometric",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -27869,22 +27869,6 @@
           "priority": 16
         },
         {
-          "implementationId": "edb_0232",
-          "displayLabel": "Cable Standing Pulldown (With Rope)",
-          "equipment": "cable",
-          "source": {
-            "provider": "ExerciseDB",
-            "exerciseId": "0232",
-            "sourceName": "cable standing pulldown (with rope)"
-          },
-          "media": {
-            "source": "exercisedb",
-            "gifPath": "/exercise-gifs/0232.gif",
-            "replacementStatus": "temporary"
-          },
-          "priority": 17
-        },
-        {
           "implementationId": "edb_0245",
           "displayLabel": "Cable Underhand Pulldown",
           "equipment": "cable",
@@ -30305,8 +30289,8 @@
       "id": "inv_boxing_jab",
       "name": "Boxing Jab",
       "slug": "boxing_jab",
-      "movementFamilyId": "fam_shoulders",
-      "technicalPattern": "shoulder_accessory",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -31988,8 +31972,8 @@
       "id": "inv_left_hook_boxing",
       "name": "Left Hook (Boxing)",
       "slug": "left_hook_boxing",
-      "movementFamilyId": "fam_shoulders",
-      "technicalPattern": "shoulder_accessory",
+      "movementFamilyId": "fam_cardio",
+      "technicalPattern": "conditioning",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -34410,65 +34394,6 @@
         "flexibility"
       ],
       "originalVisualPath": "/originals/inv_yoga_cobra.png"
-    },
-    {
-      "id": "inv_yoga_upward_dog",
-      "name": "Upward-Facing Dog",
-      "slug": "upward_facing_dog",
-      "movementFamilyId": "fam_yoga",
-      "technicalPattern": "yoga",
-      "difficulty": "intermediate",
-      "muscleCard": {
-        "primary": [
-          "chest",
-          "hip flexors"
-        ],
-        "secondary": [
-          "spinal erectors",
-          "triceps"
-        ],
-        "stabilizers": [
-          "shoulders",
-          "glutes"
-        ]
-      },
-      "description": {
-        "summary": "A stronger backbend that opens the chest and front of the hips while supporting through the arms.",
-        "steps": [
-          "Lie face down with hands beside your ribs.",
-          "Press through your hands and tops of your feet.",
-          "Lift your chest and thighs away from the floor.",
-          "Keep shoulders down and chest tall."
-        ],
-        "feelItIn": [
-          "chest",
-          "hip flexors",
-          "abdominals"
-        ],
-        "hold": "10–30 seconds",
-        "reps": "2–3 rounds",
-        "whyUseIt": "Builds upper-body support while opening the front of the body."
-      },
-      "coachingCues": [
-        "Press the floor away.",
-        "Keep shoulders away from ears.",
-        "Lift through the chest.",
-        "Keep glutes lightly active."
-      ],
-      "commonMistakes": [
-        "Dumping into the lower back.",
-        "Letting shoulders shrug.",
-        "Collapsing through the arms.",
-        "Forcing the range."
-      ],
-      "aliases": [],
-      "implementations": [],
-      "browseTags": [
-        "yoga",
-        "mobility",
-        "flexibility"
-      ],
-      "originalVisualPath": "/originals/inv_yoga_upward_dog.png"
     },
     {
       "id": "inv_yoga_low_lunge",
@@ -39090,8 +39015,8 @@
       "id": "inv_strength_spanish_squat",
       "name": "Spanish Squat",
       "slug": "spanish_squat",
-      "movementFamilyId": "fam_leg_accessories",
-      "technicalPattern": "leg_accessory",
+      "movementFamilyId": "fam_squat",
+      "technicalPattern": "squat",
       "difficulty": "beginner",
       "muscleCard": {
         "primary": [
@@ -39354,6 +39279,94 @@
       "aliases": [],
       "implementations": [],
       "originalVisualPath": "/originals/inv_agility_lateral_bound.png"
+    },
+    {
+      "id": "inv_face_pull",
+      "name": "Face Pull",
+      "slug": "face-pull",
+      "movementFamilyId": "fam_shoulders",
+      "technicalPattern": "shoulder_accessory",
+      "browseTags": [
+        "rear delts",
+        "rotator cuff",
+        "shoulder health",
+        "cable"
+      ],
+      "difficulty": "beginner",
+      "muscleCard": {
+        "primary": [
+          "rear deltoids",
+          "external rotators"
+        ],
+        "secondary": [
+          "rhomboids",
+          "middle trapezius"
+        ],
+        "stabilizers": [
+          "biceps",
+          "forearms"
+        ],
+        "bodyMap": {
+          "front": [],
+          "back": [
+            "rear deltoids",
+            "rhomboids"
+          ],
+          "status": "partial"
+        }
+      },
+      "description": {
+        "summary": "A cable exercise that pulls a rope attachment toward your face, targeting the rear deltoids and external rotators. A staple for shoulder health and posture.",
+        "steps": [
+          "Set a cable machine to face height with a rope attachment.",
+          "Grip each end of the rope with palms facing each other.",
+          "Step back until there is tension on the cable.",
+          "Pull the rope toward your face, spreading the ends apart as you reach ear level.",
+          "Keep your elbows high and squeeze your rear delts at the peak.",
+          "Slowly return to the starting position under control."
+        ],
+        "feelItIn": [
+          "rear delts",
+          "between the shoulder blades"
+        ],
+        "reps": "12–20 reps"
+      },
+      "coachingCues": [
+        "Pull to your ears, not your chin.",
+        "Keep elbows above shoulder height.",
+        "Spread the rope apart at full contraction.",
+        "Control the return — don't let the cable pull you forward."
+      ],
+      "commonMistakes": [
+        "Pulling too low, turning it into a row.",
+        "Using too much weight and losing control.",
+        "Not spreading the rope apart at peak contraction."
+      ],
+      "aliases": [
+        "face pull",
+        "cable face pull",
+        "cable standing pulldown",
+        "cable standing pulldown with rope",
+        "rear delt pull"
+      ],
+      "implementations": [
+        {
+          "implementationId": "edb_0232",
+          "displayLabel": "Cable Face Pull",
+          "equipment": "cable",
+          "source": {
+            "provider": "ExerciseDB",
+            "exerciseId": "0232",
+            "sourceName": "cable standing pulldown (with rope)"
+          },
+          "media": {
+            "source": "exercisedb",
+            "gifPath": "/exercise-gifs/0232.gif",
+            "replacementStatus": "temporary"
+          },
+          "priority": 1
+        }
+      ]
     }
   ]
 }
