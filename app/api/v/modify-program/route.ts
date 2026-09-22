@@ -6,6 +6,7 @@ import { workoutModel } from '@/lib/ai/models'
 import { SEARCH_EXERCISES_TOOL, executeExerciseSearch } from '@/lib/ai/tools/exercises'
 import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/program'
 import type { ProgramDraft } from '@/lib/ai/tools/program'
+import type { ProgramPreview, GenerationConstraints } from '@/app/api/v/generate-program/route'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage, decrementVUsage } from '@/lib/v/usage'
@@ -13,59 +14,34 @@ import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training
 import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
 import type OpenAI from 'openai'
 
-const SYSTEM_PROMPT = `You are Involved V, an AI training program designer.
+const SYSTEM_PROMPT = `You are Involved V, an AI training program designer making a targeted modification to an existing program.
 
-RULES:
-• Only use exercise IDs returned by search_exercises. Never invent IDs.
-• Search for exercises for each day separately — one search per movement-pattern role per day.
-• Plan all movement-pattern roles first. Then search to fill them. Never search first and assemble later.
-• Respect equipment constraints and exercise preferences.
+MODIFICATION RULES — READ CAREFULLY:
+• Make ONLY the change the user requested. Nothing else.
+• For every day and exercise NOT mentioned in the modification request, reproduce the exact exercise IDs, sets, reps_min, reps_max, duration_seconds, rest_seconds, notes, RPE, and set_type from the existing program. Do not change them.
+• Only search for new exercises when the modification explicitly requires replacing or adding an exercise.
+• If the user asks to change duration, change only estimated_duration_minutes for the specified day. Leave all exercises in that day intact unless the user also asked to change exercises.
+• If the user asks to replace an exercise, search for a replacement with the same movementPattern as the exercise being replaced.
 • Complete the Program Review Pass before calling propose_program.
-• Set weeks and progression_strategy when designing programs longer than one week.
+• Only use exercise IDs returned by search_exercises. Never invent IDs.
 ${PROGRAM_INTELLIGENCE_PROMPT}
 
 USER CONTEXT:
 `
 
-export interface ProgramPreviewExercise {
-  exercise_id: string
-  sets: number
-  reps_min?: number
-  reps_max?: number
-  duration_seconds?: number
-  rest_seconds: number
-  notes?: string
-  rpe?: number
-  set_type?: string
-  exercise: { id: string; name: string; bodyPart: string; equipment: string; target: string }
-}
-
-export interface ProgramPreviewDay {
-  name: string
-  focus?: string
-  estimated_duration_minutes: number
-  exercises: ProgramPreviewExercise[]
-}
-
-export interface ProgramPreview {
-  program_name: string
-  description?: string
-  primary_goal?: string
-  weeks?: number
-  progression_strategy?: string
-  days: ProgramPreviewDay[]
-}
-
-// Constraints forwarded back to the modal so they survive into modify requests.
-export interface GenerationConstraints {
-  days?: number
-  focus?: string
-  durationPerDayMinutes?: number
-  weeks?: number
-  injuries?: string
-  style?: string
-  sport?: string
-  constraints?: string
+function buildConstraintBlock(c: GenerationConstraints): string {
+  const lines: string[] = []
+  if (c.days)                  lines.push(`Number of days: ${c.days}`)
+  if (c.focus)                 lines.push(`Program focus: ${c.focus}`)
+  if (c.durationPerDayMinutes) lines.push(`Target duration per session: ${c.durationPerDayMinutes} minutes`)
+  if (c.weeks)                 lines.push(`Program duration: ${c.weeks} weeks`)
+  if (c.style)                 lines.push(`Training style: ${c.style}`)
+  if (c.sport)                 lines.push(`Sport / activity: ${c.sport}`)
+  if (c.injuries)              lines.push(`Injuries / limitations: ${c.injuries}`)
+  if (c.constraints)           lines.push(`Other constraints: ${c.constraints}`)
+  return lines.length > 0
+    ? `ORIGINAL CONSTRAINTS (must be preserved even after modification):\n${lines.map(l => `• ${l}`).join('\n')}\n\n`
+    : ''
 }
 
 export async function POST(req: NextRequest) {
@@ -74,15 +50,13 @@ export async function POST(req: NextRequest) {
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json() as {
-    name?: string
-    days?: number
-    focus?: string
-    durationPerDayMinutes?: number
-    weeks?: number
-    injuries?: string
-    style?: string
-    sport?: string
-    constraints?: string
+    draft: ProgramDraft
+    modification: string
+    constraints?: GenerationConstraints
+  }
+
+  if (!body.draft || !body.modification?.trim()) {
+    return Response.json({ error: 'Missing draft or modification' }, { status: 400 })
   }
 
   const entitlement = await getUserEntitlement(user.id)
@@ -102,36 +76,29 @@ export async function POST(req: NextRequest) {
   const model = workoutModel(tier === 'free' ? 'free' : 'plus')
   const openai = getOpenAI()
 
-  const lines: string[] = []
-  if (body.days)                  lines.push(`NUMBER OF DAYS: ${body.days}`)
-  if (body.focus)                 lines.push(`PROGRAM FOCUS: ${body.focus}`)
-  if (body.durationPerDayMinutes) lines.push(`TARGET DURATION PER SESSION: ${body.durationPerDayMinutes} minutes`)
-  if (body.weeks)                 lines.push(`PROGRAM DURATION: ${body.weeks} weeks`)
-  if (body.style)                 lines.push(`TRAINING STYLE: ${body.style}`)
-  if (body.sport)                 lines.push(`SPORT / ACTIVITY: ${body.sport}`)
-  if (body.injuries)              lines.push(`INJURIES / LIMITATIONS: ${body.injuries}`)
-  if (body.constraints)           lines.push(`OTHER CONSTRAINTS: ${body.constraints}`)
-  const extraContext = lines.length > 0 ? '\n' + lines.join('\n') : ''
-
-  const focusDesc = body.focus ? ` focused on ${body.focus}` : ''
-  const weeksDesc = body.weeks ? ` (${body.weeks}-week program)` : ''
-  const userMessage = `Create a ${body.days ?? 3}-day training program${focusDesc}${weeksDesc}. Search for exercises for each day, then propose the program.`
+  const constraintBlock = body.constraints ? buildConstraintBlock(body.constraints) : ''
+  const allowedEquipment = ctx.equipment?.items
 
   type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
   const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT + contextSnippet + extraContext },
-    { role: 'user', content: userMessage },
+    { role: 'system', content: SYSTEM_PROMPT + contextSnippet },
+    {
+      role: 'user',
+      content:
+        `${constraintBlock}` +
+        `EXISTING PROGRAM (copy unchanged parts verbatim):\n\n${JSON.stringify(body.draft, null, 2)}\n\n` +
+        `MODIFICATION REQUEST: ${body.modification.trim()}\n\n` +
+        `Apply ONLY the requested modification. For every day and every exercise not explicitly changed, ` +
+        `copy the exercise ID, sets, reps, rest, notes, and RPE from the existing program without alteration. ` +
+        `Then propose the updated program.`,
+    },
   ]
 
   const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_PROGRAM_TOOL]
   let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
   let pendingDraft: ProgramDraft | null = null
   const MAX_ROUNDS = 12
-  const allowedEquipment = ctx.equipment?.items
 
-  // Credit was consumed above. If the AI loop fails (model error or exhausts
-  // MAX_ROUNDS without a valid program), we return the credit. A valid program
-  // that the user then discards does not get a refund — the AI ran successfully.
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const response = await openai.chat.completions.create({
@@ -178,22 +145,19 @@ export async function POST(req: NextRequest) {
       if (pendingProgram?.valid) break
     }
   } catch {
-    // OpenAI API failure — return the credit
     await decrementVUsage(user.id, 'workout_generation')
     return Response.json({ error: 'V encountered an error. Please try again.' }, { status: 503 })
   }
 
   if (!pendingProgram?.valid || !pendingProgram.program || !pendingDraft) {
-    // Loop exhausted without a valid program — return the credit
     await decrementVUsage(user.id, 'workout_generation')
-    return Response.json({ error: 'V could not generate a valid program. Please try again.' }, { status: 422 })
+    return Response.json({ error: 'V could not apply the modification. Please try again.' }, { status: 422 })
   }
 
   const validated = pendingProgram.program
 
-  // Build preview — same shape the coach ProgramCard uses, plus new fields
   const preview: ProgramPreview = {
-    program_name: body.name ?? validated.program_name,
+    program_name: validated.program_name,
     description: validated.description,
     primary_goal: pendingDraft.primary_goal,
     weeks: pendingDraft.weeks,
@@ -223,20 +187,5 @@ export async function POST(req: NextRequest) {
     })),
   }
 
-  // Capture the request constraints so the modal can forward them to modify requests.
-  // This keeps injury/equipment/style restrictions alive through the entire session.
-  const returnedConstraints: GenerationConstraints = {
-    days: body.days,
-    focus: body.focus,
-    durationPerDayMinutes: body.durationPerDayMinutes,
-    weeks: body.weeks,
-    injuries: body.injuries,
-    style: body.style,
-    sport: body.sport,
-    constraints: body.constraints,
-  }
-
-  // Return draft (for the save endpoint) + preview (for the UI)
-  // No DB write — the user confirms before save
-  return Response.json({ draft: pendingDraft, preview, constraints: returnedConstraints }, { status: 200 })
+  return Response.json({ draft: pendingDraft, preview }, { status: 200 })
 }

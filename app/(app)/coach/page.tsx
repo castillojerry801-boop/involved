@@ -4,10 +4,11 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Send, Lock, Loader2, User, Dumbbell, Sparkles } from 'lucide-react'
+import { Send, Lock, Loader2, User, Dumbbell, Sparkles, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getGifUrl } from '@/lib/exercises'
 import { cn } from '@/lib/utils'
+import { GenerateProgramModal } from '@/components/v/GenerateProgramModal'
 
 interface TextMessage { role: 'user' | 'assistant'; content: string; type: 'text' }
 interface WorkoutMessage {
@@ -378,6 +379,7 @@ export default function CoachPage() {
   const [streaming, setStreaming] = useState(false)
   const [usage, setUsage] = useState<Usage | null>(null)
   const [limitReached, setLimitReached] = useState(false)
+  const [programModalOpen, setProgramModalOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -486,6 +488,8 @@ export default function CoachPage() {
   const usedPct = usage?.limit ? Math.min((usage.count / usage.limit) * 100, 100) : 0
 
   return (
+    <>
+    <GenerateProgramModal open={programModalOpen} onOpenChange={setProgramModalOpen} />
     <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen max-w-2xl mx-auto px-4 md:px-8">
 
       {/* Header */}
@@ -505,15 +509,24 @@ export default function CoachPage() {
               : 'Loading...'}
           </p>
         </div>
-        {usage?.tier === 'free' && (
-          <Link
-            href="/plus"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setProgramModalOpen(true)}
             className="flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
           >
-            <Sparkles className="size-3" />
-            Upgrade
-          </Link>
-        )}
+            <CalendarDays className="size-3" />
+            Build Program
+          </button>
+          {usage?.tier === 'free' && (
+            <Link
+              href="/plus"
+              className="flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <Sparkles className="size-3" />
+              Upgrade
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
@@ -622,5 +635,6 @@ export default function CoachPage() {
         </div>
       </div>
     </div>
+    </>
   )
 }
