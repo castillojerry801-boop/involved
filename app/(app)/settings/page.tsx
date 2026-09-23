@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
+import { AppleHealthCard } from '@/components/settings/AppleHealthCard'
 
 export default function SettingsPage() {
   const { unit, setUnit } = useWeightUnit()
@@ -52,6 +53,8 @@ export default function SettingsPage() {
             )}
           </div>
         </div>
+
+        <AppleHealthCard />
 
       </div>
     </div>

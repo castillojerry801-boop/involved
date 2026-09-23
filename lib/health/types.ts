@@ -20,6 +20,10 @@ export type HealthActivityType =
   | 'hiit'
   | 'rowing'
   | 'other'
+  | 'functional_strength'
+  | 'elliptical'
+  | 'stair_climbing'
+  | 'cross_training'
 
 export type HealthMetricType =
   | 'steps'

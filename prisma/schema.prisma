@@ -1274,6 +1274,10 @@ enum HealthActivityType {
   hiit
   rowing
   other
+  functional_strength
+  elliptical
+  stair_climbing
+  cross_training
 }
 
 enum HealthMetricType {

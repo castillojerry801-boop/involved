@@ -122,7 +122,7 @@ function PrescriptionEditor({
               min={1}
               value={prescription.repsMin ?? ''}
               onChange={e => u('repsMin', e.target.value ? parseInt(e.target.value) : null)}
-              placeholder="lo"
+              placeholder="8"
               className="w-10 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-1.5 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
             />
             <span className="text-xs text-zinc-300">–</span>
@@ -131,7 +131,7 @@ function PrescriptionEditor({
               min={1}
               value={prescription.repsMax ?? ''}
               onChange={e => u('repsMax', e.target.value ? parseInt(e.target.value) : null)}
-              placeholder="hi"
+              placeholder="12"
               className="w-10 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-1.5 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
             />
             <span className="text-xs text-zinc-400">reps</span>
@@ -398,8 +398,8 @@ export default function ProgramBuilder({
     initialDays ?? [{ key: 'day-0', name: 'Day 1', weekday: null, focus: '', exercises: [] }]
   )
   const [weekdayMode, setWeekdayMode] = useState(() => {
-    const src = initialDays ?? []
-    return src.length > 0 && src.some(d => d.weekday != null)
+    if (!initialDays) return true  // new programs default to weekly schedule
+    return initialDays.some(d => d.weekday != null)
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')

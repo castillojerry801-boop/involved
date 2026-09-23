@@ -1,0 +1,5 @@
+<!-- Add these keys to ios/App/App/Info.plist under the root <dict> -->
+<key>NSHealthShareUsageDescription</key>
+<string>Involved reads your workouts, heart rate, and body weight from Apple Health to give you a complete picture of your training history.</string>
+<key>NSHealthUpdateUsageDescription</key>
+<string>Involved does not write data to Apple Health.</string>
