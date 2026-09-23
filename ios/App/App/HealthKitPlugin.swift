@@ -14,7 +14,7 @@ public class HealthKitPlugin: CAPPlugin {
 
     // ─── Permissions ──────────────────────────────────────────────────────────
 
-    @objc func requestPermissions(_ call: CAPPluginCall) {
+    public override func requestPermissions(_ call: CAPPluginCall) {
         guard HKHealthStore.isHealthDataAvailable() else {
             call.reject("HealthKit not available on this device")
             return

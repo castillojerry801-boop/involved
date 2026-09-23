@@ -5,9 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Involved',
   webDir: 'out',
   server: {
-    // Production: set CAPACITOR_SERVER_URL to your Vercel deployment URL
-    // Development: http://localhost:3000
-    url: process.env.CAPACITOR_SERVER_URL || 'http://localhost:3000',
+    url: process.env.CAPACITOR_SERVER_URL || 'https://www.involvedfit.com',
     cleartext: false,
     androidScheme: 'https',
   },
