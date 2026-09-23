@@ -73,6 +73,11 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
           <div key={day.id} className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-zinc-50 dark:border-zinc-800">
               <div>
+                {(day as unknown as { weekday: number | null }).weekday != null && (
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-0.5">
+                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][(day as unknown as { weekday: number }).weekday]}
+                  </p>
+                )}
                 <h2 className="font-bold text-sm text-zinc-900 dark:text-white">{day.name}</h2>
                 <p className="text-xs text-zinc-400">{day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}</p>
               </div>

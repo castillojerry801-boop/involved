@@ -2,12 +2,14 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Dumbbell, Plus, ChevronRight, BookOpen, ClipboardList, Calendar, PlayCircle, CheckCircle2, Zap, LayoutTemplate, BarChart2, Calculator, Target } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { searchExercises, getGifUrl } from '@/lib/exercises'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
+import { jsToWeekday, resolveScheduledDay, upcomingSchedule, WEEKDAY_FULL } from '@/lib/training/program-scheduling'
 
 export const metadata: Metadata = { title: 'Training' }
 
@@ -82,6 +84,18 @@ export default async function TrainingPage() {
     getUserEntitlement(user.id),
   ])
 
+  const todayWd = jsToWeekday(new Date().getDay())
+  const schedulableDays = activeProgram
+    ? activeProgram.days.map(d => ({
+        id: d.id,
+        name: d.name,
+        weekday: (d as unknown as { weekday: number | null }).weekday,
+        exerciseCount: d._count.exercises,
+      }))
+    : []
+  const todayDay = activeProgram ? resolveScheduledDay(schedulableDays, todayWd) : null
+  const upcoming = activeProgram ? upcomingSchedule(schedulableDays, todayWd) : []
+
   const trainerPrograms = ent.isTrainer
     ? await prisma.trainerProgram.findMany({
         where: { trainerId: user.id, isArchived: false },
@@ -140,6 +154,59 @@ export default async function TrainingPage() {
                 </Link>
               )
             })}
+          </div>
+        </section>
+      )}
+
+      {/* Today's workout */}
+      {activeProgram && todayDay && (
+        <section className="mb-6">
+          <h2 className="font-bold text-zinc-900 dark:text-white mb-3">Today&apos;s workout</h2>
+          <div className="rounded-2xl border-2 border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-900/10 px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-0.5">
+                  {WEEKDAY_FULL[todayWd]} · {activeProgram.name}
+                </p>
+                <p className="font-bold text-zinc-900 dark:text-white">{todayDay.name}</p>
+                <p className="text-xs text-zinc-500">{todayDay.exerciseCount} exercise{todayDay.exerciseCount !== 1 ? 's' : ''}</p>
+              </div>
+              <Link href={`/training/workout/new?programDayId=${todayDay.id}`}>
+                <Button size="sm">
+                  <PlayCircle className="size-4" />
+                  Start
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Upcoming schedule */}
+      {activeProgram && upcoming.some(u => u.day != null) && (
+        <section className="mb-6">
+          <h2 className="font-bold text-zinc-900 dark:text-white mb-3">This week</h2>
+          <div className="grid grid-cols-6 gap-1.5">
+            {upcoming.map(({ weekday, label, day }) => (
+              <div
+                key={weekday}
+                className={cn(
+                  'rounded-xl p-2 text-center',
+                  day
+                    ? 'bg-zinc-900 dark:bg-white'
+                    : 'bg-zinc-100 dark:bg-zinc-800'
+                )}
+              >
+                <p className={cn('text-[9px] font-bold uppercase tracking-wide', day ? 'text-zinc-400 dark:text-zinc-500' : 'text-zinc-400')}>
+                  {label}
+                </p>
+                {day ? (
+                  <p className="text-[10px] font-semibold text-white dark:text-zinc-900 mt-0.5 truncate">{day.name}</p>
+                ) : (
+                  <p className="text-[10px] text-zinc-400 mt-0.5">–</p>
+                )}
+              </div>
+            ))}
           </div>
         </section>
       )}

@@ -12,6 +12,8 @@ export default function NewProgramPage() {
       description: description.trim() || undefined,
       days: days.map((d, di) => ({
         name: d.name.trim() || `Day ${di + 1}`,
+        weekday: d.weekday ?? undefined,
+        focus: d.focus?.trim() || undefined,
         sortOrder: di,
         exercises: d.exercises.map((ex, ei) => ({
           exerciseId: ex.exerciseId,
@@ -25,6 +27,7 @@ export default function NewProgramPage() {
             targetRepsMin: s.targetRepsMin ?? undefined,
             targetRepsMax: s.targetRepsMax ?? undefined,
             targetWeightKg: s.targetWeightKg ?? undefined,
+            targetDurationSeconds: s.targetDurationSeconds ?? undefined,
             restSeconds: s.restSeconds ?? undefined,
           })),
         })),

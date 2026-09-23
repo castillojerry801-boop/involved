@@ -383,6 +383,7 @@ model ProgramDay {
   programId                String            @map("program_id") @db.Uuid
   name                     String            @db.VarChar(200)
   focus                    String?           @db.VarChar(300)
+  weekday                  Int?              @map("weekday")
   estimatedDurationMinutes Int?              @map("estimated_duration_minutes")
   sortOrder                Int               @default(0) @map("sort_order")
   createdAt                DateTime          @default(now()) @map("created_at")

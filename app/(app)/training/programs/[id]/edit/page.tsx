@@ -12,6 +12,8 @@ interface LoadedSet {
   targetRepsMin: number | null
   targetRepsMax: number | null
   targetWeightKg: number | null
+  targetDurationSeconds: number | null
+  targetDistanceM: number | null
   restSeconds: number | null
 }
 
@@ -29,6 +31,8 @@ interface LoadedExercise {
 interface LoadedDay {
   id: string
   name: string
+  weekday: number | null
+  focus: string | null
   sortOrder: number
   exercises: LoadedExercise[]
 }
@@ -64,6 +68,8 @@ export default function EditProgramPage({ params }: { params: Promise<{ id: stri
       description: description.trim() || undefined,
       days: days.map((d, di) => ({
         name: d.name.trim() || `Day ${di + 1}`,
+        weekday: d.weekday ?? undefined,
+        focus: d.focus?.trim() || undefined,
         sortOrder: di,
         exercises: d.exercises.map((ex, ei) => ({
           exerciseId: ex.exerciseId,
@@ -77,6 +83,8 @@ export default function EditProgramPage({ params }: { params: Promise<{ id: stri
             targetRepsMin: s.targetRepsMin ?? undefined,
             targetRepsMax: s.targetRepsMax ?? undefined,
             targetWeightKg: s.targetWeightKg ?? undefined,
+            targetDurationSeconds: s.targetDurationSeconds ?? undefined,
+            targetDistanceM: s.targetDistanceM ?? undefined,
             restSeconds: s.restSeconds ?? undefined,
           })),
         })),
@@ -109,6 +117,8 @@ export default function EditProgramPage({ params }: { params: Promise<{ id: stri
   const initialDays: ProgramDay[] = program.days.map(day => ({
     key: day.id,
     name: day.name,
+    weekday: day.weekday ?? null,
+    focus: day.focus ?? '',
     exercises: day.exercises.map(ex => ({
       key: ex.id,
       exerciseId: ex.exerciseId,
@@ -123,7 +133,10 @@ export default function EditProgramPage({ params }: { params: Promise<{ id: stri
             targetRepsMin: s.targetRepsMin,
             targetRepsMax: s.targetRepsMax,
             targetWeightKg: s.targetWeightKg,
+            targetDurationSeconds: s.targetDurationSeconds,
+            targetDistanceM: s.targetDistanceM,
             restSeconds: s.restSeconds,
+            notes: null,
           }))
         : [defaultSet(1), defaultSet(2), defaultSet(3)],
     })),

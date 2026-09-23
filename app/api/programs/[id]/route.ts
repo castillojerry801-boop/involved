@@ -124,6 +124,8 @@ interface PutExerciseInput {
 
 interface PutDayInput {
   name: string
+  weekday?: number
+  focus?: string
   sortOrder?: number
   exercises?: PutExerciseInput[]
 }
@@ -173,6 +175,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
           data: {
             programId: id,
             name: day.name || `Day ${di + 1}`,
+            weekday: day.weekday ?? null,
+            focus: day.focus?.trim() ?? null,
             sortOrder: day.sortOrder ?? di,
           },
         })

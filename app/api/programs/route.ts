@@ -40,6 +40,8 @@ interface CreateProgramBody {
   description?: string
   days?: Array<{
     name: string
+    weekday?: number
+    focus?: string
     sortOrder?: number
     exercises?: Array<{
       exerciseId: string
@@ -89,6 +91,8 @@ export async function POST(req: NextRequest) {
         days: {
           create: (body.days ?? []).map((day, di) => ({
             name: day.name,
+            weekday: day.weekday ?? null,
+            focus: day.focus?.trim() ?? null,
             sortOrder: day.sortOrder ?? di,
             exercises: {
               create: (day.exercises ?? []).map((ex, ei) => ({
