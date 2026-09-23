@@ -165,6 +165,7 @@ export async function POST(req: NextRequest) {
     days: validated.days.map(day => ({
       name: day.name,
       focus: day.focus,
+      weekday: day.weekday,
       estimated_duration_minutes: day.estimated_duration_minutes ?? 45,
       exercises: day.exercises.map(ex => ({
         exercise_id: ex.exercise_id,

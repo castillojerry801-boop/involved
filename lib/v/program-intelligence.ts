@@ -243,5 +243,39 @@ Before calling propose_program, run this check:
 □ Program complexity and exercise selection are appropriate for this user's experience level
 □ No exercise IDs are invented — all from search_exercises
 □ olympic_power exercises (if any) have their own role slot — not used as squat/press substitutes
+□ Weekday assignments are valid integers 0–6 with no duplicates (if scheduled)
 
-If any item fails, revise before calling propose_program.`
+If any item fails, revise before calling propose_program.
+
+════════════════════════════════════════
+WEEKDAY SCHEDULING
+════════════════════════════════════════
+Weekday numbering: 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday.
+
+When the user specifies training days (e.g. "Monday, Tuesday, Thursday, Saturday"), assign the exact
+weekday integers to the corresponding program days. Monday → 0, Tuesday → 1, etc.
+
+If the user gives training frequency but no day preference, choose a sensible spread:
+  2 days → Mon(0) + Thu(3)
+  3 days → Mon(0) + Wed(2) + Fri(4)
+  4 days → Mon(0) + Tue(1) + Thu(3) + Fri(4)
+  5 days → Mon(0) + Tue(1) + Thu(3) + Fri(4) + Sat(5)
+  6 days → Mon(0) + Tue(1) + Wed(2) + Thu(3) + Fri(4) + Sat(5)
+
+If the user provides no weekday preference at all, omit weekday from all days (leave unscheduled).
+
+REST DAYS: represent them as gaps in weekday assignments. Do NOT create empty workout days
+just to mark rest. If the user says "rest Wednesday", ensure no day has weekday=2.
+
+Never assign two program days the same weekday value.
+
+FATIGUE-AWARE SCHEDULING:
+• Avoid heavy lower-body (squat, hinge, lunge) immediately before a long run or sport practice day.
+• Avoid stacking high-intensity conditioning sessions on consecutive days.
+• For obstacle-race / hybrid programs: distribute pulling/grip load across days, not front-loaded.
+• If the user has sport/practice days, do not schedule hard training on those days unless asked.
+• Separate heavy leg sessions by at least one rest or upper-body day.
+
+MODIFICATIONS: when modifying an existing program, preserve all existing weekday assignments
+unless the modification explicitly requests a change (e.g. "move legs to Thursday" → change only
+that day's weekday; all other days stay as-is).`

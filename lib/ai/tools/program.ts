@@ -18,6 +18,7 @@ export interface ProgramExercise {
 export interface ProgramDayDraft {
   name: string
   focus?: string
+  weekday?: number              // 0=Monday … 6=Sunday; omit if unscheduled
   estimated_duration_minutes: number
   exercises: ProgramExercise[]
 }
@@ -34,6 +35,7 @@ export interface ProgramDraft {
 export interface ValidatedProgramDay {
   name: string
   focus?: string
+  weekday?: number
   estimated_duration_minutes: number
   exercises: Array<ProgramExercise & { exercise: Exercise }>
 }
@@ -67,6 +69,21 @@ export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOp
     errors.push('Program must have at least one day')
   }
   if (draft.days.length > 7) errors.push('Program cannot have more than 7 days')
+
+  // Validate weekday assignments across all days (range + no duplicates)
+  const seenWeekdays = new Set<number>()
+  for (const day of draft.days ?? []) {
+    if (day.weekday !== undefined && day.weekday !== null) {
+      if (!Number.isInteger(day.weekday) || day.weekday < 0 || day.weekday > 6) {
+        errors.push(`Day "${day.name}": weekday must be an integer 0–6 (0=Monday…6=Sunday), got ${day.weekday}`)
+      } else if (seenWeekdays.has(day.weekday)) {
+        const labels = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+        errors.push(`Duplicate weekday assignment: two days are both scheduled on ${labels[day.weekday]} (weekday ${day.weekday})`)
+      } else {
+        seenWeekdays.add(day.weekday)
+      }
+    }
+  }
 
   const allowedEquipment = options?.allowedEquipment?.length
     ? new Set([...options.allowedEquipment.map(e => e.toLowerCase()), 'body weight'])
@@ -178,6 +195,7 @@ export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOp
       validatedDays.push({
         name: day.name.trim(),
         focus: day.focus?.trim(),
+        ...(day.weekday != null ? { weekday: day.weekday } : {}),
         estimated_duration_minutes: day.estimated_duration_minutes ?? 45,
         exercises: validatedExercises,
       })
@@ -239,6 +257,12 @@ export const PROPOSE_PROGRAM_TOOL = {
               focus: {
                 type: 'string',
                 description: 'Session focus in one phrase, e.g. "Quad-dominant strength + posterior chain accessory"',
+              },
+              weekday: {
+                type: 'integer',
+                minimum: 0,
+                maximum: 6,
+                description: 'Weekday this training day is scheduled: 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday. Omit if not scheduled on a specific weekday.',
               },
               estimated_duration_minutes: {
                 type: 'number',

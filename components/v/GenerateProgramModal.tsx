@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getGifUrl } from '@/lib/exercises'
 import { cn } from '@/lib/utils'
+import { WEEKDAY_FULL } from '@/lib/training/program-scheduling'
 import type { ProgramPreview, GenerationConstraints } from '@/app/api/v/generate-program/route'
 import type { ProgramDraft } from '@/lib/ai/tools/program'
 
@@ -129,6 +130,11 @@ function PreviewCard({ preview }: { preview: ProgramPreview }) {
                   {di + 1}
                 </span>
                 <div className="min-w-0">
+                  {day.weekday != null && (
+                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-0.5">
+                      {WEEKDAY_FULL[day.weekday]}
+                    </p>
+                  )}
                   <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{day.name}</p>
                   {day.focus && <p className="text-xs text-zinc-400 truncate">{day.focus}</p>}
                 </div>
