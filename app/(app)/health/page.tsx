@@ -7,7 +7,7 @@ import { Smartphone, Apple, Loader2, Plus, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { HealthVSummary, HealthActivityType } from '@/lib/health/types'
 import { isHealthKitAvailable } from '@/lib/native/healthkit'
-import { connectHealthKit } from '@/lib/native/healthkit-sync'
+import { connectHealthKit, disconnectHealthKit } from '@/lib/native/healthkit-sync'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -291,6 +291,7 @@ type AppleStatus = 'checking' | 'unavailable' | 'not_connected' | 'connected' | 
 function ConnectSection() {
   const [appleStatus, setAppleStatus] = useState<AppleStatus>('checking')
   const [connectError, setConnectError] = useState<string | null>(null)
+  const [disconnecting, setDisconnecting] = useState(false)
 
   useEffect(() => {
     isHealthKitAvailable().then((available) => {
@@ -306,6 +307,13 @@ function ConnectSection() {
         .catch(() => setAppleStatus('not_connected'))
     })
   }, [])
+
+  async function handleAppleDisconnect() {
+    setDisconnecting(true)
+    await disconnectHealthKit()
+    setAppleStatus('not_connected')
+    setDisconnecting(false)
+  }
 
   async function handleAppleConnect() {
     setConnectError(null)
@@ -362,9 +370,18 @@ function ConnectSection() {
             </div>
           )}
           {appleStatus === 'connected' && (
-            <div className="flex items-center gap-1.5">
-              <Check className="size-3.5 text-emerald-500" />
-              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Connected</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Check className="size-3.5 text-emerald-500" />
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Connected</span>
+              </div>
+              <button
+                onClick={handleAppleDisconnect}
+                disabled={disconnecting}
+                className="text-xs text-zinc-400 hover:text-red-500 transition-colors disabled:opacity-50"
+              >
+                {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+              </button>
             </div>
           )}
         </div>
@@ -494,9 +511,9 @@ export default function HealthPage() {
           {summary!.latestWeightKg !== undefined && (
             <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-center">
               <p className="text-xl font-black text-zinc-900 dark:text-white">
-                {summary!.latestWeightKg}
+                {(summary!.latestWeightKg * 2.20462).toFixed(1)}
               </p>
-              <p className="text-xs text-zinc-500 mt-0.5">kg body wt</p>
+              <p className="text-xs text-zinc-500 mt-0.5">lbs body wt</p>
             </div>
           )}
         </div>
@@ -598,7 +615,7 @@ export default function HealthPage() {
               <CardHeader><CardTitle>Body Weight</CardTitle></CardHeader>
               <div>
                 <p className="text-2xl font-black text-zinc-900 dark:text-white">
-                  {summary.latestWeightKg} kg
+                  {(summary.latestWeightKg * 2.20462).toFixed(1)} lbs
                 </p>
                 <p className="text-xs text-zinc-500 mt-0.5">
                   Recorded {summary.latestWeightDate}
