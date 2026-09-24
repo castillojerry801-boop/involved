@@ -52,10 +52,6 @@ export async function isHealthKitAvailable(): Promise<boolean> {
     console.log('[Involved] isHealthKitAvailable: false — not native platform')
     return false
   }
-  if (!pluginAvailable) {
-    console.log('[Involved] isHealthKitAvailable: false — HealthKit plugin not registered')
-    return false
-  }
   try {
     const { available } = await HealthKit.isAvailable()
     console.log('[Involved] HealthKit.isAvailable() native result:', available)
