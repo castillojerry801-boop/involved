@@ -1,4 +1,4 @@
-import { registerPlugin } from '@capacitor/core'
+import { Capacitor, registerPlugin } from '@capacitor/core'
 
 interface HealthKitPlugin {
   isAvailable(): Promise<{ available: boolean }>
@@ -40,15 +40,28 @@ export interface RawRHRSample {
 const HealthKit = registerPlugin<HealthKitPlugin>('HealthKit')
 
 export function isNativeApp(): boolean {
-  return typeof (window as any)?.Capacitor !== 'undefined'
+  return Capacitor.isNativePlatform()
 }
 
 export async function isHealthKitAvailable(): Promise<boolean> {
-  if (!isNativeApp()) return false
+  const platform = Capacitor.getPlatform()
+  const pluginAvailable = Capacitor.isPluginAvailable('HealthKit')
+  console.log('[Involved] platform:', platform, '| HealthKit in PluginHeaders:', pluginAvailable)
+
+  if (!isNativeApp()) {
+    console.log('[Involved] isHealthKitAvailable: false — not native platform')
+    return false
+  }
+  if (!pluginAvailable) {
+    console.log('[Involved] isHealthKitAvailable: false — HealthKit plugin not registered')
+    return false
+  }
   try {
     const { available } = await HealthKit.isAvailable()
+    console.log('[Involved] HealthKit.isAvailable() native result:', available)
     return available
-  } catch {
+  } catch (err) {
+    console.log('[Involved] HealthKit.isAvailable() threw:', String(err))
     return false
   }
 }

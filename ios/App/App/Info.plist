@@ -24,11 +24,6 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>WKAppBoundDomains</key>
-	<array>
-		<string>involvedfit.com</string>
-		<string>www.involvedfit.com</string>
-	</array>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Involved reads your workouts, weight, and resting heart rate from Apple Health to show your training history in one place. No data is written back to Health.</string>
 	<key>UIApplicationSceneManifest</key>
@@ -73,5 +68,10 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>WKAppBoundDomains</key>
+	<array>
+		<string>involvedfit.com</string>
+		<string>www.involvedfit.com</string>
+	</array>
 </dict>
 </plist>
