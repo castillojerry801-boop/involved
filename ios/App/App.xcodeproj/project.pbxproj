@@ -18,6 +18,7 @@
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		AABB000000000001AABB0002 /* HealthKitPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABB000000000001AABB0001 /* HealthKitPlugin.swift */; };
 		AABB000000000001AABB0004 /* HealthKitPlugin.m in Sources */ = {isa = PBXBuildFile; fileRef = AABB000000000001AABB0003 /* HealthKitPlugin.m */; };
+		AABB000000000001AABB0006 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABB000000000001AABB0005 /* ViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +36,7 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		AABB000000000001AABB0001 /* HealthKitPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitPlugin.swift; sourceTree = "<group>"; };
 		AABB000000000001AABB0003 /* HealthKitPlugin.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HealthKitPlugin.m; sourceTree = "<group>"; };
+		AABB000000000001AABB0005 /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -81,6 +83,7 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 				AABB000000000001AABB0001 /* HealthKitPlugin.swift */,
 				AABB000000000001AABB0003 /* HealthKitPlugin.m */,
+				AABB000000000001AABB0005 /* ViewController.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -170,6 +173,7 @@
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				AABB000000000001AABB0002 /* HealthKitPlugin.swift in Sources */,
 				AABB000000000001AABB0004 /* HealthKitPlugin.m in Sources */,
+				AABB000000000001AABB0006 /* ViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
