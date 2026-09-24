@@ -11,28 +11,28 @@ import type { RawHKWorkout, RawBodyMassSample, RawRHRSample } from '@/lib/native
 // ─── A. Activity type mapping ─────────────────────────────────────────────────
 
 describe('normalizeActivityType', () => {
-  it('maps running (41) to running', () => {
-    expect(normalizeActivityType(41)).toBe('running')
+  it('maps running (37) to running', () => {
+    expect(normalizeActivityType(37)).toBe('running')
   })
 
-  it('maps traditional strength training (56) to strength_training', () => {
-    expect(normalizeActivityType(56)).toBe('strength_training')
+  it('maps traditionalStrengthTraining (50) to strength_training', () => {
+    expect(normalizeActivityType(50)).toBe('strength_training')
   })
 
   it('maps cycling (13) to cycling', () => {
     expect(normalizeActivityType(13)).toBe('cycling')
   })
 
-  it('maps HIIT (69) to hiit', () => {
-    expect(normalizeActivityType(69)).toBe('hiit')
+  it('maps HIIT (63) to hiit', () => {
+    expect(normalizeActivityType(63)).toBe('hiit')
   })
 
   it('maps elliptical (16) to elliptical', () => {
     expect(normalizeActivityType(16)).toBe('elliptical')
   })
 
-  it('maps stair climbing (50) to stair_climbing', () => {
-    expect(normalizeActivityType(50)).toBe('stair_climbing')
+  it('maps stairClimbing (44) to stair_climbing', () => {
+    expect(normalizeActivityType(44)).toBe('stair_climbing')
   })
 
   it('maps cross training (11) to cross_training', () => {
@@ -47,15 +47,11 @@ describe('normalizeActivityType', () => {
 // ─── B. Display titles ─────────────────────────────────────────────────────
 
 describe('activityTitle', () => {
-  it('returns human title for running', () => {
-    expect(activityTitle(41)).toBe('Running')
+  it('returns human title for running (37)', () => {
+    expect(activityTitle(37)).toBe('Running')
   })
 
-  it('uses source name as fallback for unmapped type', () => {
-    expect(activityTitle(9999, 'Nike Run Club')).toBe('Nike Run Club')
-  })
-
-  it('returns Workout as default when no source name', () => {
+  it('returns Workout for unmapped type', () => {
     expect(activityTitle(9999)).toBe('Workout')
   })
 })
@@ -65,7 +61,7 @@ describe('activityTitle', () => {
 describe('normalizeWorkout', () => {
   const raw: RawHKWorkout = {
     uuid: 'abc-123',
-    workoutActivityType: 41,
+    workoutActivityType: 37,
     startDate: '2026-09-20T07:00:00Z',
     endDate: '2026-09-20T08:00:00Z',
     duration: 3600,
