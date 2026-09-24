@@ -82,24 +82,24 @@ export async function requestHealthKitPermissions(): Promise<boolean> {
 
 export async function queryWorkouts(startDate: Date, endDate: Date): Promise<RawHKWorkout[]> {
   const { workouts } = await HealthKit.queryWorkouts({
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
+    startDate: startDate.toISOString().slice(0, 19) + 'Z',
+    endDate: endDate.toISOString().slice(0, 19) + 'Z',
   })
   return workouts
 }
 
 export async function queryBodyMass(startDate: Date, endDate: Date): Promise<RawBodyMassSample[]> {
   const { samples } = await HealthKit.queryBodyMass({
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
+    startDate: startDate.toISOString().slice(0, 19) + 'Z',
+    endDate: endDate.toISOString().slice(0, 19) + 'Z',
   })
   return samples
 }
 
 export async function queryRestingHeartRate(startDate: Date, endDate: Date): Promise<RawRHRSample[]> {
   const { samples } = await HealthKit.queryRestingHeartRate({
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
+    startDate: startDate.toISOString().slice(0, 19) + 'Z',
+    endDate: endDate.toISOString().slice(0, 19) + 'Z',
   })
   return samples
 }
