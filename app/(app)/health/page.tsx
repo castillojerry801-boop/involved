@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Smartphone, Apple, Loader2, Plus, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { HealthVSummary, HealthActivityType } from '@/lib/health/types'
-import { isHealthKitAvailable } from '@/lib/native/healthkit'
+import { isHealthKitAvailable, debugHealthKit } from '@/lib/native/healthkit'
 import { connectHealthKit } from '@/lib/native/healthkit-sync'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -291,8 +291,10 @@ type AppleStatus = 'checking' | 'unavailable' | 'not_connected' | 'connected' | 
 function ConnectSection() {
   const [appleStatus, setAppleStatus] = useState<AppleStatus>('checking')
   const [connectError, setConnectError] = useState<string | null>(null)
+  const [debugInfo, setDebugInfo] = useState<string | null>(null)
 
   useEffect(() => {
+    debugHealthKit().then(setDebugInfo)
     isHealthKitAvailable().then((available) => {
       if (!available) {
         setAppleStatus('unavailable')
@@ -342,7 +344,12 @@ function ConnectSection() {
             <div className="h-5 w-28 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
           )}
           {appleStatus === 'unavailable' && (
-            <Badge variant="warning" className="text-xs">Requires native iOS app</Badge>
+            <div className="space-y-1">
+              <Badge variant="warning" className="text-xs">Requires native iOS app</Badge>
+              {debugInfo && (
+                <p className="text-[10px] font-mono text-red-500 dark:text-red-400 break-all">{debugInfo}</p>
+              )}
+            </div>
           )}
           {appleStatus === 'not_connected' && (
             <div className="space-y-1.5">

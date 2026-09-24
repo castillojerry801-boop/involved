@@ -43,6 +43,19 @@ export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform()
 }
 
+export async function debugHealthKit(): Promise<string> {
+  const platform = Capacitor.getPlatform()
+  const native = Capacitor.isNativePlatform()
+  const inHeaders = Capacitor.isPluginAvailable('HealthKit')
+  if (!native) return `${platform} | not-native`
+  try {
+    const result = await HealthKit.isAvailable()
+    return `${platform} | headers:${inHeaders} | avail:${result.available}`
+  } catch (e) {
+    return `${platform} | headers:${inHeaders} | threw:${String(e).slice(0, 80)}`
+  }
+}
+
 export async function isHealthKitAvailable(): Promise<boolean> {
   const platform = Capacitor.getPlatform()
   const pluginAvailable = Capacitor.isPluginAvailable('HealthKit')
