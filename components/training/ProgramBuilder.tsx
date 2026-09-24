@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 import Link from 'next/link'
 import { ArrowLeft, Plus, Trash2, Copy, Loader2, Calendar } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -100,6 +101,7 @@ function PrescriptionEditor({
 
   const u = <K extends keyof QuickPrescription>(field: K, value: QuickPrescription[K]) =>
     onChange({ ...prescription, [field]: value })
+  const { unit, toDisplay, fromInput } = useWeightUnit()
 
   return (
     <div className="mt-2 space-y-2">
@@ -111,6 +113,7 @@ function PrescriptionEditor({
             max={20}
             value={prescription.sets}
             onChange={e => u('sets', Math.max(1, parseInt(e.target.value) || 1))}
+            onFocus={e => e.currentTarget.select()}
             className="w-12 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1.5 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
           />
           <span className="text-xs text-zinc-400">sets</span>
@@ -122,6 +125,7 @@ function PrescriptionEditor({
               min={1}
               value={prescription.repsMin ?? ''}
               onChange={e => u('repsMin', e.target.value ? parseInt(e.target.value) : null)}
+              onFocus={e => e.currentTarget.select()}
               placeholder="8"
               className="w-10 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-1.5 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
             />
@@ -131,6 +135,7 @@ function PrescriptionEditor({
               min={1}
               value={prescription.repsMax ?? ''}
               onChange={e => u('repsMax', e.target.value ? parseInt(e.target.value) : null)}
+              onFocus={e => e.currentTarget.select()}
               placeholder="12"
               className="w-10 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-1.5 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
             />
@@ -144,6 +149,7 @@ function PrescriptionEditor({
               min={1}
               value={prescription.duration ?? ''}
               onChange={e => u('duration', e.target.value ? parseInt(e.target.value) : null)}
+              onFocus={e => e.currentTarget.select()}
               placeholder="sec"
               className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1.5 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
             />
@@ -156,6 +162,7 @@ function PrescriptionEditor({
             min={0}
             value={prescription.rest}
             onChange={e => u('rest', parseInt(e.target.value) || 0)}
+            onFocus={e => e.currentTarget.select()}
             className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1.5 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
           />
           <span className="text-xs text-zinc-400">s rest</span>
@@ -168,12 +175,13 @@ function PrescriptionEditor({
               type="number"
               min={0}
               step={0.5}
-              value={prescription.baseWeightKg ?? ''}
-              onChange={e => u('baseWeightKg', e.target.value ? parseFloat(e.target.value) : null)}
-              placeholder="base kg"
+              value={toDisplay(prescription.baseWeightKg)}
+              onChange={e => u('baseWeightKg', fromInput(e.target.value) ?? null)}
+              onFocus={e => e.currentTarget.select()}
+              placeholder={`base ${unit}`}
               className="w-20 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1.5 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
             />
-            <span className="text-xs text-zinc-400">kg</span>
+            <span className="text-xs text-zinc-400">{unit}</span>
           </div>
           <select
             value={prescription.progressionMode}
@@ -191,12 +199,13 @@ function PrescriptionEditor({
                 type="number"
                 min={0}
                 step={0.5}
-                value={prescription.progressionStep ?? ''}
-                onChange={e => u('progressionStep', e.target.value ? parseFloat(e.target.value) : null)}
+                value={toDisplay(prescription.progressionStep)}
+                onChange={e => u('progressionStep', fromInput(e.target.value) ?? null)}
+                onFocus={e => e.currentTarget.select()}
                 placeholder="step"
                 className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1.5 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
               />
-              <span className="text-xs text-zinc-400">kg/set</span>
+              <span className="text-xs text-zinc-400">{unit}/set</span>
             </div>
           )}
         </div>
@@ -252,6 +261,7 @@ function AdvancedSetEditor({
               type="number"
               value={s.targetWeightKg ?? ''}
               onChange={e => update(i, 'targetWeightKg', e.target.value ? parseFloat(e.target.value) : null)}
+              onFocus={e => e.currentTarget.select()}
               placeholder="–"
               className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
             />
@@ -262,6 +272,7 @@ function AdvancedSetEditor({
                 type="number"
                 value={s.targetRepsMin ?? ''}
                 onChange={e => update(i, 'targetRepsMin', e.target.value ? parseInt(e.target.value) : null)}
+                onFocus={e => e.currentTarget.select()}
                 placeholder="lo"
                 className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
               />
@@ -270,6 +281,7 @@ function AdvancedSetEditor({
                 type="number"
                 value={s.targetRepsMax ?? ''}
                 onChange={e => update(i, 'targetRepsMax', e.target.value ? parseInt(e.target.value) : null)}
+                onFocus={e => e.currentTarget.select()}
                 placeholder="hi"
                 className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
               />
@@ -280,6 +292,7 @@ function AdvancedSetEditor({
             type="number"
             value={s.restSeconds ?? ''}
             onChange={e => update(i, 'restSeconds', e.target.value ? parseInt(e.target.value) : null)}
+            onFocus={e => e.currentTarget.select()}
             placeholder="s"
             className="rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-1 text-xs text-center text-zinc-900 dark:text-white focus:outline-none"
           />
