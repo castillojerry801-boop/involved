@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge'
 import { Smartphone, Apple, Loader2, Plus, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { HealthVSummary, HealthActivityType } from '@/lib/health/types'
+import { isHealthKitAvailable } from '@/lib/native/healthkit'
+import { connectHealthKit } from '@/lib/native/healthkit-sync'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -284,12 +286,48 @@ function LogActivityForm({ onSaved }: { onSaved: () => void }) {
 
 // ─── Connect section ──────────────────────────────────────────────────────────
 
+type AppleStatus = 'checking' | 'unavailable' | 'not_connected' | 'connected' | 'connecting'
+
 function ConnectSection() {
+  const [appleStatus, setAppleStatus] = useState<AppleStatus>('checking')
+  const [connectError, setConnectError] = useState<string | null>(null)
+
+  useEffect(() => {
+    isHealthKitAvailable().then((available) => {
+      if (!available) {
+        setAppleStatus('unavailable')
+        return
+      }
+      fetch('/api/healthkit/status')
+        .then(r => r.ok ? r.json() : { connected: false })
+        .then((data: { connected: boolean }) => {
+          setAppleStatus(data.connected ? 'connected' : 'not_connected')
+        })
+        .catch(() => setAppleStatus('not_connected'))
+    })
+  }, [])
+
+  async function handleAppleConnect() {
+    setConnectError(null)
+    setAppleStatus('connecting')
+    const result = await connectHealthKit()
+    if (result.success) {
+      setAppleStatus('connected')
+    } else {
+      setConnectError(result.error ?? 'Could not connect to Apple Health')
+      setAppleStatus('not_connected')
+    }
+  }
+
+  const isNativeIOS = appleStatus !== 'unavailable' && appleStatus !== 'checking'
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-zinc-500">
-        Automatic sync with health platforms requires the native iOS or Android app.
-        Manual logging is available now from the Log tab.
+        {isNativeIOS
+          ? 'Connect Apple Health to automatically import workouts, heart rate, and body weight.'
+          : 'Automatic sync with health platforms requires the native iOS or Android app. Manual logging is available now from the Log tab.'
+        }
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
@@ -300,7 +338,35 @@ function ConnectSection() {
           <p className="text-xs text-zinc-500 mb-2">
             Syncs workouts, steps, heart rate, sleep, and more via HealthKit.
           </p>
-          <Badge variant="warning" className="text-xs">Requires native iOS app</Badge>
+          {appleStatus === 'checking' && (
+            <div className="h-5 w-28 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+          )}
+          {appleStatus === 'unavailable' && (
+            <Badge variant="warning" className="text-xs">Requires native iOS app</Badge>
+          )}
+          {appleStatus === 'not_connected' && (
+            <div className="space-y-1.5">
+              <button
+                onClick={handleAppleConnect}
+                className="rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-4 py-2 text-xs font-semibold hover:bg-zinc-700 dark:hover:bg-zinc-100 transition-colors"
+              >
+                Connect
+              </button>
+              {connectError && <p className="text-xs text-red-500">{connectError}</p>}
+            </div>
+          )}
+          {appleStatus === 'connecting' && (
+            <div className="flex items-center gap-2">
+              <Loader2 className="size-4 animate-spin text-zinc-400" />
+              <span className="text-xs text-zinc-400">Connecting…</span>
+            </div>
+          )}
+          {appleStatus === 'connected' && (
+            <div className="flex items-center gap-1.5">
+              <Check className="size-3.5 text-emerald-500" />
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Connected</span>
+            </div>
+          )}
         </div>
         <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
           <div className="flex items-center gap-2 mb-2">
