@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Smartphone, Apple, Loader2, Plus, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { HealthVSummary, HealthActivityType } from '@/lib/health/types'
-import { isHealthKitAvailable, debugHealthKit } from '@/lib/native/healthkit'
+import { isHealthKitAvailable } from '@/lib/native/healthkit'
 import { connectHealthKit } from '@/lib/native/healthkit-sync'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -291,10 +291,8 @@ type AppleStatus = 'checking' | 'unavailable' | 'not_connected' | 'connected' | 
 function ConnectSection() {
   const [appleStatus, setAppleStatus] = useState<AppleStatus>('checking')
   const [connectError, setConnectError] = useState<string | null>(null)
-  const [debugInfo, setDebugInfo] = useState<string | null>(null)
 
   useEffect(() => {
-    debugHealthKit().then(setDebugInfo)
     isHealthKitAvailable().then((available) => {
       if (!available) {
         setAppleStatus('unavailable')
@@ -344,12 +342,7 @@ function ConnectSection() {
             <div className="h-5 w-28 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
           )}
           {appleStatus === 'unavailable' && (
-            <div className="space-y-1">
-              <Badge variant="warning" className="text-xs">Requires native iOS app</Badge>
-              {debugInfo && (
-                <p className="text-[10px] font-mono text-red-500 dark:text-red-400 break-all">{debugInfo}</p>
-              )}
-            </div>
+            <Badge variant="warning" className="text-xs">Requires native iOS app</Badge>
           )}
           {appleStatus === 'not_connected' && (
             <div className="space-y-1.5">
@@ -510,16 +503,16 @@ export default function HealthPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-zinc-200 dark:border-zinc-700 mb-6">
+      <div className="flex border-b border-zinc-200 dark:border-zinc-700 mb-6">
         {tabs.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+              'flex-1 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors text-center',
               tab === t.id
                 ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
-                : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+                : 'border-transparent text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white'
             )}
           >
             {t.label}
