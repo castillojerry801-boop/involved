@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { User, Settings, ChevronRight, Trophy, Target, LogOut, Sparkles, Camera, Plus, Trash2, Loader2, X, Lock } from 'lucide-react'
+import { User, Settings, ChevronRight, Trophy, Target, LogOut, Sparkles, Camera, Plus, Trash2, Loader2, X, Lock, FileText, HelpCircle, Shield } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
@@ -141,6 +141,14 @@ export default function ProfilePage() {
       items: [
         { icon: User, label: 'Edit profile', href: '/profile/edit' },
         { icon: Settings, label: 'Settings', href: '/settings' },
+      ],
+    },
+    {
+      title: 'Legal',
+      items: [
+        { icon: Shield, label: 'Privacy Policy', href: '/privacy' },
+        { icon: FileText, label: 'Terms of Service', href: '/terms' },
+        { icon: HelpCircle, label: 'Support', href: '/support' },
       ],
     },
   ]

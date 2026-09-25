@@ -224,7 +224,12 @@ export default function LandingPage() {
       <footer className="border-t border-zinc-200/30 bg-white/70 px-6 py-8 backdrop-blur-md dark:border-zinc-700/30 dark:bg-zinc-950/70">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 text-sm text-zinc-400 sm:flex-row">
           <InvolvedLogo size="sm" variant="wordmark" />
-          <p>© 2026 Involved. All rights reserved.</p>
+          <div className="flex items-center gap-5">
+            <Link href="/privacy" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Privacy</Link>
+            <Link href="/terms" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Terms</Link>
+            <Link href="/support" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Support</Link>
+          </div>
+          <p>© 2026 GameFloHQ LLC. All rights reserved.</p>
         </div>
       </footer>
     </div>
