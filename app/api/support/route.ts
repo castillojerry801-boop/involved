@@ -1,7 +1,8 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
-import { resend, FROM_EMAIL } from '@/lib/email'
+import { resend } from '@/lib/email'
 
+const SUPPORT_FROM = 'Involved Support <support@involvedfit.com>'
 const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL ?? 'support@involvedfit.com'
 
 // In-memory IP rate limit: 3 submissions per IP per 10 min.
@@ -101,7 +102,7 @@ export async function POST(request: NextRequest) {
 
   try {
     await resend.emails.send({
-      from: FROM_EMAIL,
+      from: SUPPORT_FROM,
       to: SUPPORT_EMAIL,
       replyTo: email,
       subject: `[Support] ${safeCategory} — ${name}`,
