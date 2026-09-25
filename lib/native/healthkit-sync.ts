@@ -4,11 +4,16 @@ import {
   queryWorkouts,
   queryBodyMass,
   queryRestingHeartRate,
+  querySteps,
+  queryDailyEnergy,
 } from './healthkit'
 import {
   normalizeWorkout,
   normalizeBodyMass,
   normalizeRHR,
+  normalizeStepDay,
+  normalizeDailyActiveEnergy,
+  normalizeDailyBasalEnergy,
   type NormalizedWorkout,
   type NormalizedMetric,
 } from './healthkit-normalizer'
@@ -46,14 +51,22 @@ async function syncWorkouts(startDate: Date, endDate: Date): Promise<{ synced: n
 }
 
 async function syncMetrics(startDate: Date, endDate: Date): Promise<{ synced: number; errors: number }> {
-  const [bodyMassRaw, rhrRaw] = await Promise.all([
+  const [bodyMassRaw, rhrRaw, stepsRaw, dailyEnergyRaw] = await Promise.all([
     queryBodyMass(startDate, endDate),
     queryRestingHeartRate(startDate, endDate),
+    querySteps(startDate, endDate),
+    queryDailyEnergy(startDate, endDate),
   ])
 
   const metrics: NormalizedMetric[] = [
     ...bodyMassRaw.map(normalizeBodyMass),
     ...rhrRaw.map(normalizeRHR),
+    ...stepsRaw.map(normalizeStepDay),
+    ...dailyEnergyRaw.flatMap(r => {
+      const active = normalizeDailyActiveEnergy(r)
+      const basal  = normalizeDailyBasalEnergy(r)
+      return [active, basal].filter((m): m is NormalizedMetric => m !== null)
+    }),
   ]
 
   let synced = 0

@@ -1,4 +1,4 @@
-import type { RawHKWorkout, RawBodyMassSample, RawRHRSample } from './healthkit'
+import type { RawHKWorkout, RawBodyMassSample, RawRHRSample, RawStepDay, RawDailyEnergy } from './healthkit'
 
 // Raw values verified against:
 // HKWorkoutActivityType.h — HealthKit SDK (iOS 8–17, Xcode 16)
@@ -160,7 +160,7 @@ export function normalizeWorkout(raw: RawHKWorkout): NormalizedWorkout {
 export interface NormalizedMetric {
   externalId: string
   provider: 'apple_health'
-  metricType: 'body_weight_kg' | 'heart_rate_resting_bpm'
+  metricType: 'body_weight_kg' | 'heart_rate_resting_bpm' | 'steps' | 'active_energy_kcal' | 'resting_energy_kcal'
   value: number
   unit: string
   recordedAt: string
@@ -185,5 +185,46 @@ export function normalizeRHR(raw: RawRHRSample): NormalizedMetric {
     value: raw.bpm,
     unit: 'bpm',
     recordedAt: raw.recordedAt,
+  }
+}
+
+export function normalizeStepDay(raw: RawStepDay): NormalizedMetric {
+  // externalId: stable synthetic key — no HK UUID for daily aggregates.
+  // The upsert key is (userId, provider, metricType, recordedAt), so re-syncing
+  // the same day updates the count rather than inserting a duplicate.
+  const dateSlug = raw.date.slice(0, 10)  // YYYY-MM-DD
+  return {
+    externalId: `steps:${dateSlug}`,
+    provider: 'apple_health',
+    metricType: 'steps',
+    value: raw.steps,
+    unit: 'count',
+    recordedAt: raw.date,
+  }
+}
+
+export function normalizeDailyActiveEnergy(raw: RawDailyEnergy): NormalizedMetric | null {
+  if (raw.activeEnergyKcal == null) return null
+  const dateSlug = raw.date.slice(0, 10)
+  return {
+    externalId: `active_energy:${dateSlug}`,
+    provider: 'apple_health',
+    metricType: 'active_energy_kcal',
+    value: raw.activeEnergyKcal,
+    unit: 'kcal',
+    recordedAt: raw.date,
+  }
+}
+
+export function normalizeDailyBasalEnergy(raw: RawDailyEnergy): NormalizedMetric | null {
+  if (raw.basalEnergyKcal == null) return null
+  const dateSlug = raw.date.slice(0, 10)
+  return {
+    externalId: `basal_energy:${dateSlug}`,
+    provider: 'apple_health',
+    metricType: 'resting_energy_kcal',
+    value: raw.basalEnergyKcal,
+    unit: 'kcal',
+    recordedAt: raw.date,
   }
 }

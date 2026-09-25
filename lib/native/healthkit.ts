@@ -6,6 +6,8 @@ interface HealthKitPlugin {
   queryWorkouts(options: { startDate: string; endDate: string }): Promise<{ workouts: RawHKWorkout[] }>
   queryBodyMass(options: { startDate: string; endDate: string }): Promise<{ samples: RawBodyMassSample[] }>
   queryRestingHeartRate(options: { startDate: string; endDate: string }): Promise<{ samples: RawRHRSample[] }>
+  querySteps(options: { startDate: string; endDate: string }): Promise<{ dailySteps: RawStepDay[] }>
+  queryDailyEnergy(options: { startDate: string; endDate: string }): Promise<{ dailyEnergy: RawDailyEnergy[] }>
 }
 
 export interface RawHKWorkout {
@@ -35,6 +37,19 @@ export interface RawRHRSample {
   uuid: string
   bpm: number
   recordedAt: string
+}
+
+export interface RawStepDay {
+  // ISO 8601 string for midnight of the day (from HKStatisticsCollectionQuery startDate)
+  date: string
+  steps: number
+}
+
+export interface RawDailyEnergy {
+  // ISO 8601 string for device-local midnight of the day
+  date: string
+  activeEnergyKcal?: number
+  basalEnergyKcal?: number
 }
 
 const HealthKit = registerPlugin<HealthKitPlugin>('HealthKit')
@@ -80,4 +95,20 @@ export async function queryRestingHeartRate(startDate: Date, endDate: Date): Pro
     endDate: endDate.toISOString().slice(0, 19) + 'Z',
   })
   return samples
+}
+
+export async function querySteps(startDate: Date, endDate: Date): Promise<RawStepDay[]> {
+  const { dailySteps } = await HealthKit.querySteps({
+    startDate: startDate.toISOString().slice(0, 19) + 'Z',
+    endDate: endDate.toISOString().slice(0, 19) + 'Z',
+  })
+  return dailySteps
+}
+
+export async function queryDailyEnergy(startDate: Date, endDate: Date): Promise<RawDailyEnergy[]> {
+  const { dailyEnergy } = await HealthKit.queryDailyEnergy({
+    startDate: startDate.toISOString().slice(0, 19) + 'Z',
+    endDate: endDate.toISOString().slice(0, 19) + 'Z',
+  })
+  return dailyEnergy
 }

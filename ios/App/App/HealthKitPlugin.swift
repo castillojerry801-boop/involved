@@ -12,6 +12,8 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "queryWorkouts", returnType: "promise"),
         CAPPluginMethod(name: "queryBodyMass", returnType: "promise"),
         CAPPluginMethod(name: "queryRestingHeartRate", returnType: "promise"),
+        CAPPluginMethod(name: "querySteps", returnType: "promise"),
+        CAPPluginMethod(name: "queryDailyEnergy", returnType: "promise"),
     ]
 
     private let store = HKHealthStore()
@@ -173,6 +175,131 @@ public class HealthKitPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         store.execute(query)
+    }
+
+    // ─── Query daily step count ───────────────────────────────────────────────
+    // Uses HKStatisticsCollectionQuery with 1-day intervals so one call returns
+    // per-day totals across the full sync window — no N-per-day round trips.
+
+    @objc func querySteps(_ call: CAPPluginCall) {
+        guard let startDateStr = call.getString("startDate"),
+              let endDateStr = call.getString("endDate"),
+              let startDate = ISO8601DateFormatter().date(from: startDateStr),
+              let endDate = ISO8601DateFormatter().date(from: endDateStr) else {
+            call.reject("Invalid or missing startDate/endDate (ISO8601 required)")
+            return
+        }
+
+        let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        let anchorDate = Calendar.current.startOfDay(for: startDate)
+        var interval = DateComponents()
+        interval.day = 1
+
+        let query = HKStatisticsCollectionQuery(
+            quantityType: stepType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum,
+            anchorDate: anchorDate,
+            intervalComponents: interval
+        )
+
+        query.initialResultsHandler = { _, collection, error in
+            if let error = error {
+                call.reject("Steps query error: \(error.localizedDescription)")
+                return
+            }
+
+            var results: [[String: Any]] = []
+            let iso = ISO8601DateFormatter()
+
+            collection?.enumerateStatistics(from: startDate, to: endDate) { stats, _ in
+                if let sum = stats.sumQuantity() {
+                    let count = Int(sum.doubleValue(for: .count()))
+                    if count > 0 {
+                        results.append([
+                            "date": iso.string(from: stats.startDate),
+                            "steps": count,
+                        ])
+                    }
+                }
+            }
+
+            call.resolve(["dailySteps": results])
+        }
+
+        store.execute(query)
+    }
+
+    // ─── Query daily active + basal energy burned ─────────────────────────────
+    // Runs two HKStatisticsCollectionQuery instances in parallel (one per type)
+    // and merges by date so a single call returns per-day totals for both.
+
+    @objc func queryDailyEnergy(_ call: CAPPluginCall) {
+        guard let startDateStr = call.getString("startDate"),
+              let endDateStr = call.getString("endDate"),
+              let startDate = ISO8601DateFormatter().date(from: startDateStr),
+              let endDate = ISO8601DateFormatter().date(from: endDateStr) else {
+            call.reject("Invalid or missing startDate/endDate (ISO8601 required)")
+            return
+        }
+
+        let anchorDate = Calendar.current.startOfDay(for: startDate)
+        var interval = DateComponents()
+        interval.day = 1
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
+        let iso = ISO8601DateFormatter()
+
+        // Separate dicts; each is written by exactly one query handler — no contention.
+        var activeByDate: [String: Double] = [:]
+        var basalByDate: [String: Double] = [:]
+        let group = DispatchGroup()
+
+        // Active energy burned (all-day, not just workouts)
+        group.enter()
+        let activeType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
+        let activeQuery = HKStatisticsCollectionQuery(
+            quantityType: activeType, quantitySamplePredicate: predicate,
+            options: .cumulativeSum, anchorDate: anchorDate, intervalComponents: interval
+        )
+        activeQuery.initialResultsHandler = { _, collection, _ in
+            defer { group.leave() }
+            collection?.enumerateStatistics(from: startDate, to: endDate) { stats, _ in
+                if let sum = stats.sumQuantity() {
+                    activeByDate[iso.string(from: stats.startDate)] = sum.doubleValue(for: .kilocalorie())
+                }
+            }
+        }
+
+        // Basal (resting) energy burned
+        group.enter()
+        let basalType = HKQuantityType.quantityType(forIdentifier: .basalEnergyBurned)!
+        let basalQuery = HKStatisticsCollectionQuery(
+            quantityType: basalType, quantitySamplePredicate: predicate,
+            options: .cumulativeSum, anchorDate: anchorDate, intervalComponents: interval
+        )
+        basalQuery.initialResultsHandler = { _, collection, _ in
+            defer { group.leave() }
+            collection?.enumerateStatistics(from: startDate, to: endDate) { stats, _ in
+                if let sum = stats.sumQuantity() {
+                    basalByDate[iso.string(from: stats.startDate)] = sum.doubleValue(for: .kilocalorie())
+                }
+            }
+        }
+
+        store.execute(activeQuery)
+        store.execute(basalQuery)
+
+        group.notify(queue: .main) {
+            let allDates = Set(activeByDate.keys).union(Set(basalByDate.keys)).sorted()
+            let results: [[String: Any]] = allDates.map { key in
+                var dict: [String: Any] = ["date": key]
+                if let a = activeByDate[key] { dict["activeEnergyKcal"] = a }
+                if let b = basalByDate[key]  { dict["basalEnergyKcal"]  = b }
+                return dict
+            }
+            call.resolve(["dailyEnergy": results])
+        }
     }
 
     // ─── Query resting heart rate ─────────────────────────────────────────────

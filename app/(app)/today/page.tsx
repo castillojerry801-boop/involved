@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { redirect } from 'next/navigation'
+import { cn } from '@/lib/utils'
+import { ActivityDetailSheet } from '@/components/today/ActivityDetailSheet'
 
 export const metadata: Metadata = { title: 'Today' }
 
@@ -44,6 +46,32 @@ function getLocalDayInfo(tz: string) {
 function pct(consumed: number, target: number) {
   if (!target) return 0
   return Math.min(Math.round((consumed / target) * 100), 100)
+}
+
+// ─── Calorie status ───────────────────────────────────────────────────────────
+// All thresholds and copy live here — nowhere else in this file.
+const CALORIE_THRESHOLDS = {
+  approaching: 0.90,  // >= 90%  of target → amber
+  over:        1.00,  // >= 100% of target → orange
+  wellOver:    1.15,  // >= 115% of target → red
+} as const
+
+type CalorieStatus = 'under' | 'approaching' | 'over' | 'wellOver'
+
+const CALORIE_STATUS_CFG: Record<CalorieStatus, { bar: string; text: string; message: string }> = {
+  under:       { bar: 'bg-emerald-500', text: 'text-emerald-500', message: 'Plenty of room left today.' },
+  approaching: { bar: 'bg-amber-400',   text: 'text-amber-400',   message: 'Getting close — choose the next meal wisely.' },
+  over:        { bar: 'bg-orange-500',  text: 'text-orange-500',  message: "You're over today's target. Keep the rest of the day light." },
+  wellOver:    { bar: 'bg-red-500',     text: 'text-red-500',     message: 'Today ran high. Reset tomorrow and keep moving.' },
+}
+
+function getCalorieStatus(consumed: number, target: number): CalorieStatus {
+  if (!target) return 'under'
+  const r = consumed / target
+  if (r >= CALORIE_THRESHOLDS.wellOver)    return 'wellOver'
+  if (r >= CALORIE_THRESHOLDS.over)        return 'over'
+  if (r >= CALORIE_THRESHOLDS.approaching) return 'approaching'
+  return 'under'
 }
 
 async function getTodayNutrition(userId: string, dateStr: string) {
@@ -93,6 +121,74 @@ async function getTodayNutrition(userId: string, dateStr: string) {
   }
 }
 
+async function getTodayHealth(userId: string, start: Date, end: Date) {
+  const [activities, cursor, stepsAgg, activeEnergyAgg, basalEnergyAgg] = await Promise.all([
+    prisma.healthActivity.findMany({
+      where: { userId, startedAt: { gte: start, lte: end } },
+      orderBy: { startedAt: 'asc' },
+      select: {
+        id: true,
+        activityType: true,
+        title: true,
+        startedAt: true,
+        durationSeconds: true,
+        activeEnergyKcal: true,
+        avgHeartRateBpm: true,
+        distanceM: true,
+      },
+    }),
+    prisma.healthSyncCursor.findFirst({
+      where: { userId },
+      orderBy: { lastSyncedAt: 'desc' },
+      select: { lastSyncedAt: true, provider: true },
+    }),
+    prisma.healthMetric.aggregate({
+      where: { userId, metricType: 'steps', recordedAt: { gte: start, lte: end } },
+      _sum: { value: true },
+    }),
+    prisma.healthMetric.aggregate({
+      where: { userId, metricType: 'active_energy_kcal', recordedAt: { gte: start, lte: end } },
+      _sum: { value: true },
+    }),
+    prisma.healthMetric.aggregate({
+      where: { userId, metricType: 'resting_energy_kcal', recordedAt: { gte: start, lte: end } },
+      _sum: { value: true },
+    }),
+  ])
+
+  const toKcal = (agg: { _sum: { value: { toString(): string } | null } }) => {
+    const v = agg._sum.value
+    return v != null && Number(v) > 0 ? Math.round(Number(v)) : null
+  }
+
+  const stepCount      = toKcal(stepsAgg)
+  const allDayActiveKcal = toKcal(activeEnergyAgg)
+  const basalKcal        = toKcal(basalEnergyAgg)
+  const totalBurnKcal    = allDayActiveKcal != null && basalKcal != null
+    ? allDayActiveKcal + basalKcal
+    : null
+
+  return {
+    connected: !!cursor,
+    lastSyncedAt: cursor?.lastSyncedAt?.toISOString() ?? null,
+    provider: cursor?.provider ?? null,
+    activities: activities.map(a => ({
+      id: a.id,
+      activityType: a.activityType as string,
+      title: a.title,
+      startedAt: a.startedAt.toISOString(),
+      durationSeconds: a.durationSeconds,
+      activeEnergyKcal: a.activeEnergyKcal != null ? Math.round(Number(a.activeEnergyKcal)) : null,
+      avgHeartRateBpm: a.avgHeartRateBpm,
+      distanceM: a.distanceM != null ? Math.round(Number(a.distanceM)) : null,
+    })),
+    stepCount,
+    allDayActiveKcal,
+    basalKcal,
+    totalBurnKcal,
+  }
+}
+
 export default async function TodayPage() {
   const user = await getUser()
   if (!user) redirect('/login')
@@ -105,7 +201,7 @@ export default async function TodayPage() {
     'America/New_York'
   const { dateStr, start: todayStart, end: todayEnd, greeting, displayDate } = getLocalDayInfo(tz)
 
-  const [nutrition, profile, todayWorkout] = await Promise.all([
+  const [nutrition, profile, todayWorkout, health] = await Promise.all([
     getTodayNutrition(user.id, dateStr),
     prisma.profile.findUnique({ where: { id: user.id }, select: { displayName: true, fitnessLevel: true } }).catch(() => null),
     prisma.workout.findFirst({
@@ -129,6 +225,7 @@ export default async function TodayPage() {
       ],
       include: { exercises: { select: { exerciseId: true }, take: 5 } },
     }).catch(() => null),
+    getTodayHealth(user.id, todayStart, todayEnd),
   ])
 
   if (!profile?.fitnessLevel) redirect('/onboarding')
@@ -141,6 +238,8 @@ export default async function TodayPage() {
 
   const { totals, target, hasEntries } = nutrition
   const calRemaining = target ? target.calories - totals.calories : 0
+  const calorieStatus = target ? getCalorieStatus(totals.calories, target.calories) : 'under'
+  const statusCfg = CALORIE_STATUS_CFG[calorieStatus]
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 md:py-8">
@@ -183,19 +282,26 @@ export default async function TodayPage() {
                 / {target.calories.toLocaleString()} cal
               </span>
             </div>
+            {/* Status message — visible once something is logged */}
+            {totals.calories > 0 && (
+              <p className={cn('mb-1 text-xs font-medium', statusCfg.text)}>
+                {statusCfg.message}
+              </p>
+            )}
+
             <p className="mb-4 text-sm text-zinc-500">
               {calRemaining > 0
                 ? <><span className="font-semibold text-zinc-700 dark:text-zinc-300">{calRemaining.toLocaleString()}</span> calories remaining</>
                 : totals.calories === 0
                   ? 'Nothing logged yet today'
-                  : <span className="font-semibold text-amber-600">Goal reached</span>
+                  : <span className={cn('font-semibold', statusCfg.text)}>Goal exceeded</span>
               }
             </p>
 
-            {/* Calorie bar */}
+            {/* Calorie bar — color reflects status */}
             <div className="mb-5 h-2.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
               <div
-                className="h-full rounded-full bg-emerald-500 transition-all"
+                className={cn('h-full rounded-full transition-all', statusCfg.bar)}
                 style={{ width: `${pct(totals.calories, target.calories)}%` }}
               />
             </div>
@@ -231,6 +337,29 @@ export default async function TodayPage() {
             </div>
           </>
         )}
+      </Card>
+
+      {/* ── ACTIVITY ──────────────────────────────────────────────────── */}
+      <Card className="mb-4">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Activity</p>
+          <Link
+            href="/health"
+            className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
+          >
+            Health <ChevronRight className="size-3" />
+          </Link>
+        </div>
+        <ActivityDetailSheet
+          connected={health.connected}
+          lastSyncedAt={health.lastSyncedAt}
+          provider={health.provider}
+          activities={health.activities}
+          allDayActiveKcal={health.allDayActiveKcal}
+          basalKcal={health.basalKcal}
+          totalBurnKcal={health.totalBurnKcal}
+          stepCount={health.stepCount}
+        />
       </Card>
 
       {/* ── TRAINING ──────────────────────────────────────────────────── */}

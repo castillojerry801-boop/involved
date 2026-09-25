@@ -5,8 +5,11 @@ import {
   normalizeWorkout,
   normalizeBodyMass,
   normalizeRHR,
+  normalizeStepDay,
+  normalizeDailyActiveEnergy,
+  normalizeDailyBasalEnergy,
 } from '@/lib/native/healthkit-normalizer'
-import type { RawHKWorkout, RawBodyMassSample, RawRHRSample } from '@/lib/native/healthkit'
+import type { RawHKWorkout, RawBodyMassSample, RawRHRSample, RawStepDay, RawDailyEnergy } from '@/lib/native/healthkit'
 
 // ─── A. Activity type mapping ─────────────────────────────────────────────────
 
@@ -133,5 +136,103 @@ describe('normalizeRHR', () => {
 describe('new activity types', () => {
   it('maps functional strength (20) to functional_strength', () => {
     expect(normalizeActivityType(20)).toBe('functional_strength')
+  })
+})
+
+// ─── G. Daily energy normalization ────────────────────────────────────────
+
+describe('normalizeDailyActiveEnergy', () => {
+  const raw: RawDailyEnergy = {
+    date: '2026-09-25T04:00:00Z',
+    activeEnergyKcal: 512.3,
+    basalEnergyKcal: 1820.0,
+  }
+
+  it('produces correct metric type, value, and unit', () => {
+    const result = normalizeDailyActiveEnergy(raw)!
+    expect(result.metricType).toBe('active_energy_kcal')
+    expect(result.value).toBe(512.3)
+    expect(result.unit).toBe('kcal')
+    expect(result.provider).toBe('apple_health')
+  })
+
+  it('uses recordedAt from raw.date', () => {
+    const result = normalizeDailyActiveEnergy(raw)!
+    expect(result.recordedAt).toBe('2026-09-25T04:00:00Z')
+  })
+
+  it('builds externalId from the date slug', () => {
+    const result = normalizeDailyActiveEnergy(raw)!
+    expect(result.externalId).toBe('active_energy:2026-09-25')
+  })
+
+  it('returns null when activeEnergyKcal is missing', () => {
+    expect(normalizeDailyActiveEnergy({ date: '2026-09-25T04:00:00Z' })).toBeNull()
+  })
+
+  it('produces a stable externalId for re-synced days', () => {
+    const resync: RawDailyEnergy = { date: '2026-09-25T04:00:00Z', activeEnergyKcal: 600 }
+    expect(normalizeDailyActiveEnergy(resync)!.externalId).toBe(normalizeDailyActiveEnergy(raw)!.externalId)
+  })
+})
+
+describe('normalizeDailyBasalEnergy', () => {
+  const raw: RawDailyEnergy = {
+    date: '2026-09-25T04:00:00Z',
+    activeEnergyKcal: 512.3,
+    basalEnergyKcal: 1820.0,
+  }
+
+  it('produces correct metric type, value, and unit', () => {
+    const result = normalizeDailyBasalEnergy(raw)!
+    expect(result.metricType).toBe('resting_energy_kcal')
+    expect(result.value).toBe(1820.0)
+    expect(result.unit).toBe('kcal')
+    expect(result.provider).toBe('apple_health')
+  })
+
+  it('builds externalId from the date slug', () => {
+    const result = normalizeDailyBasalEnergy(raw)!
+    expect(result.externalId).toBe('basal_energy:2026-09-25')
+  })
+
+  it('returns null when basalEnergyKcal is missing', () => {
+    expect(normalizeDailyBasalEnergy({ date: '2026-09-25T04:00:00Z' })).toBeNull()
+  })
+
+  it('active and basal externalIds are distinct for the same day', () => {
+    expect(normalizeDailyActiveEnergy(raw)!.externalId).not.toBe(normalizeDailyBasalEnergy(raw)!.externalId)
+  })
+})
+
+// ─── I. Step day normalization ─────────────────────────────────────────────
+
+describe('normalizeStepDay', () => {
+  const raw: RawStepDay = {
+    date: '2026-09-25T04:00:00Z',
+    steps: 8432,
+  }
+
+  it('produces correct metric type, value, and unit', () => {
+    const result = normalizeStepDay(raw)
+    expect(result.metricType).toBe('steps')
+    expect(result.value).toBe(8432)
+    expect(result.unit).toBe('count')
+    expect(result.provider).toBe('apple_health')
+  })
+
+  it('uses recordedAt from raw.date', () => {
+    const result = normalizeStepDay(raw)
+    expect(result.recordedAt).toBe('2026-09-25T04:00:00Z')
+  })
+
+  it('builds externalId from the date slug', () => {
+    const result = normalizeStepDay(raw)
+    expect(result.externalId).toBe('steps:2026-09-25')
+  })
+
+  it('produces a stable externalId for re-synced days', () => {
+    const resync: RawStepDay = { date: '2026-09-25T04:00:00Z', steps: 9100 }
+    expect(normalizeStepDay(resync).externalId).toBe(normalizeStepDay(raw).externalId)
   })
 })
