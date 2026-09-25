@@ -122,61 +122,62 @@ export function ActivityDetailSheet({
 
   return (
     <>
-      {/* ── Inline summary row (3 metrics) ─────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      {/* ── Inline summary: 3 metrics full-width, button below ─────────── */}
+      <div className="flex items-center gap-4">
 
-          {/* Active Calories — all-day HealthKit metric */}
-          <div className="flex items-center gap-1.5">
-            <div className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-lg',
-              allDayActiveKcal != null ? 'bg-orange-500/15' : 'bg-zinc-100 dark:bg-zinc-800'
-            )}>
-              <Flame className={cn('size-3.5', allDayActiveKcal != null ? 'text-orange-400' : 'text-zinc-400')} />
-            </div>
-            <div>
-              <p className={cn('text-sm font-bold leading-tight', allDayActiveKcal != null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400')}>
-                {allDayActiveKcal != null ? allDayActiveKcal.toLocaleString() : '—'}
-              </p>
-              <p className="text-[10px] text-zinc-400 leading-tight">Active kcal</p>
-            </div>
+        {/* Active Calories — all-day HealthKit metric */}
+        <div className="flex items-center gap-1.5">
+          <div className={cn(
+            'flex size-7 shrink-0 items-center justify-center rounded-lg',
+            allDayActiveKcal != null ? 'bg-orange-500/15' : 'bg-zinc-100 dark:bg-zinc-800'
+          )}>
+            <Flame className={cn('size-3.5', allDayActiveKcal != null ? 'text-orange-400' : 'text-zinc-400')} />
           </div>
-
-          {/* Total Calories Burned */}
-          <div className="flex items-center gap-1.5">
-            <div className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-lg',
-              totalBurnKcal != null ? 'bg-amber-500/15' : 'bg-zinc-100 dark:bg-zinc-800'
-            )}>
-              <Zap className={cn('size-3.5', totalBurnKcal != null ? 'text-amber-400' : 'text-zinc-400')} />
-            </div>
-            <div>
-              <p className={cn('text-sm font-bold leading-tight', totalBurnKcal != null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400')}>
-                {totalBurnKcal != null ? totalBurnKcal.toLocaleString() : '—'}
-              </p>
-              <p className="text-[10px] text-zinc-400 leading-tight">Total burn</p>
-            </div>
+          <div>
+            <p className={cn('text-sm font-bold leading-tight', allDayActiveKcal != null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400')}>
+              {allDayActiveKcal != null ? allDayActiveKcal.toLocaleString() : '—'}
+            </p>
+            <p className="text-[10px] text-zinc-400 leading-tight">Active kcal</p>
           </div>
-
-          {/* Steps */}
-          <div className="flex items-center gap-1.5">
-            <div className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-lg',
-              stepCount != null ? 'bg-sky-500/15' : 'bg-zinc-100 dark:bg-zinc-800'
-            )}>
-              <Footprints className={cn('size-3.5', stepCount != null ? 'text-sky-400' : 'text-zinc-400')} />
-            </div>
-            <div>
-              <p className={cn('text-sm font-bold leading-tight', stepCount != null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400')}>
-                {stepCount != null ? stepCount.toLocaleString() : '—'}
-              </p>
-              <p className="text-[10px] text-zinc-400 leading-tight">Steps</p>
-            </div>
-          </div>
-
         </div>
 
-        {/* Details button */}
+        {/* Total Calories Burned */}
+        <div className="flex items-center gap-1.5">
+          <div className={cn(
+            'flex size-7 shrink-0 items-center justify-center rounded-lg',
+            totalBurnKcal != null ? 'bg-amber-500/15' : 'bg-zinc-100 dark:bg-zinc-800'
+          )}>
+            <Zap className={cn('size-3.5', totalBurnKcal != null ? 'text-amber-400' : 'text-zinc-400')} />
+          </div>
+          <div>
+            <p className={cn('text-sm font-bold leading-tight', totalBurnKcal != null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400')}>
+              {totalBurnKcal != null ? totalBurnKcal.toLocaleString() : '—'}
+            </p>
+            <p className="text-[10px] text-zinc-400 leading-tight">Total burn</p>
+          </div>
+        </div>
+
+        {/* Steps */}
+        <div className="flex items-center gap-1.5">
+          <div className={cn(
+            'flex size-7 shrink-0 items-center justify-center rounded-lg',
+            stepCount != null ? 'bg-sky-500/15' : 'bg-zinc-100 dark:bg-zinc-800'
+          )}>
+            <Footprints className={cn('size-3.5', stepCount != null ? 'text-sky-400' : 'text-zinc-400')} />
+          </div>
+          <div>
+            <p className={cn('text-sm font-bold leading-tight', stepCount != null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400')}>
+              {stepCount != null ? stepCount.toLocaleString() : '—'}
+            </p>
+            <p className="text-[10px] text-zinc-400 leading-tight">Steps</p>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Details / Connect button — sits below metrics so nothing gets clipped */}
+      <div className="mt-2 flex items-center justify-between">
+        <div />{/* spacer */}
         {connected ? (
           <button
             onClick={() => setOpen(true)}
