@@ -45,7 +45,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (isAuthPage && user) {
+  if ((isAuthPage || pathname === '/') && user) {
     url.pathname = '/today'
     return NextResponse.redirect(url)
   }
