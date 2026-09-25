@@ -42,6 +42,8 @@ export default function ProfilePage() {
   const [pendingPhotoFile, setPendingPhotoFile] = useState<File | null>(null)
   const [pendingPhotoPreview, setPendingPhotoPreview] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | null>(null)
+  const [deleteStage, setDeleteStage] = useState<'idle' | 'confirming' | 'deleting'>('idle')
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     const supabase = createClient()
@@ -123,6 +125,26 @@ export default function ProfilePage() {
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  const handleDeleteAccount = async () => {
+    setDeleteStage('deleting')
+    setDeleteError(null)
+    try {
+      const res = await fetch('/api/account/delete', { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json() as { error?: string }
+        setDeleteError(data.error ?? 'Something went wrong. Please try again.')
+        setDeleteStage('confirming')
+        return
+      }
+      const supabase = createClient()
+      await supabase.auth.signOut()
+      router.push('/')
+    } catch {
+      setDeleteError('Network error. Please try again.')
+      setDeleteStage('confirming')
+    }
   }
 
   const tierLabel = entitlement?.isPlus ? 'Involved+' : entitlement?.isTrial ? 'Trial' : 'Free'
@@ -377,6 +399,48 @@ export default function ProfilePage() {
         <LogOut className="size-5 shrink-0" />
         Sign out
       </button>
+
+      {/* Delete account */}
+      <div className="mt-3 mb-8">
+        {deleteStage === 'idle' && (
+          <button
+            onClick={() => setDeleteStage('confirming')}
+            className="w-full text-center text-xs text-zinc-400 hover:text-red-500 transition-colors py-2"
+          >
+            Delete account
+          </button>
+        )}
+
+        {(deleteStage === 'confirming' || deleteStage === 'deleting') && (
+          <div className="rounded-2xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/20 p-5">
+            <p className="text-sm font-semibold text-zinc-900 dark:text-white mb-1">Delete your account?</p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed mb-4">
+              This permanently deletes all your workouts, nutrition logs, progress photos, and training data.
+              This action cannot be undone.
+            </p>
+            {deleteError && (
+              <p className="mb-3 text-xs text-red-600 dark:text-red-400">{deleteError}</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setDeleteStage('idle'); setDeleteError(null) }}
+                disabled={deleteStage === 'deleting'}
+                className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleteStage === 'deleting'}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60 transition-colors"
+              >
+                {deleteStage === 'deleting' && <Loader2 className="size-3.5 animate-spin" />}
+                {deleteStage === 'deleting' ? 'Deleting…' : 'Delete my account'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Lightbox */}
       {lightboxPhoto && (
