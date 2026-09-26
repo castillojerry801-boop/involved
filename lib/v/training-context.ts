@@ -5,6 +5,16 @@ import { getExperienceDialogue } from './experience-dialogue'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export type ReadinessState =
+  | 'never_trained'           // no training history, no PRs
+  | 'new_beginner'            // stated beginner, has recent training
+  | 'detrained'               // has history/PRs but 3+ months no training
+  | 'recreationally_active'   // trains but inconsistently
+  | 'consistent_intermediate' // intermediate, regular recent training
+  | 'advanced'                // advanced, recent training
+
+export type CoachingPresence = 'quiet' | 'weekly_checkin' | 'active'
+
 export interface VTrainingContext {
   profile: {
     fitnessLevel:        string | null
@@ -43,6 +53,8 @@ export interface VTrainingContext {
       setCount:     number
     }>
   }>
+  readinessState:    ReadinessState | null
+  coachingPresence:  CoachingPresence
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -56,13 +68,54 @@ function calcAge(dob: Date | null): number | null {
   return age
 }
 
+export function deriveReadinessState(
+  fitnessLevel: string | null,
+  recentTraining: VTrainingContext['recentTraining'],
+  personalRecords: VTrainingContext['personalRecords'],
+): ReadinessState {
+  const hasPRs = personalRecords.length > 0
+  const hasAnySessions = recentTraining.length > 0
+
+  const threeMonthsAgo = new Date()
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+  const fourWeeksAgo = new Date()
+  fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28)
+
+  const mostRecentDate = hasAnySessions ? new Date(recentTraining[0].date) : null
+  const activeRecently = mostRecentDate != null && mostRecentDate > threeMonthsAgo
+
+  const sessionsLast4Weeks = recentTraining.filter(t => new Date(t.date) > fourWeeksAgo).length
+  const isConsistent = sessionsLast4Weeks >= 3
+
+  const lvl = (fitnessLevel ?? '').toLowerCase()
+  const isAdvanced     = lvl.includes('advanced') || lvl.includes('expert')
+  const isIntermediate = lvl.includes('intermediate')
+  const isBeginner     = lvl.includes('beginner') || lvl.includes('novice')
+
+  if (isAdvanced) {
+    if (activeRecently) return 'advanced'
+    if (hasPRs || hasAnySessions) return 'detrained'
+  }
+  if (isIntermediate) {
+    if (!activeRecently && (hasPRs || hasAnySessions)) return 'detrained'
+    if (isConsistent) return 'consistent_intermediate'
+    if (activeRecently) return 'recreationally_active'
+  }
+  if (isBeginner && activeRecently) return 'new_beginner'
+  if ((hasPRs || hasAnySessions) && !activeRecently) return 'detrained'
+  if (!hasPRs && !hasAnySessions) return 'never_trained'
+  if (activeRecently && isConsistent) return 'consistent_intermediate'
+  if (activeRecently) return 'recreationally_active'
+  return 'never_trained'
+}
+
 // ─── Builder ──────────────────────────────────────────────────────────────────
 
 export async function buildVTrainingContext(userId: string): Promise<VTrainingContext> {
   const [profile, goals, activeEquipment, preferences, prs, weeklyTarget, recentWorkouts] = await Promise.all([
     prisma.profile.findUnique({
       where: { id: userId },
-      select: { fitnessLevel: true, dateOfBirth: true, weightKg: true },
+      select: { fitnessLevel: true, dateOfBirth: true, weightKg: true, coachingPresence: true },
     }).catch(() => null),
 
     prisma.goal.findMany({
@@ -185,7 +238,7 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
     }
   })
 
-  return {
+  const ctx: Omit<VTrainingContext, 'readinessState'> & { readinessState: ReadinessState | null } = {
     profile: {
       fitnessLevel:        profile?.fitnessLevel ?? null,
       goals:               goals.map(g => ({
@@ -212,7 +265,17 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
     },
     personalRecords,
     recentTraining,
+    readinessState:   null,
+    coachingPresence: (profile?.coachingPresence as CoachingPresence | undefined) ?? 'weekly_checkin',
   }
+
+  ctx.readinessState = deriveReadinessState(
+    ctx.profile.fitnessLevel,
+    ctx.recentTraining,
+    ctx.personalRecords,
+  )
+
+  return ctx as VTrainingContext
 }
 
 // ─── Load anchor helpers ──────────────────────────────────────────────────────
@@ -257,11 +320,41 @@ export function buildLoadAnchors(
 
 // ─── Formatter ────────────────────────────────────────────────────────────────
 
+const READINESS_GUIDANCE: Record<ReadinessState, string> = {
+  never_trained:
+    'READINESS: Never trained. Start from zero. Build the habit and movement quality before load. Do not assume any exercise proficiency.',
+  new_beginner:
+    'READINESS: New beginner — actively training but very early. Prioritize technique and consistency. Linear progression on basic patterns only. No failure training, no advanced techniques.',
+  detrained:
+    'READINESS: Detrained — has a training history but has not been active recently (3+ months gap). DO NOT program at their former level. Start 20–30% below expected capacity. The first 2–3 weeks should re-establish movement quality and work tolerance. They will progress quickly but must earn it back.',
+  recreationally_active:
+    'READINESS: Recreationally active — trains but inconsistently. Has a foundation but not a reliable base. Use moderate volume with simple progressions. Do not assume they will execute a complex periodization plan.',
+  consistent_intermediate:
+    'READINESS: Consistent intermediate — training regularly. Can handle structured periodization, deliberate progression, and moderate complexity. Use this context to drive appropriate volume and intensity.',
+  advanced:
+    'READINESS: Advanced — experienced, training regularly. Programming should reflect actual needs: weakness points, sport specificity, periodization. Complexity must earn its place — advanced does not mean "more exercises."',
+}
+
+const COACHING_PRESENCE_GUIDANCE: Record<string, string> = {
+  quiet:
+    'COACHING PRESENCE: Quiet. Deliver the program and key progression notes concisely. Keep coaching commentary to a minimum. The user does not want elaboration.',
+  weekly_checkin:
+    'COACHING PRESENCE: Weekly check-in (default). Explain the program clearly, state how progression works, and be available for weekly adaptation requests. No need to over-explain every decision.',
+  active:
+    'COACHING PRESENCE: Active coaching. Be coaching-forward: explain the "why" behind structural choices, offer technique cues for main lifts, note what to watch for each week. Proactively surface readiness and adaptation considerations.',
+}
+
 export function trainingContextToPrompt(ctx: VTrainingContext): string {
   const lines: string[] = []
 
   lines.push(`FITNESS LEVEL: ${ctx.profile.fitnessLevel ?? 'not specified'}`)
   lines.push(getExperienceDialogue(ctx.profile.fitnessLevel))
+
+  if (ctx.readinessState) {
+    lines.push(READINESS_GUIDANCE[ctx.readinessState])
+  }
+
+  lines.push(COACHING_PRESENCE_GUIDANCE[ctx.coachingPresence] ?? COACHING_PRESENCE_GUIDANCE['weekly_checkin'])
 
   // Session depth guidance based on experience
   const lvl = (ctx.profile.fitnessLevel ?? '').toLowerCase()

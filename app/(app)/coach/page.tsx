@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { getGifUrl } from '@/lib/exercises'
 import { cn } from '@/lib/utils'
 import { GenerateProgramModal } from '@/components/v/GenerateProgramModal'
+import { VoiceMicInput } from '@/components/v/VoiceMicInput'
 
 interface TextMessage { role: 'user' | 'assistant'; content: string; type: 'text' }
 interface WorkoutMessage {
@@ -622,6 +623,21 @@ export default function CoachPage() {
               const t = e.currentTarget
               t.style.height = 'auto'
               t.style.height = `${Math.min(t.scrollHeight, 120)}px`
+            }}
+          />
+          <VoiceMicInput
+            disabled={streaming || limitReached}
+            onTranscript={text => {
+              setInput(prev => {
+                const next = prev ? `${prev} ${text}` : text
+                // Trigger textarea resize on next tick
+                requestAnimationFrame(() => {
+                  const el = inputRef.current
+                  if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 120)}px` }
+                })
+                return next
+              })
+              inputRef.current?.focus()
             }}
           />
           <Button

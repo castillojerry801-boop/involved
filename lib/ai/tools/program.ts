@@ -71,6 +71,7 @@ export interface ProgramExercise {
 export interface ProgramDayDraft {
   name: string
   focus?: string
+  day_rationale?: string        // why this session is structured this way
   weekday?: number              // 0=Monday … 6=Sunday; omit if unscheduled
   estimated_duration_minutes: number
   exercises: ProgramExercise[]
@@ -82,6 +83,7 @@ export interface ProgramDraft {
   primary_goal?: string
   weeks?: number
   progression_strategy?: string
+  program_rationale?: string    // why this program structure was chosen for this user
   phases?: ProgramPhase[]    // required for programs ≥ 8 weeks
   session_sequencing?: string // overall sequencing note for the program (e.g. "Push-pull pairs alternating; accessories in supersets")
   days: ProgramDayDraft[]
@@ -357,6 +359,10 @@ export const PROPOSE_PROGRAM_TOOL = {
           type: 'string',
           description: 'How the program progresses over weeks. Be specific — name actual percentages, rep ranges, or volume changes rather than generic phrases.',
         },
+        program_rationale: {
+          type: 'string',
+          description: 'Why this program structure was chosen for this specific user. Reference their readiness state, goals, training history, and any key constraints that shaped the design. 2–4 sentences.',
+        },
         session_sequencing: {
           type: 'string',
           description: 'Optional overall sequencing note: describe how exercises are grouped or sequenced across the program (e.g. "Main lifts as straight sets; accessories in antagonist supersets").',
@@ -387,6 +393,10 @@ export const PROPOSE_PROGRAM_TOOL = {
               focus: {
                 type: 'string',
                 description: 'Session focus in one phrase, e.g. "Quad-dominant strength + posterior chain accessory"',
+              },
+              day_rationale: {
+                type: 'string',
+                description: 'Why this session is structured this way — the training intent, pattern priority, or recovery consideration that shaped it. 1–2 sentences.',
               },
               weekday: {
                 type: 'integer',

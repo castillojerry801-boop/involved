@@ -29,6 +29,7 @@ model Profile {
   weightKg         Decimal?         @map("weight_kg") @db.Decimal(5, 1)
   fitnessLevel     FitnessLevel?    @map("fitness_level")
   subscriptionTier SubscriptionTier @default(free) @map("subscription_tier")
+  coachingPresence CoachingPresence @default(weekly_checkin) @map("coaching_presence")
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
@@ -1183,6 +1184,12 @@ enum UserEntitlementStatus {
   active
   expired
   revoked
+}
+
+enum CoachingPresence {
+  quiet
+  weekly_checkin
+  active
 }
 
 // ─── Exercise Preferences ─────────────────────────────────────────────

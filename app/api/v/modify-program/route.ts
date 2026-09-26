@@ -13,6 +13,8 @@ import { checkAndConsumeVUsage, decrementVUsage } from '@/lib/v/usage'
 import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training-context'
 import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
 import { getSportRules } from '@/lib/v/sport-rules'
+import { buildAdaptationPrompt } from '@/lib/v/adaptation'
+import type { AdaptationTrigger } from '@/lib/v/adaptation'
 import type OpenAI from 'openai'
 
 function buildModifySystemPrompt(sport?: string): string {
@@ -58,6 +60,10 @@ export async function POST(req: NextRequest) {
     draft: ProgramDraft
     modification: string
     constraints?: GenerationConstraints
+    adaptationTrigger?: AdaptationTrigger
+    adaptationDetail?: string
+    affectedDay?: string
+    affectedExercise?: string
   }
 
   if (!body.draft || !body.modification?.trim()) {
@@ -85,6 +91,17 @@ export async function POST(req: NextRequest) {
   const allowedEquipment = ctx.equipment?.items
   const systemPrompt = buildModifySystemPrompt(body.constraints?.sport)
 
+  const adaptationBlock = body.adaptationTrigger
+    ? '\n\n' + buildAdaptationPrompt({
+        trigger: body.adaptationTrigger,
+        detail: body.adaptationDetail,
+        affectedDay: body.affectedDay,
+        affectedExercise: body.affectedExercise,
+        programWeek: body.draft.weeks != null ? 1 : undefined,
+        totalWeeks: body.draft.weeks,
+      })
+    : ''
+
   type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt + contextSnippet },
@@ -93,7 +110,7 @@ export async function POST(req: NextRequest) {
       content:
         `${constraintBlock}` +
         `EXISTING PROGRAM (copy unchanged parts verbatim):\n\n${JSON.stringify(body.draft, null, 2)}\n\n` +
-        `MODIFICATION REQUEST: ${body.modification.trim()}\n\n` +
+        `MODIFICATION REQUEST: ${body.modification.trim()}${adaptationBlock}\n\n` +
         `Apply ONLY the requested modification. For every day and every exercise not explicitly changed, ` +
         `copy the exercise ID, sets, reps, rest, notes, and RPE from the existing program without alteration. ` +
         `Then propose the updated program.`,
