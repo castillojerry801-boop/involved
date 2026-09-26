@@ -112,3 +112,12 @@ USER DATA (provided below):
 export const EMPTY_SEARCH_RESULT = 'No exercises found. Search again with different parameters — try a different movementPattern, remove the equipment filter, or change bodyPart. Do NOT generate exercise names from your own knowledge. Do NOT create a freeform program. Search again.'
 
 export const QUALITY_EXHAUSTED_MESSAGE = 'Quality validation failed after all retries. Ask the user: "I ran into a problem finding the right exercises for your setup — can you tell me exactly what equipment you have available?" Do NOT output a program. Do NOT list exercises. Do NOT say "I\'ll use standard exercises." Do NOT create a general outline. Ask the one clarifying question and stop.'
+
+// Server-controlled fallback when the freeform guard fires. Emitted directly by the
+// server — the model never sees it. Must be a targeted equipment question, never a
+// generic outline or exercise list.
+export const FREEFORM_GUARD_RESPONSE = "I ran into a problem finding the right exercises for your setup. Can you tell me exactly what equipment you have available? For example: barbell, dumbbells, cable machine, pull-up bar, resistance bands, kettlebells, bodyweight only, etc."
+
+// Matches user messages that express program-building intent.
+// Used server-side to decide whether a freeform text response should be suppressed.
+export const PROGRAM_INTENT_PATTERN = /\b(program|plan|routine|\d+[\s-]?week|split|schedule|build\s+me|make\s+me)\b/i

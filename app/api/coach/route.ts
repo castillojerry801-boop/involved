@@ -14,7 +14,7 @@ import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/progr
 import type { ProgramDraft } from '@/lib/ai/tools/program'
 import { validateProgramQuality } from '@/lib/v/program-quality'
 import { extractEquipmentFromConversation, buildEquipmentCapabilitySummary } from '@/lib/v/equipment-normalize'
-import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE } from './constants'
+import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, FREEFORM_GUARD_RESPONSE, PROGRAM_INTENT_PATTERN } from './constants'
 import type OpenAI from 'openai'
 
 const QUALITY_RETRY_LIMIT = 2
@@ -157,6 +157,14 @@ export async function POST(req: NextRequest) {
     let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
     const MAX_ROUNDS = 12
     let qualityRetries = 0
+    // Freeform guard state — tracks whether the model attempted program generation
+    // without producing a validated result. If true at loop exit, the server
+    // substitutes FREEFORM_GUARD_RESPONSE instead of streaming the model's text.
+    let proposeProgramAttempted = false
+    let hadSearchCalls = false
+    let qualityExhausted = false
+    const lastUserContent = [...body.messages].reverse().find(m => m.role === 'user')?.content ?? ''
+    const hasProgramIntent = PROGRAM_INTENT_PATTERN.test(lastUserContent)
     // Deduplicates repeated searches with identical params within one generation turn.
     const searchCache = new Map<string, string>()
 
@@ -224,6 +232,7 @@ export async function POST(req: NextRequest) {
           let result: string
 
           if (fn.name === 'search_exercises') {
+            hadSearchCalls = true
             const params = JSON.parse(fn.arguments) as Parameters<typeof executeExerciseSearch>[0]
             const normalizedParams = { ...params, limit: Math.min(params.limit ?? 15, 20) }
             const cacheKey = JSON.stringify(normalizedParams)
@@ -249,6 +258,7 @@ export async function POST(req: NextRequest) {
             }
 
           } else if (fn.name === 'propose_program') {
+            proposeProgramAttempted = true
             emitRaw({ type: 'status', message: qualityRetries > 0 ? 'Refining your program...' : 'Building your program...' })
             let draft: ProgramDraft
             try {
@@ -313,6 +323,7 @@ export async function POST(req: NextRequest) {
                   })
                 } else if (hardErrors.length > 0) {
                   console.error('[V-quality-retry-exhausted]', { userId: user.id, codes: hardErrors.map(e => e.code) })
+                  qualityExhausted = true
                   result = JSON.stringify({
                     status: 'quality_exhausted',
                     message: QUALITY_EXHAUSTED_MESSAGE,
@@ -334,7 +345,34 @@ export async function POST(req: NextRequest) {
           chatMessages.push({ role: 'tool', tool_call_id: call.id, content: result })
         }
 
-        if (pendingProgram?.valid) break
+        if (pendingProgram?.valid || qualityExhausted) break
+      }
+
+      // ── Freeform guard ───────────────────────────────────────────────────────
+      // If program generation was attempted but no valid program emerged, the
+      // model's final text is untrusted — it may be an improvised outline or
+      // "I'll use common movements" fallback. Substitute the server-controlled
+      // clarification response instead of streaming whatever the model produced.
+      const freeformGuard =
+        qualityExhausted ||
+        (proposeProgramAttempted && !pendingProgram?.valid) ||
+        (hasProgramIntent && hadSearchCalls && !pendingProgram?.valid && !pendingWorkout?.valid)
+
+      if (freeformGuard) {
+        console.log('[V-freeform-guard]', {
+          userId: user.id,
+          qualityExhausted,
+          proposeProgramAttempted,
+          hasProgramIntent,
+          hadSearchCalls,
+        })
+        const guardWords = FREEFORM_GUARD_RESPONSE.split(' ')
+        for (let i = 0; i < guardWords.length; i++) {
+          emitRaw({ type: 'text', content: (i > 0 ? ' ' : '') + guardWords[i] })
+          await new Promise(resolve => setTimeout(resolve, 8))
+        }
+        emitRaw({ type: 'done' })
+        return
       }
 
       const lastMsg = [...chatMessages].reverse().find(m => m.role === 'assistant')

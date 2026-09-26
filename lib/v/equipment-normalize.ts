@@ -32,11 +32,16 @@ const EQUIPMENT_ALIASES: Array<[pattern: RegExp, canonical: string]> = [
   [/\bcable\b/i, 'cable'],
 
   // Cardio equipment
+  // air bike/airdyne → 'stationary bike': 'air bike' is not a canonical ExerciseDB value;
+  // 'stationary bike' is the closest category for cardio searches.
   [/air\s*dyne|airdyne|air\s*bike/i, 'stationary bike'],
   [/spin\s*bike|assault\s*bike|echo\s*bike/i, 'stationary bike'],
   [/stationary\s*bike|exercise\s*bike|recumbent\s*bike/i, 'stationary bike'],
   [/treadmill/i, 'body weight'],           // running — maps to body weight for search
-  [/rower|rowing\s*machine|concept\s*2|erg\b/i, 'skierg machine'],
+  // rower/rowing machine: no canonical ExerciseDB equipment value exists for rowing
+  // machines — the only 'skierg machine' exercise is "ski ergometer" (not a rower).
+  // Dropped intentionally: rower provides conditioning capability but cannot produce
+  // meaningful exercise search results via equipment filter.
   [/ski\s*erg|skierg/i, 'skierg machine'],
   [/elliptical/i, 'elliptical machine'],
   [/stepmill|stair\s*climber|stairmaster/i, 'stepmill machine'],
@@ -52,9 +57,10 @@ const EQUIPMENT_ALIASES: Array<[pattern: RegExp, canonical: string]> = [
   // Kettlebell
   [/kettlebells?/i, 'kettlebell'],
 
-  // Resistance bands
-  [/resistance\s*bands?|elastic\s*bands?|loop\s*bands?/i, 'resistance band'],
-  [/\bbands?\b/i, 'band'],
+  // Resistance bands — both 'band' and 'resistance band' are canonical ExerciseDB values,
+  // but 'band' has 56 exercises vs 13 for 'resistance band'. Normalise all user mentions
+  // to 'band' so searches hit the larger pool.
+  [/resistance\s*bands?|elastic\s*bands?|loop\s*bands?|\bbands?\b/i, 'band'],
 
   // Bodyweight / pull-up infrastructure
   [/pull[\s-]?up\s*bar|chin[\s-]?up\s*bar|pull-up\s*station/i, 'body weight'],
@@ -73,8 +79,13 @@ const EQUIPMENT_ALIASES: Array<[pattern: RegExp, canonical: string]> = [
   [/bosu\s*ball|bosu/i, 'bosu ball'],
   [/stability\s*ball|swiss\s*ball|exercise\s*ball/i, 'stability ball'],
 
-  // Foam roller
-  [/foam\s*roller|roller/i, 'roller'],
+  // Ab wheel / wheel roller — must come BEFORE the foam roller pattern because
+  // the generic /roller/ substring would otherwise match "wheel roller" as 'roller'.
+  [/wheel\s*roller|ab\s*wheel|ab\s*roller/i, 'wheel roller'],
+
+  // Foam roller — narrowed to 'foam roller' only; generic 'roller' removed to
+  // prevent false matches on "wheel roller" or "ab roller".
+  [/foam\s*roller/i, 'roller'],
 
   // Weighted vest
   [/weighted\s*vest/i, 'weighted'],
@@ -201,7 +212,7 @@ export const EQUIPMENT_CAPABILITIES: Record<string, EquipmentCapability> = {
   'skierg machine': {
     movementPatterns: ['cardio', 'hinge'],
     bodyParts: ['cardio', 'back', 'upper legs'],
-    notes: 'Rower — full body conditioning with posterior chain emphasis.',
+    notes: 'SkiErg — upper-body dominant conditioning.',
   },
   'smith machine': {
     movementPatterns: ['horizontal_push', 'squat', 'hinge', 'vertical_push', 'lunge'],

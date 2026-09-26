@@ -16,7 +16,9 @@ describe('normalizeEquipmentList', () => {
     expect(result).toContain('dumbbell')
     expect(result).toContain('kettlebell')
     expect(result).toContain('stationary bike')
-    expect(result).toContain('skierg machine')
+    // rower intentionally NOT mapped — no rowing machine exercises exist in ExerciseDB;
+    // mapping to 'skierg machine' was wrong (that DB category has only 1 ski erg exercise).
+    expect(result).not.toContain('skierg machine')
     expect(result).toContain('cable')
     expect(result).toContain('body weight')
   })
@@ -28,7 +30,8 @@ describe('normalizeEquipmentList', () => {
     expect(result).toContain('dumbbell')
     expect(result).toContain('barbell')
     expect(result).toContain('kettlebell')
-    expect(result).toContain('resistance band')
+    // 'resistance bands' normalises to 'band' (56 exercises) not 'resistance band' (13 exercises)
+    expect(result).toContain('band')
     expect(result).toContain('body weight')
   })
 
@@ -57,10 +60,15 @@ describe('normalizeEquipmentList', () => {
     expect(normalizeEquipmentList('assault bike')).toContain('stationary bike')
   })
 
-  it('handles rower variations', () => {
-    expect(normalizeEquipmentList('rower')).toContain('skierg machine')
-    expect(normalizeEquipmentList('rowing machine')).toContain('skierg machine')
-    expect(normalizeEquipmentList('Concept 2')).toContain('skierg machine')
+  it('rower is intentionally not mapped to skierg machine', () => {
+    // No rowing machine equipment category exists in ExerciseDB.
+    // 'skierg machine' has only one exercise (ski ergometer) — not a rowing machine.
+    // Rower/rowing machine/Concept2 drops silently so searches are not polluted.
+    expect(normalizeEquipmentList('rower')).not.toContain('skierg machine')
+    expect(normalizeEquipmentList('rowing machine')).not.toContain('skierg machine')
+    expect(normalizeEquipmentList('Concept 2')).not.toContain('skierg machine')
+    // body weight is always present
+    expect(normalizeEquipmentList('rower')).toContain('body weight')
   })
 
   it('handles leverage machine variations', () => {
@@ -93,9 +101,13 @@ describe('normalizeEquipmentList', () => {
     expect(result).toContain('body weight')
   })
 
-  it('handles resistance band variations', () => {
-    expect(normalizeEquipmentList('resistance bands')).toContain('resistance band')
-    expect(normalizeEquipmentList('elastic bands')).toContain('resistance band')
+  it('handles resistance band variations — all normalise to "band"', () => {
+    // 'band' has 56 ExerciseDB exercises; 'resistance band' has 13.
+    // All user mentions normalise to 'band' for the larger search pool.
+    expect(normalizeEquipmentList('resistance bands')).toContain('band')
+    expect(normalizeEquipmentList('elastic bands')).toContain('band')
+    expect(normalizeEquipmentList('bands')).toContain('band')
+    expect(normalizeEquipmentList('loop bands')).toContain('band')
   })
 
   it('handles ez bar', () => {
@@ -121,7 +133,8 @@ User: I have a squat rack, lever bench press, dumbbells, kettlebells, leg extens
     expect(result).toContain('dumbbell')
     expect(result).toContain('kettlebell')
     expect(result).toContain('stationary bike')
-    expect(result).toContain('skierg machine')
+    // rower → no canonical mapping (see normalizeEquipmentList rower test)
+    expect(result).not.toContain('skierg machine')
     expect(result).toContain('cable')
     expect(result).toContain('body weight')
   })
@@ -133,7 +146,8 @@ User: I have a squat rack, lever bench press, dumbbells, kettlebells, leg extens
     expect(result).toContain('dumbbell')
     expect(result).toContain('barbell')
     expect(result).toContain('kettlebell')
-    expect(result).toContain('resistance band')
+    // 'resistance bands' normalises to 'band'
+    expect(result).toContain('band')
     expect(result).toContain('body weight')
   })
 
