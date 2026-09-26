@@ -182,191 +182,182 @@ export async function POST(req: NextRequest) {
   const model = coachModel(tier === 'free' ? 'free' : 'plus')
   const openai = getOpenAI()
 
-  const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL, PROPOSE_PROGRAM_TOOL]
-  type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
+  // Open the stream immediately — the client gets HTTP headers right away and
+  // shows the thinking indicator while the tool loop runs in the background.
+  const encoder = new TextEncoder()
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
+  const writer = writable.getWriter()
 
-  const chatMessages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT + contextSnippet },
-    ...body.messages.map(m => ({ role: m.role, content: m.content } as ChatMessage)),
-  ]
-
-  // Agentic tool loop — 12 rounds matches generate-program; supports complex program design
-  let pendingWorkout: ReturnType<typeof validateWorkoutDraft> | null = null
-  let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
-  const MAX_ROUNDS = 12
-  let qualityRetries = 0
-
-  const allowedEquipment = trainingCtx?.equipment?.items
-
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
-    try {
-      response = await openai.chat.completions.create({
-        model,
-        messages: chatMessages,
-        tools,
-        tool_choice: 'auto',
-        max_tokens: 4000,
-        temperature: 0.7,
-      })
-    } catch (err: unknown) {
-      const status = (err as { status?: number }).status
-      if (status === 429) {
-        return Response.json(
-          { error: 'rate_limited', message: 'V is thinking hard right now — try again in a moment.' },
-          { status: 429 }
-        )
-      }
-      throw err
-    }
-
-    const choice = response.choices[0]
-    chatMessages.push(choice.message)
-
-    if (!choice.message.tool_calls?.length) break
-
-    for (const call of choice.message.tool_calls) {
-      const fn = (call as unknown as { function: { name: string; arguments: string } }).function
-      let result: string
-
-      if (fn.name === 'search_exercises') {
-        const params = JSON.parse(fn.arguments) as Parameters<typeof executeExerciseSearch>[0]
-        const exercises = executeExerciseSearch({ ...params, limit: Math.min(params.limit ?? 15, 20) })
-        result = exercises.length > 0
-          ? JSON.stringify(exercises)
-          : JSON.stringify({ message: 'No exercises found for those criteria. Try different filters — adjust bodyPart, equipment, or movementPattern.' })
-
-      } else if (fn.name === 'propose_workout') {
-        const draft = JSON.parse(fn.arguments) as WorkoutDraft
-        const validation = validateWorkoutDraft(draft)
-        if (validation.valid) {
-          pendingWorkout = validation
-          result = JSON.stringify({ status: 'valid', message: 'Workout validated. Present it to the user.' })
-        } else {
-          result = JSON.stringify({ status: 'invalid', errors: validation.errors })
-        }
-
-      } else if (fn.name === 'propose_program') {
-        const draft = JSON.parse(fn.arguments) as ProgramDraft
-
-        console.log('[V-routing]', {
-          userId: user.id,
-          intent: 'program_generation',
-          toolCalled: 'propose_program',
-          draftWeeks: draft.weeks,
-          draftDays: draft.days?.length,
-          toolsAvailable: tools.map((t: { function?: { name: string } }) => t.function?.name).filter(Boolean),
-        })
-
-        // Structural validation (exercise IDs, required fields, equipment constraints)
-        const validation = validateProgramDraft(draft, { allowedEquipment })
-
-        if (!validation.valid) {
-          result = JSON.stringify({ status: 'invalid', errors: validation.errors })
-        } else {
-          // Intake gate: for 8+ week programs, readiness state must be known
-          const isLongProgram = (draft.weeks ?? 0) >= 8
-          if (isLongProgram && trainingCtx && trainingCtx.readinessState === null) {
-            result = JSON.stringify({
-              status: 'intake_incomplete',
-              message: 'Before building an 8+ week program, you need to understand the user\'s training background. Ask them first:',
-              questions: ['How long have you been training consistently, if at all?'],
-            })
-          } else {
-            // Semantic quality check — same checks as generate-program route
-            const qualityIssues = validateProgramQuality(draft, {
-              fitnessLevel: trainingCtx?.profile.fitnessLevel,
-              weeks: draft.weeks,
-              readinessState: trainingCtx?.readinessState ?? undefined,
-            })
-            const hardErrors = qualityIssues.filter(i => i.severity === 'error')
-
-            console.log('[V-quality]', {
-              userId: user.id,
-              weeks: draft.weeks,
-              dayCount: draft.days.length,
-              exerciseCounts: draft.days.map(d => d.exercises.length),
-              qualityErrors: hardErrors.map(i => i.code),
-              qualityRetry: qualityRetries,
-            })
-
-            if (hardErrors.length > 0 && qualityRetries < QUALITY_RETRY_LIMIT) {
-              qualityRetries++
-              result = JSON.stringify({
-                status: 'quality_issues',
-                message: `Program passed structural validation but has ${hardErrors.length} quality error(s). Fix ALL listed errors and call propose_program again with a corrected draft. Do not respond to the user yet.`,
-                errors: hardErrors.map(e => `[${e.code}] ${e.message}`),
-              })
-            } else if (hardErrors.length > 0) {
-              // Retries exhausted — tell V to surface the limitation
-              console.error('[V-quality-retry-exhausted]', {
-                userId: user.id,
-                codes: hardErrors.map(e => e.code),
-              })
-              result = JSON.stringify({
-                status: 'quality_exhausted',
-                message: 'Quality correction retries exhausted. Acknowledge to the user that you had difficulty building this program to the required standard. Explain what you were trying to achieve and suggest they try again with more specific constraints, or use the dedicated program generator.',
-              })
-            } else {
-              // All quality checks pass — accept
-              pendingProgram = validation
-              result = JSON.stringify({
-                status: 'valid',
-                message: 'Program validated and accepted. Now present it to the user with a brief summary of the program structure and how progression works.',
-              })
-            }
-          }
-        }
-
-      } else {
-        result = JSON.stringify({ error: 'Unknown tool' })
-      }
-
-      chatMessages.push({
-        role: 'tool',
-        tool_call_id: call.id,
-        content: result,
-      })
-    }
-
-    if (pendingProgram?.valid) break
+  const emitRaw = (event: object) => {
+    writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)).catch(() => {})
   }
 
-  const lastMsg = [...chatMessages].reverse().find(m => m.role === 'assistant')
-  const finalText = typeof lastMsg?.content === 'string' ? lastMsg.content : ''
+  void (async () => {
+    const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL, PROPOSE_PROGRAM_TOOL]
+    type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
 
-  const encoder = new TextEncoder()
-  const stream = new ReadableStream({
-    start(controller) {
-      const words = finalText.split(' ')
-      let i = 0
+    const chatMessages: ChatMessage[] = [
+      { role: 'system', content: SYSTEM_PROMPT + contextSnippet },
+      ...body.messages.map(m => ({ role: m.role, content: m.content } as ChatMessage)),
+    ]
 
-      function push() {
-        if (i < words.length) {
-          const chunk = (i > 0 ? ' ' : '') + words[i++]
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text', content: chunk })}\n\n`))
-          setTimeout(push, 8)
-        } else {
-          if (pendingWorkout?.valid && pendingWorkout.workout) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'workout', data: pendingWorkout.workout })}\n\n`)
-            )
+    let pendingWorkout: ReturnType<typeof validateWorkoutDraft> | null = null
+    let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
+    const MAX_ROUNDS = 12
+    let qualityRetries = 0
+    const allowedEquipment = trainingCtx?.equipment?.items
+
+    try {
+      for (let round = 0; round < MAX_ROUNDS; round++) {
+        let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
+        try {
+          response = await openai.chat.completions.create({
+            model,
+            messages: chatMessages,
+            tools,
+            tool_choice: 'auto',
+            max_tokens: 4000,
+            temperature: 0.7,
+          })
+        } catch (err: unknown) {
+          const status = (err as { status?: number }).status
+          if (status === 429) {
+            emitRaw({ type: 'text', content: "I'm a bit busy right now — try again in just a moment." })
+            emitRaw({ type: 'done' })
+            return
           }
-          if (pendingProgram?.valid && pendingProgram.program) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: 'program', data: pendingProgram.program })}\n\n`)
-            )
-          }
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`))
-          controller.close()
+          throw err
         }
+
+        const choice = response.choices[0]
+        chatMessages.push(choice.message)
+
+        if (!choice.message.tool_calls?.length) break
+
+        for (const call of choice.message.tool_calls) {
+          const fn = (call as unknown as { function: { name: string; arguments: string } }).function
+          let result: string
+
+          if (fn.name === 'search_exercises') {
+            emitRaw({ type: 'status', message: 'Searching exercises...' })
+            const params = JSON.parse(fn.arguments) as Parameters<typeof executeExerciseSearch>[0]
+            const exercises = executeExerciseSearch({ ...params, limit: Math.min(params.limit ?? 15, 20) })
+            result = exercises.length > 0
+              ? JSON.stringify(exercises)
+              : JSON.stringify({ message: 'No exercises found for those criteria. Try different filters — adjust bodyPart, equipment, or movementPattern.' })
+
+          } else if (fn.name === 'propose_workout') {
+            const draft = JSON.parse(fn.arguments) as WorkoutDraft
+            const validation = validateWorkoutDraft(draft)
+            if (validation.valid) {
+              pendingWorkout = validation
+              result = JSON.stringify({ status: 'valid', message: 'Workout validated. Present it to the user.' })
+            } else {
+              result = JSON.stringify({ status: 'invalid', errors: validation.errors })
+            }
+
+          } else if (fn.name === 'propose_program') {
+            emitRaw({ type: 'status', message: qualityRetries > 0 ? 'Refining your program...' : 'Building your program...' })
+            const draft = JSON.parse(fn.arguments) as ProgramDraft
+
+            console.log('[V-routing]', {
+              userId: user.id,
+              intent: 'program_generation',
+              toolCalled: 'propose_program',
+              draftWeeks: draft.weeks,
+              draftDays: draft.days?.length,
+            })
+
+            const validation = validateProgramDraft(draft, { allowedEquipment })
+
+            if (!validation.valid) {
+              result = JSON.stringify({ status: 'invalid', errors: validation.errors })
+            } else {
+              const isLongProgram = (draft.weeks ?? 0) >= 8
+              if (isLongProgram && trainingCtx && trainingCtx.readinessState === null) {
+                result = JSON.stringify({
+                  status: 'intake_incomplete',
+                  message: "Before building an 8+ week program, you need to understand the user's training background. Ask them first:",
+                  questions: ['How long have you been training consistently, if at all?'],
+                })
+              } else {
+                const qualityIssues = validateProgramQuality(draft, {
+                  fitnessLevel: trainingCtx?.profile.fitnessLevel,
+                  weeks: draft.weeks,
+                  readinessState: trainingCtx?.readinessState ?? undefined,
+                })
+                const hardErrors = qualityIssues.filter(i => i.severity === 'error')
+
+                console.log('[V-quality]', {
+                  userId: user.id,
+                  weeks: draft.weeks,
+                  dayCount: draft.days.length,
+                  exerciseCounts: draft.days.map(d => d.exercises.length),
+                  qualityErrors: hardErrors.map(i => i.code),
+                  qualityRetry: qualityRetries,
+                })
+
+                if (hardErrors.length > 0 && qualityRetries < QUALITY_RETRY_LIMIT) {
+                  qualityRetries++
+                  result = JSON.stringify({
+                    status: 'quality_issues',
+                    message: `Program passed structural validation but has ${hardErrors.length} quality error(s). Fix ALL listed errors and call propose_program again with a corrected draft. Do not respond to the user yet.`,
+                    errors: hardErrors.map(e => `[${e.code}] ${e.message}`),
+                  })
+                } else if (hardErrors.length > 0) {
+                  console.error('[V-quality-retry-exhausted]', { userId: user.id, codes: hardErrors.map(e => e.code) })
+                  result = JSON.stringify({
+                    status: 'quality_exhausted',
+                    message: 'Quality correction retries exhausted. Acknowledge to the user that you had difficulty building this program to the required standard. Suggest they try again with more specific constraints or use the dedicated program generator.',
+                  })
+                } else {
+                  pendingProgram = validation
+                  result = JSON.stringify({
+                    status: 'valid',
+                    message: 'Program validated and accepted. Now present it to the user with a brief summary of the program structure and how progression works.',
+                  })
+                }
+              }
+            }
+
+          } else {
+            result = JSON.stringify({ error: 'Unknown tool' })
+          }
+
+          chatMessages.push({ role: 'tool', tool_call_id: call.id, content: result })
+        }
+
+        if (pendingProgram?.valid) break
       }
 
-      push()
-    },
-  })
+      const lastMsg = [...chatMessages].reverse().find(m => m.role === 'assistant')
+      const finalText = typeof lastMsg?.content === 'string' ? lastMsg.content : ''
 
-  return new Response(stream, {
+      // Stream text word-by-word for the typing effect
+      const words = finalText.split(' ')
+      for (let i = 0; i < words.length; i++) {
+        emitRaw({ type: 'text', content: (i > 0 ? ' ' : '') + words[i] })
+        await new Promise(resolve => setTimeout(resolve, 8))
+      }
+
+      if (pendingWorkout?.valid && pendingWorkout.workout) {
+        emitRaw({ type: 'workout', data: pendingWorkout.workout })
+      }
+      if (pendingProgram?.valid && pendingProgram.program) {
+        emitRaw({ type: 'program', data: pendingProgram.program })
+      }
+      emitRaw({ type: 'done' })
+
+    } catch (err: unknown) {
+      console.error('[V-coach-error]', err)
+      emitRaw({ type: 'text', content: 'Something went wrong on my end. Please try again.' })
+      emitRaw({ type: 'done' })
+    } finally {
+      await writer.close().catch(() => {})
+    }
+  })()
+
+  return new Response(readable, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
