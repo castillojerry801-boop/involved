@@ -1176,6 +1176,7 @@ enum UserEntitlementSource {
   trainer_sponsored
   trial
   promo
+  admin_grant
 }
 
 enum UserEntitlementStatus {

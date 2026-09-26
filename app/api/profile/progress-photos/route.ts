@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
+import { getUserEntitlement } from '@/lib/subscription/entitlements'
 
 const admin = createSupabaseAdmin(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,18 +18,16 @@ export async function GET() {
   const user = await getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const photos = await prisma.progressPhoto.findMany({
-    where: { userId: user.id },
-    orderBy: { takenAt: 'desc' },
-    select: { id: true, url: true, note: true, takenAt: true },
-  })
+  const [photos, entitlement] = await Promise.all([
+    prisma.progressPhoto.findMany({
+      where: { userId: user.id },
+      orderBy: { takenAt: 'desc' },
+      select: { id: true, url: true, note: true, takenAt: true },
+    }),
+    getUserEntitlement(user.id),
+  ])
 
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: { subscriptionTier: true },
-  })
-
-  const isPlus = profile?.subscriptionTier === 'plus'
+  const isPlus = entitlement.isPlus
 
   return NextResponse.json({
     photos,
@@ -43,12 +42,12 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   // Check limit
-  const [count, profile] = await Promise.all([
+  const [count, entitlement] = await Promise.all([
     prisma.progressPhoto.count({ where: { userId: user.id } }),
-    prisma.profile.findUnique({ where: { id: user.id }, select: { subscriptionTier: true } }),
+    getUserEntitlement(user.id),
   ])
 
-  const isPlus = profile?.subscriptionTier === 'plus'
+  const isPlus = entitlement.isPlus
   if (!isPlus && count >= FREE_LIMIT) {
     return NextResponse.json(
       { error: `Free plan limit is ${FREE_LIMIT} photos. Upgrade to Involved+ for unlimited.` },

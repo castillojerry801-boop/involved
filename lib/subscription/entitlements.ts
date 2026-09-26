@@ -15,6 +15,8 @@ export interface Entitlement {
   isTrainer: boolean
   // True if Plus access comes from a trainer sponsoring this user (not personal sub)
   isTrainerSponsored: boolean
+  // True if Plus access was granted manually by an admin
+  isAdminGrant: boolean
 }
 
 const FREE_ENTITLEMENT: Entitlement = {
@@ -29,6 +31,7 @@ const FREE_ENTITLEMENT: Entitlement = {
   isFree: true,
   isTrainer: false,
   isTrainerSponsored: false,
+  isAdminGrant: false,
 }
 
 /**
@@ -59,6 +62,7 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
       isFree: false,
       isTrainer: true,
       isTrainerSponsored: false,
+      isAdminGrant: false,
     }
   }
   const plusOverrides = (process.env.PLUS_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
@@ -68,13 +72,21 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
 
   const now = new Date()
 
-  const [sub, trainerSub, sponsoredEntitlements] = await Promise.all([
+  const [sub, trainerSub, sponsoredEntitlements, adminEntitlements] = await Promise.all([
     prisma.userSubscription.findUnique({ where: { userId } }).catch(() => null),
     prisma.trainerSubscription.findUnique({ where: { userId } }).catch(() => null),
     prisma.userEntitlement.findMany({
       where: {
         userId,
         source: 'trainer_sponsored',
+        status: 'active',
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+    }).catch(() => []),
+    prisma.userEntitlement.findMany({
+      where: {
+        userId,
+        source: 'admin_grant',
         status: 'active',
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
@@ -95,6 +107,7 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
       isFree: false,
       isTrainer: true,
       isTrainerSponsored: false,
+      isAdminGrant: false,
     }
   }
 
@@ -113,6 +126,7 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
         isFree: false,
         isTrainer: false,
         isTrainerSponsored: false,
+        isAdminGrant: false,
       }
     }
 
@@ -139,6 +153,7 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
           isFree: false,
           isTrainer: false,
           isTrainerSponsored: false,
+          isAdminGrant: false,
         }
       }
     }
@@ -158,6 +173,25 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
       isFree: false,
       isTrainer: false,
       isTrainerSponsored: true,
+      isAdminGrant: false,
+    }
+  }
+
+  // 5. Admin grant
+  if (adminEntitlements.length > 0) {
+    return {
+      tier: 'plus',
+      status: 'active',
+      trialEndsAt: null,
+      trialDaysRemaining: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      isPlus: true,
+      isTrial: false,
+      isFree: false,
+      isTrainer: false,
+      isTrainerSponsored: false,
+      isAdminGrant: true,
     }
   }
 
