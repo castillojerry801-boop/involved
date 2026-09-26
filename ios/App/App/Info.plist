@@ -25,7 +25,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Involved uses the camera to scan food barcodes for nutrition logging.</string>
+	<string>Involved uses the camera to scan food barcodes and support photo-based nutrition logging.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Involved reads your workouts, weight, and resting heart rate from Apple Health to show your training history in one place. No data is written back to Health.</string>
 	<key>NSHealthUpdateUsageDescription</key>
@@ -70,6 +70,8 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>WKAppBoundDomains</key>
 	<array>
 		<string>involvedfit.com</string>
