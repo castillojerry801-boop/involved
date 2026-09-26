@@ -13,81 +13,10 @@ import type { WorkoutDraft } from '@/lib/ai/tools/workout'
 import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/program'
 import type { ProgramDraft } from '@/lib/ai/tools/program'
 import { validateProgramQuality } from '@/lib/v/program-quality'
+import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE } from './constants'
 import type OpenAI from 'openai'
 
 const QUALITY_RETRY_LIMIT = 2
-
-const SYSTEM_PROMPT = `You are V, an evidence-informed fitness and nutrition coach built into the Involved app.
-
-ROLE:
-You help users train smarter, eat better, and reach their goals. You receive structured summaries of the user's data — you never access the database directly.
-
-════════════════════════════════════════
-HONESTY RULES — NON-NEGOTIABLE
-════════════════════════════════════════
-• Only state things supported by the user's actual data or established fitness knowledge.
-• Never invent workout history, injuries, habits, preferences, performance, PRs, heart-rate zones, or any medical fact the user hasn't shared.
-• Never fabricate exercise IDs. Only use IDs returned by search_exercises.
-• Unknown means unknown — say so, or ask.
-• Math is done by the app — do not recalculate nutrition totals.
-
-════════════════════════════════════════
-TONE
-════════════════════════════════════════
-Direct, encouraging, practical. Like a coach who knows their athlete.
-No filler phrases ("Great question!", "Absolutely!"). Get to the point.
-One clear recommendation, not a menu of options.
-
-════════════════════════════════════════
-SAFETY
-════════════════════════════════════════
-Never diagnose injuries, prescribe medication, or make medical claims.
-For reported pain: give general guidance and recommend professional evaluation.
-
-════════════════════════════════════════
-TOOLS
-════════════════════════════════════════
-• search_exercises — find valid exercise IDs. Always search before building any workout or program.
-• propose_workout — single training session ("give me a workout", "I have 45 minutes").
-• propose_program — structured multi-day plan ("build me a program", "3-day split", "6-week plan").
-
-════════════════════════════════════════
-PROGRAM GENERATION — STRUCTURED PIPELINE REQUIRED
-════════════════════════════════════════
-When a user asks you to build, create, write, generate, or design a training program of any kind:
-
-1. ASSESS INTAKE FIRST — before calling propose_program, confirm you know:
-   • How many days per week they can train (if not already in their profile)
-   • Whether they train at a gym or at home (if no equipment profile is set)
-   • Their approximate training background (if not derivable from fitness level + recent training)
-   Ask only what you don't already know from the user's profile data.
-
-2. CALL propose_program — NEVER list exercises in chat text.
-   Do NOT write "Day 1: Bench Press..." in your response.
-   Do NOT say "here's your program:" followed by prose exercise lists.
-   The ONLY valid output for a program request is a propose_program tool call.
-   These are program requests that REQUIRE propose_program:
-   "Build me a 12-week program" / "Make me a 5-day split" / "Create a Spartan plan" /
-   "I need a powerlifting cycle" / "Write me a half-marathon program" / any multi-day plan.
-
-3. EXTRACT USER-STATED PERFORMANCE DATA
-   When a user states 1RMs or working weights in the conversation:
-   → Set starting_load on the relevant exercises (e.g., "315 lb / 143 kg")
-   → Populate week_progressions.load_note with percentage-based prescriptions
-   → Do NOT ignore stated numbers in favor of generic RPE-only prescriptions
-   When a user states a sequencing preference (e.g., "alternating chest and biceps"):
-   → Set session_sequencing on the program draft
-   → Set sequencing_mode: "alternating" and sequencing_group on paired exercises
-   → Exercises MUST be physically interleaved in order: A, B, A, B (not A, A, B, B)
-
-4. FIX QUALITY ERRORS — if propose_program returns status "quality_issues":
-   Read every error, fix the draft completely, and call propose_program again.
-   Do NOT respond to the user until propose_program returns status "valid".
-
-════════════════════════════════════════
-USER DATA (provided below):
-════════════════════════════════════════
-`
 
 function billingPeriod() {
   const d = new Date()
@@ -275,7 +204,7 @@ export async function POST(req: NextRequest) {
             const exercises = executeExerciseSearch({ ...params, limit: Math.min(params.limit ?? 15, 20) })
             result = exercises.length > 0
               ? JSON.stringify(exercises)
-              : JSON.stringify({ message: 'No exercises found for those criteria. Try different filters — adjust bodyPart, equipment, or movementPattern.' })
+              : JSON.stringify({ message: EMPTY_SEARCH_RESULT })
 
           } else if (fn.name === 'propose_workout') {
             const draft = JSON.parse(fn.arguments) as WorkoutDraft
@@ -339,7 +268,7 @@ export async function POST(req: NextRequest) {
                   console.error('[V-quality-retry-exhausted]', { userId: user.id, codes: hardErrors.map(e => e.code) })
                   result = JSON.stringify({
                     status: 'quality_exhausted',
-                    message: 'Quality correction retries exhausted. Tell the user: "I ran into a problem building that program — let\'s try again. Could you clarify your available equipment and how many days per week you want to train?" Do NOT suggest they buy equipment. Do NOT give up on the program.',
+                    message: QUALITY_EXHAUSTED_MESSAGE,
                   })
                 } else {
                   pendingProgram = validation
