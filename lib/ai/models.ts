@@ -68,6 +68,34 @@ export function isNextGenModel(model: string): boolean {
   return /^(?:gpt-[56]|o[1-9])/i.test(model)
 }
 
+export interface ModelParamShape {
+  max_tokens?: number
+  max_completion_tokens?: number
+  temperature?: number
+  reasoning_effort?: 'none'
+}
+
+/**
+ * Deterministic per-model request-parameter shape for /v1/chat/completions.
+ *
+ * - Legacy chat models (gpt-4o / gpt-4o-mini): max_tokens + temperature.
+ * - Next-gen models (gpt-5 / gpt-6 families, o-series): max_completion_tokens,
+ *   no custom temperature, and — when function tools are used — reasoning_effort
+ *   'none'. gpt-6 models reject function tools on chat/completions otherwise
+ *   ("Function tools with reasoning_effort are not supported … set
+ *   reasoning_effort to 'none'"). This is a known condition, resolved directly
+ *   rather than by trial-and-error mutation.
+ */
+export function buildModelParamShape(model: string, useTools: boolean, maxTokens: number): ModelParamShape {
+  if (isNextGenModel(model)) {
+    return {
+      max_completion_tokens: maxTokens,
+      ...(useTools ? { reasoning_effort: 'none' as const } : {}),
+    }
+  }
+  return { max_tokens: maxTokens, temperature: 0.7 }
+}
+
 export interface OpenAIErrorInfo {
   status?: number
   code?: string

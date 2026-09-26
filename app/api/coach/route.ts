@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getOpenAI } from '@/lib/ai/client'
-import { coachModel, V_CHAT_MODEL, V_PROGRAM_MODEL, V_ESCALATION_MODEL, validateModelConfig, describeOpenAIError, isModelNotFoundError, isUnsupportedParamError, isNextGenModel } from '@/lib/ai/models'
+import { coachModel, V_CHAT_MODEL, V_PROGRAM_MODEL, V_ESCALATION_MODEL, validateModelConfig, describeOpenAIError, isModelNotFoundError, isUnsupportedParamError, buildModelParamShape } from '@/lib/ai/models'
 import { getAiLimit } from '@/lib/subscription/config'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { buildCoachContext, contextToSystemSnippet } from '@/lib/ai/context'
@@ -307,18 +307,15 @@ export async function POST(req: NextRequest) {
       // Once tool calls begin, use the full 4000 for exercise lists and program drafts.
       const hasToolHistory = messages.some(m => m.role === 'tool')
       const maxTokens = useTools ? (hasToolHistory ? 4000 : 500) : 1500
-      // Start with the param shape the model generation expects; flip once if the
-      // API reports the token parameter is unsupported (self-correcting, not a guess).
-      let useCompletionTokenParam = isNextGenModel(selectedModel)
+      // Deterministic per-model request shape (next-gen gets max_completion_tokens
+      // and reasoning_effort:'none' for tools; legacy gets max_tokens + temperature).
+      const params = {
+        model: selectedModel,
+        messages,
+        ...(useTools ? { tools, tool_choice: 'auto' as const } : {}),
+        ...buildModelParamShape(selectedModel, useTools, maxTokens),
+      } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
       for (let attempt = 0; attempt < 3; attempt++) {
-        const params = {
-          model: selectedModel,
-          messages,
-          ...(useTools ? { tools, tool_choice: 'auto' as const } : {}),
-          ...(useCompletionTokenParam
-            ? { max_completion_tokens: maxTokens }        // next-gen: renamed param, default temperature
-            : { max_tokens: maxTokens, temperature: 0.7 }), // legacy chat models
-        } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
         try {
           const res = await openai.chat.completions.create(params)
           if (res.usage) {
@@ -336,21 +333,6 @@ export async function POST(req: NextRequest) {
               30000
             emitRaw({ type: 'status', message: 'V is thinking...' })
             await new Promise(resolve => setTimeout(resolve, Math.min(waitMs, 60000)))
-            continue
-          }
-          // Self-correct a token-parameter mismatch once, driven by the real error.
-          if (
-            isUnsupportedParamError(info) &&
-            /max_tokens|max_completion_tokens/.test(info.message ?? '') &&
-            attempt < 2
-          ) {
-            console.warn('[V-model]', {
-              userId: user.id,
-              model: selectedModel,
-              note: 'token-param mismatch — flipping',
-              from: useCompletionTokenParam ? 'max_completion_tokens' : 'max_tokens',
-            })
-            useCompletionTokenParam = !useCompletionTokenParam
             continue
           }
           throw err

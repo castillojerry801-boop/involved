@@ -15,7 +15,7 @@ import { describe, it, expect } from 'vitest'
 import {
   V_CHAT_MODEL, V_PROGRAM_MODEL, V_ESCALATION_MODEL,
   validateModelConfig, describeOpenAIError, isModelNotFoundError, isUnsupportedParamError,
-  isNextGenModel,
+  isNextGenModel, buildModelParamShape,
 } from '../../lib/ai/models'
 
 describe('model routing defaults', () => {
@@ -96,23 +96,56 @@ describe('isNextGenModel — token/temperature param shape', () => {
     expect(isNextGenModel('gpt-4o')).toBe(false)
   })
 
-  // Mirrors the param object the route builds per model.
-  function buildParams(model: string, maxTokens: number) {
-    return isNextGenModel(model)
-      ? { max_completion_tokens: maxTokens }
-      : { max_tokens: maxTokens, temperature: 0.7 }
-  }
-
   it('Luna gets max_completion_tokens and NO temperature', () => {
-    const p = buildParams('gpt-6-luna', 4000)
+    const p = buildModelParamShape('gpt-6-luna', true, 4000)
     expect(p).toHaveProperty('max_completion_tokens', 4000)
     expect(p).not.toHaveProperty('max_tokens')
     expect(p).not.toHaveProperty('temperature')
   })
   it('mini gets max_tokens + temperature', () => {
-    const p = buildParams('gpt-4o-mini', 500)
+    const p = buildModelParamShape('gpt-4o-mini', true, 500)
     expect(p).toHaveProperty('max_tokens', 500)
     expect(p).toHaveProperty('temperature')
+  })
+})
+
+// ─── reasoning_effort: 'none' for gpt-6 tool calling (the 400 fix) ────────────
+// gpt-6 models reject function tools on /v1/chat/completions unless reasoning is
+// disabled: "Function tools with reasoning_effort are not supported ... set
+// reasoning_effort to 'none'." This must be deterministic, not trial-and-error.
+
+describe('buildModelParamShape — reasoning_effort for gpt-6 + tools', () => {
+  it('Luna + tools ALWAYS sends reasoning_effort: "none"', () => {
+    expect(buildModelParamShape('gpt-6-luna', true, 4000).reasoning_effort).toBe('none')
+    expect(buildModelParamShape(V_PROGRAM_MODEL, true, 4000).reasoning_effort).toBe('none')
+  })
+
+  it('Sol + tools ALWAYS sends reasoning_effort: "none"', () => {
+    expect(buildModelParamShape('gpt-6-sol', true, 4000).reasoning_effort).toBe('none')
+    expect(buildModelParamShape(V_ESCALATION_MODEL, true, 4000).reasoning_effort).toBe('none')
+  })
+
+  it('cheap chat model NEVER sends reasoning_effort (keeps legacy shape)', () => {
+    const p = buildModelParamShape('gpt-4o-mini', true, 500)
+    expect(p.reasoning_effort).toBeUndefined()
+    expect(p).toHaveProperty('max_tokens', 500)
+    expect(p).toHaveProperty('temperature', 0.7)
+    expect(p).not.toHaveProperty('max_completion_tokens')
+  })
+
+  it('gpt-4o (legacy) never sends reasoning_effort', () => {
+    expect(buildModelParamShape('gpt-4o', true, 1500).reasoning_effort).toBeUndefined()
+  })
+
+  it('next-gen WITHOUT tools omits reasoning_effort (only needed for function tools)', () => {
+    const p = buildModelParamShape('gpt-6-luna', false, 1500)
+    expect(p.reasoning_effort).toBeUndefined()
+    expect(p).toHaveProperty('max_completion_tokens', 1500)
+  })
+
+  it('no next-gen model sends a custom temperature', () => {
+    expect(buildModelParamShape('gpt-6-luna', true, 4000)).not.toHaveProperty('temperature')
+    expect(buildModelParamShape('gpt-6-sol', true, 4000)).not.toHaveProperty('temperature')
   })
 })
 
