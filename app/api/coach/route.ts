@@ -176,7 +176,10 @@ export async function POST(req: NextRequest) {
   const ctx = await buildCoachContext(user.id, user.email)
   const trainingCtx = ctx.trainingCtx
   const contextSnippet = contextToSystemSnippet(ctx)
-  const model = coachModel(tier === 'free' ? 'free' : 'plus')
+  // gpt-4o-mini for tool-calling rounds: 10x faster, 200k TPM, no rate-limit stalls.
+  // Switch to the configured model only for the final prose response (no tool calls).
+  const proseModel = coachModel(tier === 'free' ? 'free' : 'plus')
+  const toolModel = 'gpt-4o-mini'
   const openai = getOpenAI()
 
   // Open the stream immediately — the client gets HTTP headers right away and
@@ -202,17 +205,27 @@ export async function POST(req: NextRequest) {
     let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
     const MAX_ROUNDS = 12
     let qualityRetries = 0
-    const allowedEquipment = trainingCtx?.equipment?.items
 
-    const callModel = async (messages: OpenAI.Chat.ChatCompletionMessageParam[]) => {
+    // If the user stated gym/commercial access in the conversation, lift the
+    // equipment restriction entirely — their words override the DB profile.
+    const conversationText = body.messages.map(m => m.content).join(' ').toLowerCase()
+    const userStatedGymAccess = /full[\s-]?gym|commercial\s?gym|gym\s?access|well[\s-]?equipped|barbell|squat\s?rack|power\s?rack/.test(conversationText)
+    const allowedEquipment = userStatedGymAccess ? undefined : trainingCtx?.equipment?.items
+
+    // useTools: tool-calling rounds use gpt-4o-mini (fast, 200k TPM).
+    // Final prose round (no tools) uses the configured proseModel (gpt-4o for plus).
+    const callModel = async (
+      messages: OpenAI.Chat.ChatCompletionMessageParam[],
+      useTools: boolean,
+    ) => {
+      const selectedModel = useTools ? toolModel : proseModel
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           return await openai.chat.completions.create({
-            model,
+            model: selectedModel,
             messages,
-            tools,
-            tool_choice: 'auto',
-            max_tokens: 4000,
+            ...(useTools ? { tools, tool_choice: 'auto' } : {}),
+            max_tokens: useTools ? 4000 : 1500,
             temperature: 0.7,
           })
         } catch (err: unknown) {
@@ -236,7 +249,7 @@ export async function POST(req: NextRequest) {
       for (let round = 0; round < MAX_ROUNDS; round++) {
         let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
         try {
-          response = await callModel(chatMessages)
+          response = await callModel(chatMessages, true)
         } catch (err: unknown) {
           const status = (err as { status?: number }).status
           if (status === 429) {
@@ -326,7 +339,7 @@ export async function POST(req: NextRequest) {
                   console.error('[V-quality-retry-exhausted]', { userId: user.id, codes: hardErrors.map(e => e.code) })
                   result = JSON.stringify({
                     status: 'quality_exhausted',
-                    message: 'Quality correction retries exhausted. Acknowledge to the user that you had difficulty building this program to the required standard. Suggest they try again with more specific constraints or use the dedicated program generator.',
+                    message: 'Quality correction retries exhausted. Tell the user: "I ran into a problem building that program — let\'s try again. Could you clarify your available equipment and how many days per week you want to train?" Do NOT suggest they buy equipment. Do NOT give up on the program.',
                   })
                 } else {
                   pendingProgram = validation
