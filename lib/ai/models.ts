@@ -58,6 +58,16 @@ export function validateModelConfig(models: Record<string, string> = V_MODELS): 
   return { ok: issues.length === 0, issues }
 }
 
+/**
+ * Next-generation OpenAI models (gpt-5 / gpt-6 families and the o-series) renamed
+ * `max_tokens` → `max_completion_tokens` and reject a custom `temperature`. Callers
+ * must send the correct parameter shape per model instead of forwarding legacy
+ * chat-model params.
+ */
+export function isNextGenModel(model: string): boolean {
+  return /^(?:gpt-[56]|o[1-9])/i.test(model)
+}
+
 export interface OpenAIErrorInfo {
   status?: number
   code?: string

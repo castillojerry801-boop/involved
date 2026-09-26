@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest'
 import {
   V_CHAT_MODEL, V_PROGRAM_MODEL, V_ESCALATION_MODEL,
   validateModelConfig, describeOpenAIError, isModelNotFoundError, isUnsupportedParamError,
+  isNextGenModel,
 } from '../../lib/ai/models'
 
 describe('model routing defaults', () => {
@@ -72,6 +73,46 @@ describe('validateModelConfig', () => {
     const r = validateModelConfig({ chat: 'gpt-4o-mini', program: 'gpt-6-luna ', escalation: 'gpt-6-sol' })
     expect(r.ok).toBe(false)
     expect(r.issues.join(' ')).toMatch(/whitespace/)
+  })
+})
+
+// ─── Per-model request-parameter compatibility ───────────────────────────────
+
+describe('isNextGenModel — token/temperature param shape', () => {
+  it('Luna and Sol are next-gen (need max_completion_tokens, no custom temperature)', () => {
+    expect(isNextGenModel('gpt-6-luna')).toBe(true)
+    expect(isNextGenModel('gpt-6-sol')).toBe(true)
+    expect(isNextGenModel(V_PROGRAM_MODEL)).toBe(true)
+    expect(isNextGenModel(V_ESCALATION_MODEL)).toBe(true)
+  })
+  it('gpt-5 family and o-series are next-gen', () => {
+    expect(isNextGenModel('gpt-5')).toBe(true)
+    expect(isNextGenModel('o1-mini')).toBe(true)
+    expect(isNextGenModel('o3')).toBe(true)
+  })
+  it('the cheap chat model is legacy (uses max_tokens + temperature)', () => {
+    expect(isNextGenModel('gpt-4o-mini')).toBe(false)
+    expect(isNextGenModel(V_CHAT_MODEL)).toBe(false)
+    expect(isNextGenModel('gpt-4o')).toBe(false)
+  })
+
+  // Mirrors the param object the route builds per model.
+  function buildParams(model: string, maxTokens: number) {
+    return isNextGenModel(model)
+      ? { max_completion_tokens: maxTokens }
+      : { max_tokens: maxTokens, temperature: 0.7 }
+  }
+
+  it('Luna gets max_completion_tokens and NO temperature', () => {
+    const p = buildParams('gpt-6-luna', 4000)
+    expect(p).toHaveProperty('max_completion_tokens', 4000)
+    expect(p).not.toHaveProperty('max_tokens')
+    expect(p).not.toHaveProperty('temperature')
+  })
+  it('mini gets max_tokens + temperature', () => {
+    const p = buildParams('gpt-4o-mini', 500)
+    expect(p).toHaveProperty('max_tokens', 500)
+    expect(p).toHaveProperty('temperature')
   })
 })
 
