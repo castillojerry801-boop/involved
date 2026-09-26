@@ -7,7 +7,6 @@ import { coachModel } from '@/lib/ai/models'
 import { getAiLimit } from '@/lib/subscription/config'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { buildCoachContext, contextToSystemSnippet } from '@/lib/ai/context'
-import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
 import { SEARCH_EXERCISES_TOOL, executeExerciseSearch } from '@/lib/ai/tools/exercises'
 import { PROPOSE_WORKOUT_TOOL, validateWorkoutDraft } from '@/lib/ai/tools/workout'
 import type { WorkoutDraft } from '@/lib/ai/tools/workout'
@@ -84,8 +83,6 @@ When a user asks you to build, create, write, generate, or design a training pro
 4. FIX QUALITY ERRORS — if propose_program returns status "quality_issues":
    Read every error, fix the draft completely, and call propose_program again.
    Do NOT respond to the user until propose_program returns status "valid".
-
-${PROGRAM_INTELLIGENCE_PROMPT}
 
 ════════════════════════════════════════
 USER DATA (provided below):
