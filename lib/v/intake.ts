@@ -49,8 +49,12 @@ export function assessIntakeGaps(
 
   // 1. Readiness state — derived from ctx.readinessState (set by caller)
   const readinessKnown = ctx.readinessState !== null && ctx.readinessState !== undefined
+  const isLongProgram = (request.weeks ?? 0) >= 8
   if (!readinessKnown) {
     missingHighValue.push('How long have you been training consistently, if at all?')
+  } else if (isLongProgram && ctx.readinessState === 'never_trained') {
+    // For 8+ week programs, a never-trained user needs more context than just "never trained"
+    missingHighValue.push('Have you trained with weights before, or will this be your first structured program?')
   }
 
   // 2. Equipment
@@ -72,7 +76,6 @@ export function assessIntakeGaps(
   }
 
   // 4. For long programs: need fitness-level signal
-  const isLongProgram = (request.weeks ?? 0) >= 8
   if (isLongProgram && !ctx.profile.fitnessLevel) {
     missingHighValue.push('How would you describe your current fitness level?')
   }

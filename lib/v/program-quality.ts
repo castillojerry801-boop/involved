@@ -1,5 +1,6 @@
 import 'server-only'
 import type { ProgramDraft, ProgressionModel } from '@/lib/ai/tools/program'
+import { getSessionRoles } from '@/lib/v/session-composition'
 
 export interface QualityIssue {
   severity: 'error' | 'warning'
@@ -11,6 +12,7 @@ export interface QualityContext {
   sport?: string
   fitnessLevel?: string | null
   weeks?: number
+  readinessState?: string | null
 }
 
 const PROGRESSION_KEYWORDS = /\badd\b|\bincrease\b|\bprogress\b|\bweek\b|\bphase\b|\b\d+%\b|\bload\b|\bbuilding\b|\bescalat/i
@@ -35,6 +37,41 @@ function isPowerliftingSport(sport: string): boolean {
 
 function isOCR(sport: string): boolean {
   return normalizeSport(sport) === 'ocr'
+}
+
+function toExperienceLevel(fitnessLevel: string): 'beginner' | 'intermediate' | 'advanced' | null {
+  const lvl = fitnessLevel.toLowerCase()
+  if (lvl.includes('advanced') || lvl.includes('expert')) return 'advanced'
+  if (lvl.includes('intermediate')) return 'intermediate'
+  if (lvl.includes('beginner') || lvl.includes('novice')) return 'beginner'
+  return null
+}
+
+function inferSessionType(name: string, focus?: string | null): string | null {
+  const text = (name + ' ' + (focus ?? '')).toLowerCase()
+
+  if (/full.?body|total.?body/i.test(text)) return 'full_body'
+
+  // Upper specifics before generic "upper"
+  if (/upper.*push|push.*upper|chest.*(shoulder|tri)|shoulder.*chest/i.test(text)) return 'upper_push'
+  if (/upper.*pull|pull.*upper|back.*bi|lat.*bi/i.test(text)) return 'upper_pull'
+
+  // PPL — simple push/pull/legs day labels (starts with the word)
+  if (/^push\b/i.test(name.trim())) return 'push_pull_legs_push'
+  if (/^pull\b/i.test(name.trim())) return 'push_pull_legs_pull'
+  if (/^legs?\b/i.test(name.trim())) return 'push_pull_legs_legs'
+
+  // Generic upper
+  if (/\bupper\b/i.test(text)) return 'upper_full'
+
+  // Lower specifics before generic "lower"
+  if (/quad.?dominant|squat.?focus|quad.?day/i.test(text)) return 'lower_quad'
+  if (/hinge.?dominant|posterior.?chain.?focus|deadlift.?day/i.test(text)) return 'lower_posterior'
+  if (/lower.?body|lower.?strength|lower.?day|\blegs?\b/i.test(text)) return 'lower_full'
+
+  if (/\bcondition|metcon|\bcardio\b|\baerob/i.test(text)) return 'conditioning'
+
+  return null
 }
 
 function allExercises(draft: ProgramDraft) {
@@ -71,6 +108,38 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
         code: 'NO_PROGRESSION',
         message: `${weeks}-week program has no progression defined. Add week_progressions on main lifts or progression notes on exercises. A multi-week program must get harder week over week.`,
       })
+    }
+  }
+
+  // NO_STRUCTURED_PROGRESSION: ≥ 6 weeks with no machine-readable progression structure
+  // Unlike NO_PROGRESSION (which checks for any textual signal), this fires when there is
+  // a progression_strategy but zero per-exercise week_progressions or progression_models.
+  if (weeks >= 6) {
+    const exercises = allExercises(draft)
+    const hasWeekProgressions = exercises.some(ex => ex.week_progressions && ex.week_progressions.length > 0)
+    const hasProgressionModel = exercises.some(ex => ex.progression_model && ex.progression_model !== 'auto')
+    if (!hasWeekProgressions && !hasProgressionModel) {
+      issues.push({
+        severity: 'error',
+        code: 'NO_STRUCTURED_PROGRESSION',
+        message: `${weeks}-week program has no per-exercise progression structure: zero exercises have week_progressions or a progression_model assigned. Add progression_model ("linear", "double_progression", "percentage_rpe", etc.) to every main exercise, and populate week_progressions on compound lifts.`,
+      })
+    }
+  }
+
+  // ALTERNATING_NOT_IMPLEMENTED: alternating sequencing stated but no sequencing_group assigned
+  if (draft.session_sequencing && /alternating/i.test(draft.session_sequencing)) {
+    for (const day of draft.days) {
+      if (day.exercises.length >= 4) {
+        const hasAnyGroup = day.exercises.some(ex => ex.sequencing_group != null)
+        if (!hasAnyGroup) {
+          issues.push({
+            severity: 'warning',
+            code: 'ALTERNATING_NOT_IMPLEMENTED',
+            message: `Program specifies alternating sequencing but day "${day.name}" has ${day.exercises.length} exercises with no sequencing_group assigned. Pair exercises that should alternate by assigning matching sequencing_group integers (e.g., group 1 and group 2).`,
+          })
+        }
+      }
     }
   }
 
@@ -306,9 +375,9 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
       )
       if (isStrengthDay && day.exercises.length < 4) {
         issues.push({
-          severity: 'warning',
+          severity: 'error',
           code: 'SPARSE_SESSION',
-          message: `Day "${day.name}" is a ${isAdvanced ? 'advanced' : 'intermediate'} strength session with only ${day.exercises.length} exercise(s). Fill the required movement-pattern roles for this session type (minimum 4).`,
+          message: `Day "${day.name}" is a ${isAdvanced ? 'advanced' : 'intermediate'} strength session with only ${day.exercises.length} exercise(s). Fill the required movement-pattern roles for this session type (minimum 4). Search for exercises to fill missing roles.`,
         })
       }
     }
@@ -322,10 +391,39 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
       )
       if (isDeepDay && day.exercises.length < 5) {
         issues.push({
-          severity: 'warning',
+          severity: 'error',
           code: 'ADVANCED_SHALLOW_SESSION',
-          message: `Day "${day.name}" is an advanced ${day.name}-type session with only ${day.exercises.length} exercises. Advanced trainees typically benefit from 5–8 exercises to fill all required roles (primary press, secondary press, isolation, shoulder work, arm accessories).`,
+          message: `Day "${day.name}" is an advanced ${day.name}-type session with only ${day.exercises.length} exercises. Advanced trainees need 5–8 exercises to fill all required roles (primary press, secondary press, isolation, shoulder work, arm accessories). Add missing roles.`,
         })
+      }
+    }
+  }
+
+  // MISSING_REQUIRED_ROLE: day is missing a required movement-pattern role for its type and experience level
+  if (fitnessLevel) {
+    const expLevel = toExperienceLevel(fitnessLevel)
+    if (expLevel) {
+      for (const day of draft.days) {
+        const sessionType = inferSessionType(day.name, day.focus)
+        if (!sessionType) continue
+
+        const roles = getSessionRoles(sessionType, expLevel)
+        const requiredPatterns = new Set(roles.filter(r => r.required).map(r => r.pattern))
+        if (requiredPatterns.size === 0) continue
+
+        const dayPatterns = new Set(day.exercises.map(ex => ex.intended_pattern))
+        const missingPatterns = [...requiredPatterns].filter(p => !dayPatterns.has(p))
+
+        if (missingPatterns.length > 0) {
+          const missingRoleNames = roles
+            .filter(r => r.required && missingPatterns.includes(r.pattern))
+            .map(r => `${r.role} (${r.pattern})`)
+          issues.push({
+            severity: 'error',
+            code: 'MISSING_REQUIRED_ROLE',
+            message: `Day "${day.name}" (${sessionType}, ${expLevel}) is missing required movement-pattern roles: ${missingRoleNames.join(', ')}. Search for exercises with these movementPatterns and add them to this session.`,
+          })
+        }
       }
     }
   }

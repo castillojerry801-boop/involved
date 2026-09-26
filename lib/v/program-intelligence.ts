@@ -407,6 +407,76 @@ HIGH-VALUE (ask only if unknown AND program-critical):
   4. Running/endurance: current weekly mileage (if sport requires it and unknown)
   5. Powerlifting: working weights / approximate maxes (if no PRs)
 
-Ask at most 2–3 questions at once. If you have enough data to design a reasonable program, design it and note your assumptions. Do not over-ask.`
+Ask at most 2–3 questions at once. If you have enough data to design a reasonable program, design it and note your assumptions. Do not over-ask.
+
+════════════════════════════════════════
+PROGRESSION IS REQUIRED — NOT OPTIONAL
+════════════════════════════════════════
+A multi-week program that does not change week over week is NOT a program — it is a workout repeated.
+
+REQUIRED for every program ≥ 4 weeks:
+• Assign progression_model to EVERY main exercise. Do not leave it blank or "auto" unless you genuinely cannot decide.
+• For compound lifts in strength programs (≥ 6 weeks): populate week_progressions showing explicit load, rep, or intensity changes across at least the first 4 weeks.
+• Write progression_strategy with SPECIFIC numbers — NOT "progressive overload":
+  BAD:  "Progressive overload with deload weeks"
+  GOOD: "Weeks 1–3: 4×5 @ 70–75% 1RM, +2.5% per week. Week 4: 3×5 @ 60% deload. Weeks 5–7: 4×3 @ 80–85%."
+• Every exercise must have a different progression model from adjacent exercises — a program where every exercise uses "linear" is wrong.
+
+If you cannot state exactly how the program gets harder week over week, you do not have a program — you have a workout repeated. Fix this before proposing.
+
+════════════════════════════════════════
+SEQUENCING — IMPLEMENTATION REQUIRED
+════════════════════════════════════════
+If you intend alternating or superset sequencing, you MUST implement it with sequencing fields — stating it in notes is not implementation.
+
+ALTERNATING:
+• Set sequencing_mode = "alternating" on both exercises
+• Set sequencing_group = same integer on the two exercises being alternated (e.g., both = 1)
+• Example: Bench Press (sequencing_mode: "alternating", sequencing_group: 1) alternates with Hammer Curl (sequencing_mode: "alternating", sequencing_group: 1)
+
+SUPERSET:
+• Set sequencing_mode = "superset" (or "antagonist_superset") on both exercises
+• Set sequencing_group = same integer on the paired exercises
+• Example: Cable Fly (sequencing_mode: "superset", sequencing_group: 2) + Tricep Pushdown (sequencing_mode: "superset", sequencing_group: 2)
+
+STRAIGHT SETS (default):
+• Set sequencing_mode = "straight" or omit it
+• No sequencing_group needed
+
+DO NOT write "these are alternated" in notes and leave sequencing_mode blank — the app cannot render what you do not specify.
+
+════════════════════════════════════════
+REST PERIODS — MATCH TO EFFORT
+════════════════════════════════════════
+Default rest_seconds based on exercise role and intensity:
+
+Heavy compounds (squat, deadlift, bench, row — top sets near max effort):
+  180–240 seconds (3–4 min). Never less than 120s for strength sets.
+
+Secondary compounds and moderate-intensity work:
+  90–120 seconds (1.5–2 min)
+
+Isolation and accessory work (curls, laterals, flyes):
+  60–90 seconds
+
+Supersets and paired exercises:
+  60–90 seconds after the pair, not between each exercise
+
+Conditioning / cardio:
+  Per prescribed protocol — not a fixed rest_seconds
+
+DO NOT set rest_seconds = 120 for every exercise regardless of role. A squat at 85% 1RM needs 180–240s. A cable curl needs 60–90s. Matching rest to effort is part of program design.
+
+════════════════════════════════════════
+EXERCISE NAMING — USE SPECIFIC NAMES
+════════════════════════════════════════
+When describing exercises in notes or rationale, use the specific exercise name — not a generic category.
+
+WRONG: "Do a row"           → CORRECT: "Barbell Bent-Over Row" or "Seated Cable Row"
+WRONG: "Press movement"     → CORRECT: "Barbell Bench Press" or "Dumbbell Incline Press"
+WRONG: "Some curls"         → CORRECT: "EZ-Bar Curl" or "Dumbbell Incline Curl"
+WRONG: "Leg exercise"       → CORRECT: "Barbell Back Squat" or "Leg Press"
+
+Always use the exercise name returned by search_exercises. If you did not search, search first — do not reference exercises by category only.`
   + sessionCompositionPrompt()
   + getExperienceDialogueRules()

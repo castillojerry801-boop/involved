@@ -352,6 +352,8 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
 
   if (ctx.readinessState) {
     lines.push(READINESS_GUIDANCE[ctx.readinessState])
+  } else {
+    lines.push('TRAINING READINESS: unknown — V MUST ask training history before generating a program of significant length.')
   }
 
   lines.push(COACHING_PRESENCE_GUIDANCE[ctx.coachingPresence] ?? COACHING_PRESENCE_GUIDANCE['weekly_checkin'])
