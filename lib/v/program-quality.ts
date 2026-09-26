@@ -584,6 +584,98 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
     }
   }
 
+  // ── Executable week-by-week progression (12-week must be real, not prose) ───
+  // These checks make a long program materially change across weeks. They only
+  // constrain the PROGRESSION structure — never exercise count — so a returning
+  // trainee can keep two simple full-body days while still getting real periodization.
+
+  if (weeks >= 8) {
+    const exWithWP = allExercises(draft).filter(ex => (ex.week_progressions?.length ?? 0) >= 2)
+
+    // WEEK_PROGRESSIONS_UNIFORM: entries exist but never change (prose-only "12-week").
+    if (exWithWP.length > 0) {
+      const wpSig = (ex: (typeof exWithWP)[number], w: NonNullable<typeof ex.week_progressions>[number]) =>
+        `${w.sets ?? ex.sets}|${w.reps_min ?? ex.reps_min}|${w.reps_max ?? ex.reps_max}|${w.rpe ?? ''}|${(w.load_note ?? '').trim().toLowerCase()}`
+      const anyExerciseChangesAcrossWeeks = exWithWP.some(ex => {
+        const sigs = new Set(ex.week_progressions!.map(w => wpSig(ex, w)))
+        return sigs.size > 1
+      })
+      if (!anyExerciseChangesAcrossWeeks) {
+        issues.push({
+          severity: 'error',
+          code: 'WEEK_PROGRESSIONS_UNIFORM',
+          message: `week_progressions are present but identical across every week — this is a one-week template, not a ${weeks}-week prescription. Change sets, reps, load, or RPE week to week (e.g. double progression: advance reps within the range, then add load and reset reps).`,
+        })
+      }
+    }
+
+    // NO_STRUCTURED_DELOAD: a real ≥8-week plan reduces volume at least once
+    // (deload), either via a labeled phase or a week_progressions set-count drop.
+    const hasDeloadPhase = draft.phases?.some(p => /deload|recovery|taper|unload|back[\s-]?off/i.test(p.name + ' ' + (p.focus ?? ''))) ?? false
+    const hasVolumeDrop = allExercises(draft).some(ex => {
+      const wps = (ex.week_progressions ?? []).slice().sort((a, b) => a.week - b.week)
+      for (let i = 1; i < wps.length; i++) {
+        if ((wps[i].sets ?? ex.sets) < (wps[i - 1].sets ?? ex.sets)) return true
+      }
+      return false
+    })
+    if (!hasDeloadPhase && !hasVolumeDrop) {
+      issues.push({
+        severity: 'error',
+        code: 'NO_STRUCTURED_DELOAD',
+        message: `${weeks}-week program has no structural deload — sets/volume never drop and no deload phase is defined. Reduce volume at recovery weeks (typically ~week 4 and ~week 8) via week_progressions with fewer sets, or add a deload phase.`,
+      })
+    }
+
+    // Cardio duration must actually progress if the plan claims it does.
+    const cardioEx = allExercises(draft).filter(
+      ex => ex.intended_pattern === 'cardio' || ex.duration_seconds != null
+    )
+    for (const ex of cardioEx) {
+      const wps = ex.week_progressions ?? []
+      const claimsIncrease =
+        PROGRESSION_KEYWORDS.test(ex.notes ?? '') ||
+        (!!draft.progression_strategy && /duration|minute|aerobic|cardio|gradual|build up|increase/i.test(draft.progression_strategy))
+      const durationsChange =
+        new Set(wps.map(w => `${w.load_note ?? ''}`.trim().toLowerCase()).filter(Boolean)).size > 1
+      if (claimsIncrease && wps.length < 2) {
+        issues.push({
+          severity: 'warning',
+          code: 'CARDIO_DURATION_STATIC',
+          message: `Cardio "${ex.intended_pattern}" shows a fixed duration but the plan says it increases. Encode the weekly duration in week_progressions (e.g. week 1: 20 min → week 6: 30 min) instead of a single fixed value.`,
+        })
+        break
+      }
+      if (claimsIncrease && wps.length >= 2 && !durationsChange) {
+        issues.push({
+          severity: 'warning',
+          code: 'CARDIO_DURATION_STATIC',
+          message: `Cardio week_progressions exist but the duration never changes. Increase the prescribed duration week to week to match the stated progression.`,
+        })
+        break
+      }
+    }
+  }
+
+  // NO_FINAL_TAPER: a 12+ week program should end with reduced volume (peak/taper).
+  if (weeks >= 12) {
+    const hasTaperPhase = draft.phases?.some(p => /taper|peak|deload|recovery|unload/i.test(p.name + ' ' + (p.focus ?? ''))) ?? false
+    const finalReduced = allExercises(draft).some(ex => {
+      const wps = ex.week_progressions ?? []
+      if (wps.length < 2) return false
+      const maxSets = Math.max(...wps.map(w => w.sets ?? ex.sets))
+      const finalW = wps.reduce((a, b) => (b.week > a.week ? b : a))
+      return finalW.week >= weeks - 1 && (finalW.sets ?? ex.sets) < maxSets
+    })
+    if (!hasTaperPhase && !finalReduced) {
+      issues.push({
+        severity: 'warning',
+        code: 'NO_FINAL_TAPER',
+        message: `The final week of a ${weeks}-week program should reduce volume (taper/peak) so the block resolves rather than ending at peak fatigue. Add a reduced-volume final week in week_progressions or a taper phase.`,
+      })
+    }
+  }
+
   // ── Session type checks ────────────────────────────────────────────────────
 
   // MISSING_SESSION_TYPE: training day in a ≥ 4 week program without session_type

@@ -263,7 +263,7 @@ describe('Corrected advanced program passes quality checks', () => {
     phases: [
       { name: 'Accumulation', weeks: '1-4', focus: 'volume' },
       { name: 'Strength', weeks: '5-8', focus: 'intensity' },
-      { name: 'Peak', weeks: '9-12', focus: 'peak strength' },
+      { name: 'Peak / Taper', weeks: '9-12', focus: 'peak strength then taper the final week' },
     ],
     progression_strategy: 'Percentage-based: Week 1-4 @ 70-75%, Week 5-8 @ 77.5-82.5%, Week 9-12 @ 80-87.5% 1RM.',
     session_sequencing: 'Alternating push/pull pairs on upper days',

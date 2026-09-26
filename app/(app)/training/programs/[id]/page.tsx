@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { ProgramActions } from './program-actions'
 
 export const metadata: Metadata = { title: 'Program' }
@@ -95,6 +96,7 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
               <div className="divide-y divide-zinc-50 dark:divide-zinc-800">
                 {day.exercises.map(ex => {
                   const meta = getExerciseById(ex.exerciseId)
+                  const displayName = getInvolvedDisplayName(ex.exerciseId, meta?.name ?? ex.exerciseId)
                   const repRange = ex.sets[0]
                     ? ex.sets[0].targetRepsMin
                       ? ex.sets[0].targetRepsMax
@@ -110,14 +112,14 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={`${process.env.NEXT_PUBLIC_EXERCISE_GIF_BASE_URL ?? ''}/${ex.exerciseId}.gif`}
-                            alt={meta.name}
+                            alt={displayName}
                             className="h-full w-auto object-contain"
                           />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">
-                          {meta?.name ?? ex.exerciseId}
+                          {displayName}
                         </p>
                         <p className="text-xs text-zinc-400">
                           {ex.sets.length} set{ex.sets.length !== 1 ? 's' : ''}

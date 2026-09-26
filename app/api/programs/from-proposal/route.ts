@@ -40,6 +40,9 @@ export async function POST(req: NextRequest) {
           create: validated.days.map((day, di) => ({
             name: day.name,
             focus: day.focus ?? null,
+            // Persist the schedule weekday when the draft has one; leave null for the
+            // explicit "unscheduled" state rather than fabricating a day-of-week.
+            weekday: day.weekday ?? null,
             estimatedDurationMinutes: day.estimated_duration_minutes ?? null,
             sortOrder: di,
             exercises: {
@@ -56,6 +59,8 @@ export async function POST(req: NextRequest) {
                     targetRepsMin: ex.reps_min ?? null,
                     targetRepsMax: ex.reps_max ?? null,
                     targetDurationSeconds: ex.duration_seconds ?? null,
+                    // Carry the exercise-level target RIR onto each working set.
+                    targetRir: ex.target_rir ?? null,
                     restSeconds: ex.rest_seconds,
                   })),
                 },

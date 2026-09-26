@@ -173,7 +173,7 @@ describe('Scenario B — Advanced 15-year lifter, 12-week 4-day full-body progra
     phases: [
       { name: 'Accumulation', weeks: '1-4', focus: 'Volume accumulation at 70-75% intensity, build base' },
       { name: 'Intensification', weeks: '5-9', focus: 'Progressive intensity increase, 6-8 rep range, RPE 8-9' },
-      { name: 'Peak', weeks: '10-12', focus: 'Peak strength expression at 85-90%, 3-5 rep range' },
+      { name: 'Peak / Taper', weeks: '10-12', focus: 'Peak strength at 85-90%, then taper volume in the final week' },
     ],
     days: [
       {

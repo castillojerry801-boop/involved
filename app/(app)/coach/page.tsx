@@ -7,6 +7,7 @@ import Image from 'next/image'
 import { Send, Lock, Loader2, User, Dumbbell, Sparkles, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getGifUrl } from '@/lib/exercises'
+import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { cn } from '@/lib/utils'
 import { GenerateProgramModal } from '@/components/v/GenerateProgramModal'
 import { VoiceMicInput } from '@/components/v/VoiceMicInput'
@@ -198,10 +199,10 @@ function WorkoutCard({ data }: { data: WorkoutMessage['data'] }) {
           <div key={i} className="flex items-center gap-3 px-4 py-3">
             <div className="size-12 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={getGifUrl(ex.exercise_id)} alt={ex.exercise.name} className="h-full w-auto object-contain" />
+              <img src={getGifUrl(ex.exercise_id)} alt={getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)} className="h-full w-auto object-contain" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{ex.exercise.name}</p>
+              <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)}</p>
               <p className="text-xs text-zinc-500">
                 {ex.sets} sets ·{' '}
                 {ex.reps ? `${ex.reps} reps` : ex.duration_seconds ? `${ex.duration_seconds}s` : '—'}
@@ -287,10 +288,10 @@ function ProgramCard({ data }: { data: ProgramMessage['data'] }) {
                 <div key={ei} className="flex items-center gap-2.5">
                   <div className="size-8 shrink-0 rounded-lg bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={getGifUrl(ex.exercise_id)} alt={ex.exercise.name} className="h-full w-auto object-contain" />
+                    <img src={getGifUrl(ex.exercise_id)} alt={getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)} className="h-full w-auto object-contain" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-zinc-900 dark:text-white truncate">{ex.exercise.name}</p>
+                    <p className="text-xs font-semibold text-zinc-900 dark:text-white truncate">{getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)}</p>
                     <p className="text-[10px] text-zinc-500">
                       {ex.sets} sets ·{' '}
                       {ex.reps_min != null && ex.reps_max != null
