@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { Loader2, CheckCircle, AlertCircle, ScanLine, Search, RefreshCw } from 'lucide-react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { Loader2, CheckCircle, AlertCircle, ScanLine, Search, RefreshCw, Settings } from 'lucide-react'
 
 interface FoodResult {
   provider?: string
@@ -56,9 +57,18 @@ function NutriScoreBadge({ grade }: { grade?: string }) {
   )
 }
 
+type CamPerm = 'checking' | 'ok' | 'denied' | 'unavailable'
+
+type QrInstance = {
+  stop: () => Promise<void>
+  clear: () => void
+  start: (...args: unknown[]) => Promise<void>
+}
+
 export function BarcodeScanner({ onFound }: Props) {
   const scannerRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'idle' | 'scanning' | 'found' | 'notfound' | 'error'>('idle')
+  const [camPerm, setCamPerm] = useState<CamPerm>('checking')
   const [foundFood, setFoundFood] = useState<FoodResult | null>(null)
   const [lastScanned, setLastScanned] = useState('')
   const [notFoundBarcode, setNotFoundBarcode] = useState('')
@@ -66,29 +76,38 @@ export function BarcodeScanner({ onFound }: Props) {
   const [fallbackResults, setFallbackResults] = useState<FoodResult[]>([])
   const [fallbackSearching, setFallbackSearching] = useState(false)
   const [showFallback, setShowFallback] = useState(false)
-  const scannerInstanceRef = useRef<{ stop: () => Promise<void>; clear: () => void } | null>(null)
 
-  useEffect(() => {
-    let html5QrCode: { stop: () => Promise<void>; clear: () => void; start: (...args: unknown[]) => Promise<void> } | null = null
-    let stopped = false
+  // Tracks the live scanner instance and whether it's currently running
+  const instanceRef = useRef<QrInstance | null>(null)
+  const runningRef = useRef(false)
 
-    async function startScanner() {
-      const { Html5Qrcode } = await import('html5-qrcode')
-      if (!scannerRef.current) return
+  const stopCurrent = useCallback(async () => {
+    if (instanceRef.current && runningRef.current) {
+      runningRef.current = false
+      await instanceRef.current.stop().catch(() => {})
+      instanceRef.current = null
+    }
+  }, [])
 
-      html5QrCode = new Html5Qrcode('barcode-reader') as unknown as typeof html5QrCode
-      scannerInstanceRef.current = html5QrCode
-      setStatus('scanning')
+  const startScanner = useCallback(async () => {
+    if (runningRef.current) return
 
-      await html5QrCode!.start(
+    const { Html5Qrcode } = await import('html5-qrcode')
+    const qr = new Html5Qrcode('barcode-reader') as unknown as QrInstance
+    instanceRef.current = qr
+    runningRef.current = true
+    setStatus('scanning')
+
+    try {
+      await qr.start(
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 280, height: 140 } },
         async (decodedText: string) => {
-          if (decodedText === lastScanned || stopped) return
-          setLastScanned(decodedText)
-          stopped = true
-          await html5QrCode!.stop()
+          if (!runningRef.current) return
+          runningRef.current = false
+          await qr.stop().catch(() => {})
 
+          setLastScanned(decodedText)
           const res = await fetch(`/api/nutrition/barcode?upc=${encodeURIComponent(decodedText)}`)
           if (res.ok) {
             const data = await res.json() as { result: FoodResult }
@@ -102,17 +121,88 @@ export function BarcodeScanner({ onFound }: Props) {
         },
         () => {},
       )
-    }
-
-    startScanner().catch(() => setStatus('error'))
-
-    return () => {
-      if (!stopped) {
-        stopped = true
-        html5QrCode?.stop().catch(() => {})
+      setCamPerm('ok')
+    } catch (err) {
+      runningRef.current = false
+      instanceRef.current = null
+      if ((err as Error)?.name === 'NotAllowedError') {
+        setCamPerm('denied')
+        setStatus('idle')
+      } else {
+        setCamPerm('unavailable')
+        setStatus('error')
       }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mount: pre-check permission then start
+  useEffect(() => {
+    let permStatus: PermissionStatus | null = null
+
+    async function init() {
+      // Try navigator.permissions first — lets us skip getUserMedia if already denied
+      try {
+        permStatus = await navigator.permissions.query({ name: 'camera' as PermissionName })
+
+        if (permStatus.state === 'denied') {
+          setCamPerm('denied')
+          return
+        }
+
+        // Watch for the user enabling/disabling camera in Settings and returning
+        permStatus.addEventListener('change', function handler() {
+          if (this.state === 'granted') {
+            setCamPerm('ok')
+            setStatus('idle')
+            startScanner()
+          } else if (this.state === 'denied') {
+            setCamPerm('denied')
+          }
+        })
+      } catch {
+        // navigator.permissions not supported — getUserMedia will handle prompting
+      }
+
+      await startScanner()
+    }
+
+    init()
+
+    return () => {
+      if (permStatus) permStatus.onchange = null
+      stopCurrent()
+    }
+  }, [startScanner, stopCurrent])
+
+  // Re-check on app foreground (user returns after enabling camera in iOS Settings)
+  useEffect(() => {
+    const handleVisibility = async () => {
+      if (document.visibilityState !== 'visible' || camPerm !== 'denied') return
+      try {
+        const ps = await navigator.permissions.query({ name: 'camera' as PermissionName })
+        if (ps.state === 'granted') {
+          setCamPerm('ok')
+          setStatus('idle')
+          startScanner()
+        }
+      } catch {
+        // permissions API unavailable; attempt getUserMedia — startScanner will set state
+        startScanner()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [camPerm, startScanner])
+
+  // Stop camera while fallback search is open; restart when returning to scanner
+  useEffect(() => {
+    if (showFallback) {
+      stopCurrent()
+    } else if (camPerm === 'ok') {
+      startScanner()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showFallback])
 
   const rescan = async () => {
     setStatus('idle')
@@ -121,35 +211,13 @@ export function BarcodeScanner({ onFound }: Props) {
     setNotFoundBarcode('')
     setShowFallback(false)
     setFallbackResults([])
+    await stopCurrent()
+    await startScanner()
+  }
 
-    const { Html5Qrcode } = await import('html5-qrcode')
-    const instance = new Html5Qrcode('barcode-reader') as unknown as {
-      stop: () => Promise<void>; clear: () => void;
-      start: (...args: unknown[]) => Promise<void>
-    }
-    scannerInstanceRef.current = instance
-    setStatus('scanning')
-
-    await instance.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 280, height: 140 } },
-      async (decodedText: string) => {
-        if (decodedText === lastScanned) return
-        setLastScanned(decodedText)
-        await instance.stop()
-        const res = await fetch(`/api/nutrition/barcode?upc=${encodeURIComponent(decodedText)}`)
-        if (res.ok) {
-          const data = await res.json() as { result: FoodResult }
-          setFoundFood(data.result)
-          setStatus('found')
-        } else {
-          const body = await res.json().catch(() => ({})) as { barcode?: string }
-          setNotFoundBarcode(body.barcode ?? decodedText)
-          setStatus('notfound')
-        }
-      },
-      () => {},
-    )
+  const openSettings = () => {
+    // On Capacitor iOS, app-settings: opens this app's Settings page
+    window.open('app-settings:', '_system')
   }
 
   const doFallbackSearch = async (q: string) => {
@@ -166,8 +234,38 @@ export function BarcodeScanner({ onFound }: Props) {
 
   return (
     <div className="p-4 flex flex-col gap-4">
-      {/* Scanner viewport — hidden while showing fallback search */}
-      {!showFallback && (
+      {/* Camera denied */}
+      {camPerm === 'denied' && (
+        <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-5">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-zinc-900 dark:text-white mb-1">
+                Camera access required
+              </p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed mb-3">
+                Barcode scanning needs camera access. Enable it in your device settings, then return to this screen.
+              </p>
+              {Capacitor.isNativePlatform() ? (
+                <button
+                  onClick={openSettings}
+                  className="flex items-center gap-2 rounded-xl bg-zinc-900 dark:bg-white px-4 py-2.5 text-sm font-semibold text-white dark:text-zinc-900"
+                >
+                  <Settings className="size-4" />
+                  Open Settings
+                </button>
+              ) : (
+                <p className="text-xs text-zinc-400">
+                  Allow camera access in your browser settings, then refresh this page.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Scanner viewport — hidden while showing fallback search or when denied */}
+      {!showFallback && camPerm !== 'denied' && (
         <div
           id="barcode-reader"
           ref={scannerRef}
@@ -175,10 +273,18 @@ export function BarcodeScanner({ onFound }: Props) {
         />
       )}
 
-      {status === 'scanning' && !showFallback && (
+      {status === 'scanning' && !showFallback && camPerm === 'ok' && (
         <div className="flex items-center justify-center gap-2 text-sm text-zinc-500">
           <ScanLine className="size-4 animate-pulse" />
           Point camera at a barcode
+        </div>
+      )}
+
+      {/* Starting / checking */}
+      {camPerm === 'checking' && status !== 'scanning' && (
+        <div className="flex items-center justify-center gap-2 text-sm text-zinc-400 py-4">
+          <Loader2 className="size-4 animate-spin" />
+          Starting camera…
         </div>
       )}
 
@@ -321,10 +427,11 @@ export function BarcodeScanner({ onFound }: Props) {
         </div>
       )}
 
-      {status === 'error' && (
+      {/* Hardware/generic error (not a permission issue) */}
+      {status === 'error' && camPerm === 'unavailable' && (
         <div className="flex items-center gap-2 text-sm text-red-500">
           <AlertCircle className="size-4" />
-          Camera access required for barcode scanning.
+          Camera unavailable. Try closing and reopening the scanner.
         </div>
       )}
     </div>
