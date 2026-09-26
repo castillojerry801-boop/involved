@@ -13,6 +13,7 @@ import type { WorkoutDraft } from '@/lib/ai/tools/workout'
 import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/program'
 import type { ProgramDraft } from '@/lib/ai/tools/program'
 import { validateProgramQuality } from '@/lib/v/program-quality'
+import { extractEquipmentFromConversation, buildEquipmentCapabilitySummary } from '@/lib/v/equipment-normalize'
 import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE } from './constants'
 import type OpenAI from 'openai'
 
@@ -127,8 +128,28 @@ export async function POST(req: NextRequest) {
     const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL, PROPOSE_PROGRAM_TOOL]
     type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
 
+    // Extract equipment from conversation first. Explicit user-stated equipment
+    // (normalized to canonical ExerciseDB values) always overrides the DB profile.
+    // null means "no restriction" (full gym stated or no equipment detected).
+    const conversationText = body.messages.map(m => m.content).join('\n')
+    const conversationEquipment = extractEquipmentFromConversation(conversationText)
+    const allowedEquipment = conversationEquipment ?? trainingCtx?.equipment?.items
+
+    console.log('[V-equipment]', {
+      userId: user.id,
+      conversationEquipment,
+      dbEquipment: trainingCtx?.equipment?.items ?? null,
+      resolved: allowedEquipment ?? 'unrestricted',
+    })
+
+    // Build a capability summary so V knows exact canonical names + movement patterns.
+    // Injected into the system prompt — prevents "can't find exercises" errors.
+    const equipmentCapabilitySummary = allowedEquipment?.length
+      ? '\n\n' + buildEquipmentCapabilitySummary(allowedEquipment)
+      : '\n\nEQUIPMENT: Full gym access assumed — all movement patterns and equipment available.'
+
     const chatMessages: ChatMessage[] = [
-      { role: 'system', content: SYSTEM_PROMPT + contextSnippet },
+      { role: 'system', content: SYSTEM_PROMPT + contextSnippet + equipmentCapabilitySummary },
       ...body.messages.map(m => ({ role: m.role, content: m.content } as ChatMessage)),
     ]
 
@@ -138,12 +159,6 @@ export async function POST(req: NextRequest) {
     let qualityRetries = 0
     // Deduplicates repeated searches with identical params within one generation turn.
     const searchCache = new Map<string, string>()
-
-    // If the user stated gym/commercial access in the conversation, lift the
-    // equipment restriction entirely — their words override the DB profile.
-    const conversationText = body.messages.map(m => m.content).join(' ').toLowerCase()
-    const userStatedGymAccess = /full[\s-]?gym|commercial\s?gym|gym\s?access|well[\s-]?equipped|barbell|squat\s?rack|power\s?rack/.test(conversationText)
-    const allowedEquipment = userStatedGymAccess ? undefined : trainingCtx?.equipment?.items
 
     // useTools: tool-calling rounds use gpt-4o-mini (fast, 200k TPM).
     // Final prose round (no tools) uses the configured proseModel (gpt-4o for plus).
@@ -235,7 +250,14 @@ export async function POST(req: NextRequest) {
 
           } else if (fn.name === 'propose_program') {
             emitRaw({ type: 'status', message: qualityRetries > 0 ? 'Refining your program...' : 'Building your program...' })
-            const draft = JSON.parse(fn.arguments) as ProgramDraft
+            let draft: ProgramDraft
+            try {
+              draft = JSON.parse(fn.arguments) as ProgramDraft
+            } catch {
+              result = JSON.stringify({ status: 'invalid', errors: ['Malformed program draft — could not parse JSON arguments.'] })
+              chatMessages.push({ role: 'tool', tool_call_id: call.id, content: result })
+              continue
+            }
 
             console.log('[V-routing]', {
               userId: user.id,
@@ -245,7 +267,15 @@ export async function POST(req: NextRequest) {
               draftDays: draft.days?.length,
             })
 
-            const validation = validateProgramDraft(draft, { allowedEquipment })
+            let validation: ReturnType<typeof validateProgramDraft>
+            try {
+              validation = validateProgramDraft(draft, { allowedEquipment })
+            } catch (valErr) {
+              console.error('[V-propose-program-validate-error]', valErr)
+              result = JSON.stringify({ status: 'invalid', errors: ['Internal validation error — please revise the draft and try again.'] })
+              chatMessages.push({ role: 'tool', tool_call_id: call.id, content: result })
+              continue
+            }
 
             if (!validation.valid) {
               result = JSON.stringify({ status: 'invalid', errors: validation.errors })
