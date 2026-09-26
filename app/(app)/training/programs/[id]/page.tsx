@@ -1,13 +1,15 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ArrowLeft, Play, Pencil, Zap } from 'lucide-react'
+import { ArrowLeft, Pencil, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
 import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
+import type { PersistedWeekProgression, PersistedPhase } from '@/lib/training/prescription'
 import { ProgramActions } from './program-actions'
+import { MultiWeekProgramView, type MultiWeekProgramData } from './multi-week-view'
 
 export const metadata: Metadata = { title: 'Program' }
 
@@ -42,6 +44,45 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
   const program = await getProgram(id, user.id)
   if (!program) redirect('/training/programs')
 
+  // Build the client payload: resolve display names + metadata server-side (keeps
+  // the large exercise library off the client bundle); the shared resolver runs
+  // client-side for week selection.
+  const viewData: MultiWeekProgramData = {
+    durationWeeks: (program as unknown as { durationWeeks: number | null }).durationWeeks ?? null,
+    phases: ((program as unknown as { phases: PersistedPhase[] | null }).phases) ?? null,
+    gifBase: process.env.NEXT_PUBLIC_EXERCISE_GIF_BASE_URL ?? '',
+    days: program.days.map(day => ({
+      id: day.id,
+      name: day.name,
+      weekday: (day as unknown as { weekday: number | null }).weekday ?? null,
+      exercises: day.exercises.map(ex => {
+        const meta = getExerciseById(ex.exerciseId)
+        const e = ex as unknown as {
+          startingLoad: number | null
+          weekProgressions: PersistedWeekProgression[] | null
+        }
+        return {
+          id: ex.id,
+          exerciseId: ex.exerciseId,
+          displayName: getInvolvedDisplayName(ex.exerciseId, meta?.name ?? ex.exerciseId),
+          bodyPart: meta?.bodyPart ?? null,
+          restSeconds: ex.restSeconds ?? null,
+          startingLoad: e.startingLoad ?? null,
+          weekProgressions: e.weekProgressions ?? null,
+          sets: ex.sets.map(s => ({
+            targetRepsMin: s.targetRepsMin ?? null,
+            targetRepsMax: s.targetRepsMax ?? null,
+            targetRir: (s as unknown as { targetRir: number | null }).targetRir ?? null,
+            targetWeightKg: s.targetWeightKg != null ? Number(s.targetWeightKg) : null,
+            targetDurationSeconds: s.targetDurationSeconds ?? null,
+            targetDistanceM: s.targetDistanceM != null ? Number(s.targetDistanceM) : null,
+            restSeconds: s.restSeconds ?? null,
+          })),
+        }
+      }),
+    })),
+  }
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
       {/* Header */}
@@ -68,78 +109,8 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
         <ProgramActions programId={program.id} isActive={program.isActive} />
       </div>
 
-      {/* Days */}
-      <div className="space-y-4">
-        {program.days.map(day => (
-          <div key={day.id} className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-zinc-50 dark:border-zinc-800">
-              <div>
-                {(day as unknown as { weekday: number | null }).weekday != null && (
-                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-0.5">
-                    {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][(day as unknown as { weekday: number }).weekday]}
-                  </p>
-                )}
-                <h2 className="font-bold text-sm text-zinc-900 dark:text-white">{day.name}</h2>
-                <p className="text-xs text-zinc-400">{day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}</p>
-              </div>
-              <Link href={`/training/workout/new?programDayId=${day.id}`}>
-                <Button size="sm" variant="secondary">
-                  <Play className="size-3.5" />
-                  Start
-                </Button>
-              </Link>
-            </div>
-
-            {day.exercises.length === 0 ? (
-              <p className="px-4 py-4 text-sm text-zinc-400">No exercises in this day.</p>
-            ) : (
-              <div className="divide-y divide-zinc-50 dark:divide-zinc-800">
-                {day.exercises.map(ex => {
-                  const meta = getExerciseById(ex.exerciseId)
-                  const displayName = getInvolvedDisplayName(ex.exerciseId, meta?.name ?? ex.exerciseId)
-                  const repRange = ex.sets[0]
-                    ? ex.sets[0].targetRepsMin
-                      ? ex.sets[0].targetRepsMax
-                        ? `${ex.sets[0].targetRepsMin}–${ex.sets[0].targetRepsMax} reps`
-                        : `${ex.sets[0].targetRepsMin} reps`
-                      : null
-                    : null
-
-                  return (
-                    <div key={ex.id} className="flex items-center gap-3 px-4 py-3">
-                      <div className="size-10 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
-                        {meta && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={`${process.env.NEXT_PUBLIC_EXERCISE_GIF_BASE_URL ?? ''}/${ex.exerciseId}.gif`}
-                            alt={displayName}
-                            className="h-full w-auto object-contain"
-                          />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">
-                          {displayName}
-                        </p>
-                        <p className="text-xs text-zinc-400">
-                          {ex.sets.length} set{ex.sets.length !== 1 ? 's' : ''}
-                          {repRange ? ` · ${repRange}` : ''}
-                          {meta && ` · ${meta.bodyPart}`}
-                        </p>
-                      </div>
-                      {ex.sets.filter(s => s.setType === 'working').length > 0 && (
-                        <span className="shrink-0 text-xs font-semibold text-zinc-400">
-                          {ex.sets.filter(s => s.setType === 'working').length}×
-                        </span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* Days — multi-week aware (week selector + resolved prescription per week) */}
+      {program.days.length > 0 && <MultiWeekProgramView data={viewData} />}
 
       {program.days.length === 0 && (
         <div className="flex flex-col items-center py-12 text-center">

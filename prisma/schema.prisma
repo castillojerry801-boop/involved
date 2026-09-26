@@ -363,6 +363,9 @@ model Program {
   userId      String      @map("user_id") @db.Uuid
   name        String      @db.VarChar(200)
   description String?     @db.Text
+  // Multi-week V programs. Null on legacy/manual programs → resolve to base week.
+  durationWeeks Int?      @map("duration_weeks")
+  phases        Json?     @map("phases") @db.JsonB
   isActive    Boolean     @default(false) @map("is_active")
   // Set when a trainer assigns this program to a client
   trainerCreatedById    String?   @map("trainer_created_by_id") @db.Uuid
@@ -406,6 +409,18 @@ model ProgramExercise {
   trackingType TrackingType @default(strength) @map("tracking_type")
   notes        String?      @db.VarChar(500)
   restSeconds  Int?         @map("rest_seconds")
+  // ── Multi-week progression (all nullable → legacy programs resolve to base) ──
+  // Per-week overrides on top of the base ProgramSet prescription. JSON array of
+  // { week, sets?, repsMin?, repsMax?, targetRir?, load?, durationSeconds?,
+  //   distance?, targetRpe?, deload?, taper? } — only fields that differ.
+  weekProgressions     Json?    @map("week_progressions") @db.JsonB
+  progressionModel     String?  @map("progression_model") @db.VarChar(40)
+  progressionIncrement Float?   @map("progression_increment")
+  progressionCondition String?  @map("progression_condition") @db.VarChar(500)
+  startingLoad         Float?   @map("starting_load")
+  failureAllowed       Boolean? @map("failure_allowed")
+  sequencingMode       String?  @map("sequencing_mode") @db.VarChar(40)
+  sequencingGroup      String?  @map("sequencing_group") @db.VarChar(40)
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
 
@@ -563,6 +578,7 @@ model WorkoutSet {
   targetWeightKg        Decimal?  @map("target_weight_kg") @db.Decimal(7, 2)
   targetDurationSeconds Int?      @map("target_duration_seconds")
   targetDistanceM       Decimal?  @map("target_distance_m") @db.Decimal(10, 2)
+  targetRir             Int?      @map("target_rir")
   actualReps            Int?      @map("actual_reps")
   actualWeightKg        Decimal?  @map("actual_weight_kg") @db.Decimal(7, 2)
   actualDurationSeconds Int?      @map("actual_duration_seconds")

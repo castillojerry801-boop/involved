@@ -13,6 +13,7 @@ function StartWorkout() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const programDayId = searchParams.get('programDayId')
+  const week = searchParams.get('week')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -28,8 +29,9 @@ function StartWorkout() {
         if (!dayRes.ok) throw new Error('Program day not found')
         const { programId } = await dayRes.json() as { programId: string }
 
-        // Create snapshot workout from the program day
-        const startRes = await fetch(`/api/programs/${programId}/days/${programDayId}/start`, {
+        // Create snapshot workout from the program day for the selected week
+        const startUrl = `/api/programs/${programId}/days/${programDayId}/start${week ? `?week=${encodeURIComponent(week)}` : ''}`
+        const startRes = await fetch(startUrl, {
           method: 'POST',
         })
         if (!startRes.ok) {
@@ -44,7 +46,7 @@ function StartWorkout() {
     }
 
     void start()
-  }, [programDayId, router])
+  }, [programDayId, week, router])
 
   if (error) {
     return (

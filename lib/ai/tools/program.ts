@@ -8,7 +8,13 @@ export interface WeekProgression {
   reps_min?: number
   reps_max?: number
   rpe?: number
-  load_note?: string  // e.g. "315 lb", "70% 1RM", "+5 lb", "same"
+  rir?: number             // per-week target RIR override
+  load?: number            // numeric absolute load for this week (program's unit)
+  load_note?: string       // e.g. "315 lb", "70% 1RM", "+5 lb", "same"
+  duration_seconds?: number // cardio/endurance duration for this week
+  distance_m?: number       // cardio/endurance distance for this week
+  deload?: boolean          // this week is a deload (reduced volume)
+  taper?: boolean           // this week is a taper (final reduced week)
 }
 
 export interface ProgramPhase {

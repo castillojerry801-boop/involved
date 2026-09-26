@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { validateProgramDraft } from '@/lib/ai/tools/program'
 import type { ProgramDraft } from '@/lib/ai/tools/program'
+import { toPersistedWeekProgressions, toPersistedPhases, parseStartingLoadKg } from '@/lib/training/program-draft-persist'
+import { Prisma } from '@prisma/client'
 
 type TrackingType = 'strength' | 'bodyweight' | 'assisted' | 'cardio' | 'carry' | 'isometric' | 'intervals'
 
@@ -29,6 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   const validated = validation.program
+  const jsonOrNull = (v: unknown) => (v == null ? Prisma.DbNull : (v as Prisma.InputJsonValue))
 
   try {
     const program = await prisma.program.create({
@@ -36,6 +39,9 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         name: validated.program_name,
         description: validated.description ?? null,
+        // Multi-week structure. weeks comes from the draft (validated strips it).
+        durationWeeks: body.weeks ?? null,
+        phases: jsonOrNull(toPersistedPhases(validated.phases)),
         days: {
           create: validated.days.map((day, di) => ({
             name: day.name,
@@ -46,25 +52,38 @@ export async function POST(req: NextRequest) {
             estimatedDurationMinutes: day.estimated_duration_minutes ?? null,
             sortOrder: di,
             exercises: {
-              create: day.exercises.map((ex, ei) => ({
-                exerciseId: ex.exercise_id,
-                sortOrder: ei,
-                trackingType: inferTrackingType(ex.exercise.equipment),
-                restSeconds: ex.rest_seconds,
-                notes: ex.notes ?? null,
-                sets: {
-                  create: Array.from({ length: ex.sets }, (_, j) => ({
-                    setNumber: j + 1,
-                    setType: 'working' as const,
-                    targetRepsMin: ex.reps_min ?? null,
-                    targetRepsMax: ex.reps_max ?? null,
-                    targetDurationSeconds: ex.duration_seconds ?? null,
-                    // Carry the exercise-level target RIR onto each working set.
-                    targetRir: ex.target_rir ?? null,
-                    restSeconds: ex.rest_seconds,
-                  })),
-                },
-              })),
+              create: day.exercises.map((ex, ei) => {
+                const startingLoadKg = parseStartingLoadKg(ex.starting_load)
+                return {
+                  exerciseId: ex.exercise_id,
+                  sortOrder: ei,
+                  trackingType: inferTrackingType(ex.exercise.equipment),
+                  restSeconds: ex.rest_seconds,
+                  notes: ex.notes ?? null,
+                  // ── Multi-week progression + prescription metadata ──
+                  weekProgressions: jsonOrNull(toPersistedWeekProgressions(ex.week_progressions)),
+                  progressionModel: ex.progression_model ?? null,
+                  progressionIncrement: ex.progression_increment ?? null,
+                  progressionCondition: ex.progression_condition ?? null,
+                  startingLoad: startingLoadKg,
+                  failureAllowed: ex.failure_allowed ?? null,
+                  sequencingMode: ex.sequencing_mode ?? null,
+                  sequencingGroup: ex.sequencing_group != null ? String(ex.sequencing_group) : null,
+                  sets: {
+                    create: Array.from({ length: ex.sets }, (_, j) => ({
+                      setNumber: j + 1,
+                      setType: 'working' as const,
+                      targetRepsMin: ex.reps_min ?? null,
+                      targetRepsMax: ex.reps_max ?? null,
+                      targetDurationSeconds: ex.duration_seconds ?? null,
+                      // Base load (kg) and base target RIR — the week resolver layers overrides on top.
+                      targetWeightKg: startingLoadKg,
+                      targetRir: ex.target_rir ?? null,
+                      restSeconds: ex.rest_seconds,
+                    })),
+                  },
+                }
+              }),
             },
           })),
         },
@@ -73,7 +92,8 @@ export async function POST(req: NextRequest) {
     })
 
     return Response.json({ programId: program.id, name: program.name }, { status: 201 })
-  } catch {
+  } catch (err) {
+    console.error('[from-proposal-save-error]', err)
     return Response.json({ error: 'Failed to save program' }, { status: 500 })
   }
 }
