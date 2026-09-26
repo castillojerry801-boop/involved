@@ -261,13 +261,34 @@ export default function PrivacyPage() {
 
           <H3>Account Deletion</H3>
           <P>
-            You have the right to delete your account and associated data. Account deletion is planned
-            as a feature to be implemented before full public launch. Until then, you may request deletion
-            by emailing{' '}
+            You have the right to delete your account and all associated personal data. You can initiate
+            account deletion directly within the app: go to <strong className="text-zinc-700 dark:text-zinc-300">Profile → Delete account</strong> and
+            confirm. Deletion is immediate and permanent.
+          </P>
+          <P>
+            When you delete your account, the following data is permanently removed:
+          </P>
+          <UL items={[
+            'Your profile, name, and account credentials',
+            'All workouts, sets, and personal records',
+            'All training programs and templates',
+            'All nutrition logs, targets, food favorites, and saved meals',
+            'All progress photos (including files in storage)',
+            'All Apple Health / HealthKit synced data',
+            'AI Coach usage history',
+            'Trainer/client relationships, notes, and targets',
+            'Equipment profiles, goals, and preferences',
+            'Profile and avatar images (including files in storage)',
+          ]} />
+          <P>
+            Food items you added to the shared food catalog are anonymized (your authorship is removed)
+            rather than deleted, since other users may rely on them.
+          </P>
+          <P>
+            If you need help or encounter an issue deleting your account, contact us at{' '}
             <a href="mailto:support@involvedfit.com" className="text-emerald-600 dark:text-emerald-400 hover:underline">
               support@involvedfit.com
-            </a>{' '}
-            with the subject &ldquo;Account Deletion Request.&rdquo; We will process your request promptly.
+            </a>.
           </P>
 
           <H3>Communications</H3>
