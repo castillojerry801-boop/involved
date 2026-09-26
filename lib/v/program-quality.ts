@@ -1,5 +1,5 @@
 import 'server-only'
-import type { ProgramDraft } from '@/lib/ai/tools/program'
+import type { ProgramDraft, ProgressionModel } from '@/lib/ai/tools/program'
 
 export interface QualityIssue {
   severity: 'error' | 'warning'
@@ -289,6 +289,130 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
         severity: 'warning',
         code: 'DURATION_MISMATCH',
         message: `Day "${day.name}" has estimated_duration_minutes=${day.estimated_duration_minutes}, which seems too short for a training session. Check the duration.`,
+      })
+    }
+  }
+
+  // ── Session composition checks ─────────────────────────────────────────────
+
+  const isAdvanced    = fitnessLevel.includes('advanced')   || fitnessLevel.includes('expert')
+  const isIntermediate = fitnessLevel.includes('intermediate')
+
+  // SPARSE_SESSION: intermediate/advanced strength day with < 4 exercises
+  if (isIntermediate || isAdvanced) {
+    for (const day of draft.days) {
+      const isStrengthDay = /strength|push|pull|upper|lower|squat|deadlift|press|legs|chest|back/i.test(
+        day.name + ' ' + (day.focus ?? '')
+      )
+      if (isStrengthDay && day.exercises.length < 4) {
+        issues.push({
+          severity: 'warning',
+          code: 'SPARSE_SESSION',
+          message: `Day "${day.name}" is a ${isAdvanced ? 'advanced' : 'intermediate'} strength session with only ${day.exercises.length} exercise(s). Fill the required movement-pattern roles for this session type (minimum 4).`,
+        })
+      }
+    }
+  }
+
+  // ADVANCED_SHALLOW_SESSION: advanced user with < 5 exercises in push/pull/full-body day
+  if (isAdvanced) {
+    for (const day of draft.days) {
+      const isDeepDay = /push|pull|upper|full.?body|chest|back|shoulder/i.test(
+        day.name + ' ' + (day.focus ?? '')
+      )
+      if (isDeepDay && day.exercises.length < 5) {
+        issues.push({
+          severity: 'warning',
+          code: 'ADVANCED_SHALLOW_SESSION',
+          message: `Day "${day.name}" is an advanced ${day.name}-type session with only ${day.exercises.length} exercises. Advanced trainees typically benefit from 5–8 exercises to fill all required roles (primary press, secondary press, isolation, shoulder work, arm accessories).`,
+        })
+      }
+    }
+  }
+
+  // UNIPOLAR_UPPER_SESSION: upper full body day with only push OR only pull
+  for (const day of draft.days) {
+    const isUpperFull = /upper|full.?body/i.test(day.name + ' ' + (day.focus ?? ''))
+    const isPushPullLegs = /^push|^pull|^legs/.test((day.name ?? '').toLowerCase())
+    if (isUpperFull && !isPushPullLegs) {
+      const hasPush = day.exercises.some(e =>
+        /horizontal_push|incline_push|vertical_push|fly/.test(e.intended_pattern)
+      )
+      const hasPull = day.exercises.some(e =>
+        /vertical_pull|horizontal_pull/.test(e.intended_pattern)
+      )
+      if (hasPush && !hasPull) {
+        issues.push({
+          severity: 'warning',
+          code: 'UNIPOLAR_UPPER_SESSION',
+          message: `Day "${day.name}" is an upper-body session with only push patterns and no pull (vertical_pull or horizontal_pull). Upper body sessions require both push and pull for balance.`,
+        })
+      } else if (hasPull && !hasPush) {
+        issues.push({
+          severity: 'warning',
+          code: 'UNIPOLAR_UPPER_SESSION',
+          message: `Day "${day.name}" is an upper-body session with only pull patterns and no push. Upper body sessions require both push and pull for balance.`,
+        })
+      }
+    }
+  }
+
+  // BEGINNER_FAILURE_OVERUSE: beginner with failure_allowed on any exercise
+  if (isBeginnerFitness) {
+    const failureExercises = allExercises(draft).filter(ex => ex.failure_allowed === true)
+    if (failureExercises.length > 0) {
+      issues.push({
+        severity: 'error',
+        code: 'BEGINNER_FAILURE_OVERUSE',
+        message: `Beginner program has ${failureExercises.length} exercise(s) with failure_allowed=true. Beginners should NEVER train to failure — it increases injury risk and provides no additional stimulus benefit at this level. Remove failure_allowed from all exercises.`,
+      })
+    }
+  }
+
+  // UNIFORM_PROGRESSION_MODEL: all exercises use identical non-null progression_model
+  {
+    const models = allExercises(draft)
+      .map(ex => ex.progression_model)
+      .filter((m): m is ProgressionModel => m != null && m !== 'auto')
+    if (models.length >= 4) {
+      const distinct = new Set(models)
+      if (distinct.size === 1) {
+        const theModel = [...distinct][0]
+        issues.push({
+          severity: 'warning',
+          code: 'UNIFORM_PROGRESSION_MODEL',
+          message: `Every exercise in this program uses the same progression_model ("${theModel}"). Real programs vary progression models: main lifts use "linear" or "percentage_rpe", accessories use "double_progression" or "rep_progression". Assign different models based on each exercise's role.`,
+        })
+      }
+    }
+  }
+
+  // EXCESSIVE_FAILURE: intermediate/advanced with failure_allowed on > 50% of exercises
+  if (!isBeginnerFitness) {
+    const allEx = allExercises(draft)
+    if (allEx.length >= 4) {
+      const failureCount = allEx.filter(ex => ex.failure_allowed === true).length
+      if (failureCount / allEx.length > 0.5) {
+        issues.push({
+          severity: 'warning',
+          code: 'EXCESSIVE_FAILURE',
+          message: `${failureCount}/${allEx.length} exercises have failure_allowed=true (>${Math.round(failureCount / allEx.length * 100)}%). Excessive failure training increases fatigue and injury risk. Limit to isolation exercises only, and only when the trainee is advanced. Compounds should never go to failure.`,
+        })
+      }
+    }
+  }
+
+  // SUPERSET_MISSING_GROUP: superset/compound_set/giant_set mode without sequencing_group
+  {
+    const groupedModes = new Set(['superset', 'antagonist_superset', 'compound_set', 'giant_set'])
+    const missingGroup = allExercises(draft).filter(ex =>
+      ex.sequencing_mode && groupedModes.has(ex.sequencing_mode) && ex.sequencing_group == null
+    )
+    if (missingGroup.length > 0) {
+      issues.push({
+        severity: 'warning',
+        code: 'SUPERSET_MISSING_GROUP',
+        message: `${missingGroup.length} exercise(s) have a superset/compound_set/giant_set sequencing_mode but no sequencing_group set. Exercises grouped in a superset must share the same sequencing_group integer so the app can pair them correctly.`,
       })
     }
   }

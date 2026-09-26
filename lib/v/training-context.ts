@@ -1,6 +1,7 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { getExperienceDialogue } from './experience-dialogue'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -260,6 +261,17 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
   const lines: string[] = []
 
   lines.push(`FITNESS LEVEL: ${ctx.profile.fitnessLevel ?? 'not specified'}`)
+  lines.push(getExperienceDialogue(ctx.profile.fitnessLevel))
+
+  // Session depth guidance based on experience
+  const lvl = (ctx.profile.fitnessLevel ?? '').toLowerCase()
+  if (lvl.includes('beginner') || lvl.includes('novice')) {
+    lines.push('SESSION DEPTH GUIDANCE: Beginner — 3–5 exercises per session is complete and appropriate. Do NOT pad with accessories. Linear progression on all movements. No failure training, no supersets, no advanced techniques.')
+  } else if (lvl.includes('intermediate')) {
+    lines.push('SESSION DEPTH GUIDANCE: Intermediate — 4–7 exercises depending on session type. Primary compound + targeted accessories. May use alternating pairs or accessory supersets. 1–3 RIR on compounds, 0–1 RIR allowed on isolations.')
+  } else if (lvl.includes('advanced') || lvl.includes('expert')) {
+    lines.push('SESSION DEPTH GUIDANCE: Advanced — 5–9 exercises where session type and recovery support it. Greater specialization: multiple angles, weak-point work, loaded carries, sport-specific. Each additional exercise must have a stated purpose.')
+  }
 
   // Body metrics
   const { ageYears, weightKg } = ctx.profile.bodyMetrics

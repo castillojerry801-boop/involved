@@ -1,4 +1,6 @@
 import 'server-only'
+import { sessionCompositionPrompt } from './session-composition'
+import { getExperienceDialogueRules } from './experience-dialogue'
 
 /**
  * Shared program-design intelligence injected into every V endpoint that
@@ -236,7 +238,7 @@ Before calling propose_program, run this check:
 □ No day has two exercises with the same movementFamily (that would be flagrantly redundant)
 □ Each session's major required patterns are represented for its stated purpose
 □ Exercise order within each day is logical (power → compound → accessory → isolation)
-□ Volume per session matches user experience level
+□ Volume per session matches user experience level (see SESSION COMPOSITION ENGINE)
 □ Adjacent days don't create problematic recovery conflicts (e.g., heavy legs two days in a row)
 □ All exercises are compatible with available equipment
 □ Progression is defined — not "do the same thing every week"
@@ -244,6 +246,12 @@ Before calling propose_program, run this check:
 □ No exercise IDs are invented — all from search_exercises
 □ olympic_power exercises (if any) have their own role slot — not used as squat/press substitutes
 □ Weekday assignments are valid integers 0–6 with no duplicates (if scheduled)
+□ Each exercise has a progression_model assigned (or "auto" if undecided)
+□ Not every exercise uses the same progression_model — mix linear/double_progression/percentage_rpe as appropriate
+□ target_rir is set on every exercise where effort matters (0–5)
+□ failure_allowed is NOT set for beginners or compound lifts
+□ Exercises grouped in supersets share the same sequencing_group integer
+□ sequencing_mode uses the correct term — "alternating" ≠ "superset" (see TRAINING METHOD GLOSSARY)
 
 If any item fails, revise before calling propose_program.
 
@@ -340,3 +348,5 @@ For OCR/Spartan beginners: same rules apply to the running component. Strength a
 SPORT-SPECIFIC RULES INJECTION POINT
 ════════════════════════════════════════
 If SPORT PROGRAMMING RULES are present below (injected by the server for this request), they override generic programming defaults for this domain. Read and follow them precisely. They contain required elements, phase templates, and exercise selection priorities specific to the user's sport.`
+  + sessionCompositionPrompt()
+  + getExperienceDialogueRules()

@@ -17,6 +17,31 @@ export interface ProgramPhase {
   focus: string   // brief description of what this phase accomplishes
 }
 
+export type ProgressionModel =
+  | 'linear'
+  | 'double_progression'
+  | 'rep_progression'
+  | 'set_progression'
+  | 'percentage_rpe'
+  | 'duration_distance'
+  | 'auto'
+
+export type SequencingMode =
+  | 'straight'
+  | 'alternating'
+  | 'superset'
+  | 'antagonist_superset'
+  | 'compound_set'
+  | 'giant_set'
+
+const VALID_PROGRESSION_MODELS: ProgressionModel[] = [
+  'linear', 'double_progression', 'rep_progression', 'set_progression',
+  'percentage_rpe', 'duration_distance', 'auto',
+]
+const VALID_SEQUENCING_MODES: SequencingMode[] = [
+  'straight', 'alternating', 'superset', 'antagonist_superset', 'compound_set', 'giant_set',
+]
+
 export interface ProgramExercise {
   exercise_id: string
   intended_pattern: string   // V must declare the movementPattern role this exercise fills; server validates it
@@ -29,6 +54,18 @@ export interface ProgramExercise {
   rpe?: number               // target RPE (6–10 scale), optional
   set_type?: 'warmup' | 'working' | 'amrap'  // defaults to working
   week_progressions?: WeekProgression[]      // per-week overrides for multi-week programs
+
+  // Progression model fields
+  progression_model?: ProgressionModel
+  progression_increment?: number    // load increment per step (e.g. 5 = 5 lb)
+  progression_condition?: string    // human-readable trigger (e.g. "all sets hit reps_max at target RIR")
+  starting_load?: string            // e.g. "70% 1RM", "80 lb", "use warm-up weight"
+  target_rir?: number               // reps in reserve target (0–5)
+  failure_allowed?: boolean         // whether taking the set to muscular failure is permitted
+
+  // Sequencing fields
+  sequencing_mode?: SequencingMode
+  sequencing_group?: number         // exercises with the same positive integer are grouped together
 }
 
 export interface ProgramDayDraft {
@@ -46,6 +83,7 @@ export interface ProgramDraft {
   weeks?: number
   progression_strategy?: string
   phases?: ProgramPhase[]    // required for programs ≥ 8 weeks
+  session_sequencing?: string // overall sequencing note for the program (e.g. "Push-pull pairs alternating; accessories in supersets")
   days: ProgramDayDraft[]
 }
 
@@ -211,6 +249,31 @@ export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOp
         errors.push(`${record.name}: notes must be 500 characters or fewer`)
       }
 
+      // Progression model fields
+      if (ex.progression_model !== undefined && !VALID_PROGRESSION_MODELS.includes(ex.progression_model)) {
+        errors.push(`${record.name}: progression_model "${ex.progression_model}" is not valid. Use one of: ${VALID_PROGRESSION_MODELS.join(', ')}`)
+      }
+      if (ex.progression_increment !== undefined && ex.progression_increment <= 0) {
+        errors.push(`${record.name}: progression_increment must be greater than 0`)
+      }
+      if (ex.target_rir !== undefined && (ex.target_rir < 0 || ex.target_rir > 5)) {
+        errors.push(`${record.name}: target_rir must be 0–5 (got ${ex.target_rir})`)
+      }
+
+      // Sequencing fields
+      if (ex.sequencing_mode !== undefined && !VALID_SEQUENCING_MODES.includes(ex.sequencing_mode)) {
+        errors.push(`${record.name}: sequencing_mode "${ex.sequencing_mode}" is not valid. Use one of: ${VALID_SEQUENCING_MODES.join(', ')}`)
+      }
+      if (ex.sequencing_group !== undefined) {
+        if (!Number.isInteger(ex.sequencing_group) || ex.sequencing_group < 1) {
+          errors.push(`${record.name}: sequencing_group must be a positive integer (got ${ex.sequencing_group})`)
+        }
+      }
+      const groupedModes: SequencingMode[] = ['superset', 'antagonist_superset', 'compound_set', 'giant_set']
+      if (ex.sequencing_mode && groupedModes.includes(ex.sequencing_mode) && ex.sequencing_group == null) {
+        warnings.push(`${record.name}: sequencing_mode is "${ex.sequencing_mode}" but sequencing_group is not set. Set sequencing_group to an integer shared by all exercises in this group.`)
+      }
+
       // Validate week_progressions
       if (Array.isArray(ex.week_progressions)) {
         const programWeeks = draft.weeks ?? Infinity
@@ -294,6 +357,10 @@ export const PROPOSE_PROGRAM_TOOL = {
           type: 'string',
           description: 'How the program progresses over weeks. Be specific — name actual percentages, rep ranges, or volume changes rather than generic phrases.',
         },
+        session_sequencing: {
+          type: 'string',
+          description: 'Optional overall sequencing note: describe how exercises are grouped or sequenced across the program (e.g. "Main lifts as straight sets; accessories in antagonist supersets").',
+        },
         phases: {
           type: 'array',
           description: 'REQUIRED for programs ≥ 8 weeks. Define the distinct training phases (e.g. Base → Build → Peak → Taper). Each phase must name the weeks it covers.',
@@ -347,6 +414,40 @@ export const PROPOSE_PROGRAM_TOOL = {
                     notes:             { type: 'string', description: 'Coaching cue, progression instruction, or form note. For multi-week programs without week_progressions, describe the progression arc here.' },
                     rpe:               { type: 'number', description: 'Target RPE on the 1–10 scale (e.g. 7.5 = 2–3 reps left in tank). Omit if not applicable.' },
                     set_type:          { type: 'string', enum: ['working', 'warmup', 'amrap'], description: 'Set type: "working" (default), "warmup", or "amrap"' },
+                    progression_model: {
+                      type: 'string',
+                      enum: ['linear', 'double_progression', 'rep_progression', 'set_progression', 'percentage_rpe', 'duration_distance', 'auto'],
+                      description: 'Progression model for this exercise. "linear": add load when target reps achieved. "double_progression": hold weight until all sets hit reps_max, then increase. "rep_progression": add reps each week within range. "set_progression": add sets over weeks before increasing load. "percentage_rpe": % 1RM week_progressions. "duration_distance": for carries/conditioning. "auto": V chooses.',
+                    },
+                    progression_increment: {
+                      type: 'number',
+                      description: 'Load increment per progression step in lb (e.g. 5 for "add 5 lb"). Set for linear and double_progression models.',
+                    },
+                    progression_condition: {
+                      type: 'string',
+                      description: 'Human-readable trigger for progression. E.g. "increase load once all sets reach reps_max at target RIR." Required for double_progression.',
+                    },
+                    starting_load: {
+                      type: 'string',
+                      description: 'Starting load in Week 1. Use % 1RM when LOAD ANCHORS are available (e.g. "70% 1RM = 284 lb"), otherwise "moderate weight" or RPE-based description.',
+                    },
+                    target_rir: {
+                      type: 'number',
+                      description: 'Target reps in reserve (0–5). 0 = failure, 1 = 1 rep left, 2 = 2 reps left (≈ RPE 8), 3 = 3 reps left (≈ RPE 7). Prefer over rpe alone for clarity.',
+                    },
+                    failure_allowed: {
+                      type: 'boolean',
+                      description: 'Whether muscular failure is permitted on this exercise. Default false. Only set true for isolation work on intermediate/advanced trainees. Never true for beginners or compound lifts.',
+                    },
+                    sequencing_mode: {
+                      type: 'string',
+                      enum: ['straight', 'alternating', 'superset', 'antagonist_superset', 'compound_set', 'giant_set'],
+                      description: '"straight": complete all sets before moving on. "alternating": rotate between exercises with FULL REST between each set. "superset": two exercises back-to-back with MINIMAL rest between them, then full rest. "antagonist_superset": superset of opposing muscle groups. "compound_set": superset of same muscle group. "giant_set": 3+ exercises in sequence.',
+                    },
+                    sequencing_group: {
+                      type: 'integer',
+                      description: 'Positive integer. Exercises sharing the same sequencing_group are performed as a unit (superset/alternating pair/giant set). Required when sequencing_mode is superset, antagonist_superset, compound_set, or giant_set.',
+                    },
                     week_progressions: {
                       type: 'array',
                       description: 'Per-week overrides for this exercise. Use on main compound lifts to show explicit week-by-week progression (sets, reps, RPE, or load). The baseline fields (sets/reps_min/reps_max/rpe) represent Week 1; only include entries for weeks that differ from the previous week.',

@@ -75,6 +75,7 @@ export interface GenerationConstraints {
   injuries?: string
   style?: string
   sport?: string
+  sequencing?: string
   constraints?: string
 }
 
@@ -92,6 +93,7 @@ export async function POST(req: NextRequest) {
     injuries?: string
     style?: string
     sport?: string
+    sequencing?: string
     constraints?: string
   }
 
@@ -119,6 +121,7 @@ export async function POST(req: NextRequest) {
   if (body.weeks)                 lines.push(`PROGRAM DURATION: ${body.weeks} weeks`)
   if (body.style)                 lines.push(`TRAINING STYLE: ${body.style}`)
   if (body.sport)                 lines.push(`SPORT / ACTIVITY: ${body.sport}`)
+  if (body.sequencing)            lines.push(`SEQUENCING PREFERENCE: ${body.sequencing}`)
   if (body.injuries)              lines.push(`INJURIES / LIMITATIONS: ${body.injuries}`)
   if (body.constraints)           lines.push(`OTHER CONSTRAINTS: ${body.constraints}`)
   const extraContext = lines.length > 0 ? '\n' + lines.join('\n') : ''
@@ -277,6 +280,7 @@ export async function POST(req: NextRequest) {
     injuries: body.injuries,
     style: body.style,
     sport: body.sport,
+    sequencing: body.sequencing,
     constraints: body.constraints,
   }
 
