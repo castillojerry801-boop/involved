@@ -234,11 +234,17 @@ export function parseProgramIntake(
   const userText = messages.filter(m => m.role === 'user').map(m => m.content).join('\n')
   const fullText = messages.map(m => m.content).join('\n')
 
-  // Readiness — conversation first, then DB.
+  // Readiness — conversation first, then DB but ONLY when the stored value reflects
+  // CURRENT, explicit signal. deriveReadinessState() always returns a value (it
+  // defaults to 'never_trained' when there's no data), so a non-null DB readiness is
+  // NOT itself proof the training status is known. Training status is time-sensitive
+  // and materially changes an 8+ week program, so we only reuse it when the user has
+  // recently logged training; otherwise we treat it as unknown and confirm.
   const convReadiness = extractReadiness(userText)
-  const readinessState = convReadiness ?? dbCtx?.readinessState ?? null
+  const dbReadinessIsCurrent = !!dbCtx && dbCtx.recentTraining.length > 0 && dbCtx.readinessState != null
+  const readinessState = convReadiness ?? (dbReadinessIsCurrent ? dbCtx!.readinessState : null)
   const readinessSource: ProgramIntakeState['readinessSource'] =
-    convReadiness ? 'conversation' : (dbCtx?.readinessState ? 'profile' : null)
+    convReadiness ? 'conversation' : (dbReadinessIsCurrent ? 'profile' : null)
 
   // Training days — CONTEXT-AWARE per-message extraction (the fix for the loop).
   // Strong signals ("4 days", "4x/week") are read from any user message. A bare

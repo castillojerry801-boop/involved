@@ -442,18 +442,37 @@ describe('post-answer gate decision (what runs after bare "4")', () => {
     expect(missing[0].field).toBe('readiness')
   })
 
-  it('with profile resolving readiness+equipment: nothing missing → generation may run', () => {
-    // This mirrors the reported user: the DB profile already had fitness level
-    // (→ readiness) and an active equipment profile, so after "4" the gate is
-    // satisfied and programGenerationMode becomes true (which then called Luna).
-    const resolvedCtx = emptyCtx({
-      readinessState: 'detrained',
+  it('stored readiness WITHOUT recent training is NOT reused → readiness is asked', () => {
+    // The exact reported bug: deriveReadinessState() always returns a value
+    // (default 'never_trained'), so a non-null DB readiness with no recent
+    // activity must NOT satisfy the gate for a new 12-week program.
+    const staleCtx = emptyCtx({
+      readinessState: 'never_trained',      // derived default, no real signal
+      recentTraining: [],                   // no current activity
       equipment: { profileName: 'Home Gym', items: ['dumbbell', 'barbell', 'body weight'] },
     })
-    const state = parseProgramIntake(base, resolvedCtx)
-    const missing = missingProgramContext(state, resolvedCtx)
+    const state = parseProgramIntake(base, staleCtx)
+    expect(state.readinessState).toBeNull()          // not reused
+    expect(state.readinessSource).toBeNull()
+    const missing = missingProgramContext(state, staleCtx)
+    expect(missing.map(m => m.field)).toContain('readiness')
+    expect(buildMissingContextPrompt(missing)).toMatch(/currently training|returning|first time/i)
+  })
+
+  it('stored readiness WITH recent training IS reused (current + explicit) → not re-asked', () => {
+    const currentCtx = emptyCtx({
+      readinessState: 'consistent_intermediate',
+      recentTraining: [
+        { date: '2026-09-24', title: 'Upper A', musclesWorked: ['chest'], totalSets: 12, topSets: [] },
+      ],
+      equipment: { profileName: 'Home Gym', items: ['dumbbell', 'barbell', 'body weight'] },
+    })
+    const state = parseProgramIntake(base, currentCtx)
+    expect(state.readinessState).toBe('consistent_intermediate')
+    expect(state.readinessSource).toBe('profile')
+    const missing = missingProgramContext(state, currentCtx)
     expect(state.trainingDaysPerWeek).toBe(4)
-    expect(missing).toHaveLength(0)   // → programGenerationMode = true
+    expect(missing).toHaveLength(0)   // legitimately complete → generation may run
   })
 
   it('ProgramDraft cannot proceed while any required field is missing', () => {
