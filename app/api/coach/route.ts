@@ -199,14 +199,26 @@ export async function POST(req: NextRequest) {
   const allowedEquipment = trainingCtx?.equipment?.items
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    const response = await openai.chat.completions.create({
-      model,
-      messages: chatMessages,
-      tools,
-      tool_choice: 'auto',
-      max_tokens: 4000,
-      temperature: 0.7,
-    })
+    let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
+    try {
+      response = await openai.chat.completions.create({
+        model,
+        messages: chatMessages,
+        tools,
+        tool_choice: 'auto',
+        max_tokens: 4000,
+        temperature: 0.7,
+      })
+    } catch (err: unknown) {
+      const status = (err as { status?: number }).status
+      if (status === 429) {
+        return Response.json(
+          { error: 'rate_limited', message: 'V is thinking hard right now — try again in a moment.' },
+          { status: 429 }
+        )
+      }
+      throw err
+    }
 
     const choice = response.choices[0]
     chatMessages.push(choice.message)

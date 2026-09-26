@@ -146,7 +146,7 @@ export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOp
   if (!Array.isArray(draft.days) || draft.days.length === 0) {
     errors.push('Program must have at least one day')
   }
-  if (draft.days.length > 7) errors.push('Program cannot have more than 7 days')
+  if ((draft.days?.length ?? 0) > 7) errors.push('Program cannot have more than 7 days')
 
   // Validate phases (optional, but required for ≥ 8 weeks)
   if (draft.weeks != null && draft.weeks >= 8 && !draft.phases?.length) {
