@@ -13,7 +13,10 @@ import { PROPOSE_WORKOUT_TOOL, validateWorkoutDraft } from '@/lib/ai/tools/worko
 import type { WorkoutDraft } from '@/lib/ai/tools/workout'
 import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/program'
 import type { ProgramDraft } from '@/lib/ai/tools/program'
+import { validateProgramQuality } from '@/lib/v/program-quality'
 import type OpenAI from 'openai'
+
+const QUALITY_RETRY_LIMIT = 2
 
 const SYSTEM_PROMPT = `You are V, an evidence-informed fitness and nutrition coach built into the Involved app.
 
@@ -48,6 +51,39 @@ TOOLS
 • search_exercises — find valid exercise IDs. Always search before building any workout or program.
 • propose_workout — single training session ("give me a workout", "I have 45 minutes").
 • propose_program — structured multi-day plan ("build me a program", "3-day split", "6-week plan").
+
+════════════════════════════════════════
+PROGRAM GENERATION — STRUCTURED PIPELINE REQUIRED
+════════════════════════════════════════
+When a user asks you to build, create, write, generate, or design a training program of any kind:
+
+1. ASSESS INTAKE FIRST — before calling propose_program, confirm you know:
+   • How many days per week they can train (if not already in their profile)
+   • Whether they train at a gym or at home (if no equipment profile is set)
+   • Their approximate training background (if not derivable from fitness level + recent training)
+   Ask only what you don't already know from the user's profile data.
+
+2. CALL propose_program — NEVER list exercises in chat text.
+   Do NOT write "Day 1: Bench Press..." in your response.
+   Do NOT say "here's your program:" followed by prose exercise lists.
+   The ONLY valid output for a program request is a propose_program tool call.
+   These are program requests that REQUIRE propose_program:
+   "Build me a 12-week program" / "Make me a 5-day split" / "Create a Spartan plan" /
+   "I need a powerlifting cycle" / "Write me a half-marathon program" / any multi-day plan.
+
+3. EXTRACT USER-STATED PERFORMANCE DATA
+   When a user states 1RMs or working weights in the conversation:
+   → Set starting_load on the relevant exercises (e.g., "315 lb / 143 kg")
+   → Populate week_progressions.load_note with percentage-based prescriptions
+   → Do NOT ignore stated numbers in favor of generic RPE-only prescriptions
+   When a user states a sequencing preference (e.g., "alternating chest and biceps"):
+   → Set session_sequencing on the program draft
+   → Set sequencing_mode: "alternating" and sequencing_group on paired exercises
+   → Exercises MUST be physically interleaved in order: A, B, A, B (not A, A, B, B)
+
+4. FIX QUALITY ERRORS — if propose_program returns status "quality_issues":
+   Read every error, fix the draft completely, and call propose_program again.
+   Do NOT respond to the user until propose_program returns status "valid".
 
 ${PROGRAM_INTELLIGENCE_PROMPT}
 
@@ -141,6 +177,7 @@ export async function POST(req: NextRequest) {
   }
 
   const ctx = await buildCoachContext(user.id, user.email)
+  const trainingCtx = ctx.trainingCtx
   const contextSnippet = contextToSystemSnippet(ctx)
   const model = coachModel(tier === 'free' ? 'free' : 'plus')
   const openai = getOpenAI()
@@ -153,10 +190,13 @@ export async function POST(req: NextRequest) {
     ...body.messages.map(m => ({ role: m.role, content: m.content } as ChatMessage)),
   ]
 
-  // Agentic tool loop — 10 rounds supports complex program design + review pass
+  // Agentic tool loop — 12 rounds matches generate-program; supports complex program design
   let pendingWorkout: ReturnType<typeof validateWorkoutDraft> | null = null
   let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
-  const MAX_ROUNDS = 10
+  const MAX_ROUNDS = 12
+  let qualityRetries = 0
+
+  const allowedEquipment = trainingCtx?.equipment?.items
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const response = await openai.chat.completions.create({
@@ -196,29 +236,74 @@ export async function POST(req: NextRequest) {
 
       } else if (fn.name === 'propose_program') {
         const draft = JSON.parse(fn.arguments) as ProgramDraft
-        const validation = validateProgramDraft(draft)
-        if (validation.valid) {
-          pendingProgram = validation
-          // Inject the quality-review instruction so V self-reviews before finalizing
-          result = JSON.stringify({
-            status: 'valid',
-            message: [
-              'Program structure validated — all exercise IDs verified.',
-              'REQUIRED: Run your Program Review Pass now before writing your response.',
-              'Check every day:',
-              '(1) Any day with multiple exercises sharing the same movementPattern is a redundancy problem — revise unless specialization was explicitly requested.',
-              '(2) Each session must represent its major required movement patterns for its stated purpose.',
-              '(3) Exercise order: compounds before isolation, technique before fatigue.',
-              '(4) Volume must match user experience level.',
-              '(5) Adjacent training days must allow adequate recovery.',
-              '(6) All exercises must be compatible with the user\'s available equipment.',
-              '(7) Program complexity, exercise selection, and progression must be appropriate for this user\'s experience level.',
-              'If any check fails, call propose_program again with corrections.',
-              'If all checks pass, write your response describing the program.',
-            ].join(' '),
-          })
-        } else {
+
+        console.log('[V-routing]', {
+          userId: user.id,
+          intent: 'program_generation',
+          toolCalled: 'propose_program',
+          draftWeeks: draft.weeks,
+          draftDays: draft.days?.length,
+          toolsAvailable: tools.map((t: { function?: { name: string } }) => t.function?.name).filter(Boolean),
+        })
+
+        // Structural validation (exercise IDs, required fields, equipment constraints)
+        const validation = validateProgramDraft(draft, { allowedEquipment })
+
+        if (!validation.valid) {
           result = JSON.stringify({ status: 'invalid', errors: validation.errors })
+        } else {
+          // Intake gate: for 8+ week programs, readiness state must be known
+          const isLongProgram = (draft.weeks ?? 0) >= 8
+          if (isLongProgram && trainingCtx && trainingCtx.readinessState === null) {
+            result = JSON.stringify({
+              status: 'intake_incomplete',
+              message: 'Before building an 8+ week program, you need to understand the user\'s training background. Ask them first:',
+              questions: ['How long have you been training consistently, if at all?'],
+            })
+          } else {
+            // Semantic quality check — same checks as generate-program route
+            const qualityIssues = validateProgramQuality(draft, {
+              fitnessLevel: trainingCtx?.profile.fitnessLevel,
+              weeks: draft.weeks,
+              readinessState: trainingCtx?.readinessState ?? undefined,
+            })
+            const hardErrors = qualityIssues.filter(i => i.severity === 'error')
+
+            console.log('[V-quality]', {
+              userId: user.id,
+              weeks: draft.weeks,
+              dayCount: draft.days.length,
+              exerciseCounts: draft.days.map(d => d.exercises.length),
+              qualityErrors: hardErrors.map(i => i.code),
+              qualityRetry: qualityRetries,
+            })
+
+            if (hardErrors.length > 0 && qualityRetries < QUALITY_RETRY_LIMIT) {
+              qualityRetries++
+              result = JSON.stringify({
+                status: 'quality_issues',
+                message: `Program passed structural validation but has ${hardErrors.length} quality error(s). Fix ALL listed errors and call propose_program again with a corrected draft. Do not respond to the user yet.`,
+                errors: hardErrors.map(e => `[${e.code}] ${e.message}`),
+              })
+            } else if (hardErrors.length > 0) {
+              // Retries exhausted — tell V to surface the limitation
+              console.error('[V-quality-retry-exhausted]', {
+                userId: user.id,
+                codes: hardErrors.map(e => e.code),
+              })
+              result = JSON.stringify({
+                status: 'quality_exhausted',
+                message: 'Quality correction retries exhausted. Acknowledge to the user that you had difficulty building this program to the required standard. Explain what you were trying to achieve and suggest they try again with more specific constraints, or use the dedicated program generator.',
+              })
+            } else {
+              // All quality checks pass — accept
+              pendingProgram = validation
+              result = JSON.stringify({
+                status: 'valid',
+                message: 'Program validated and accepted. Now present it to the user with a brief summary of the program structure and how progression works.',
+              })
+            }
+          }
         }
 
       } else {
@@ -231,6 +316,8 @@ export async function POST(req: NextRequest) {
         content: result,
       })
     }
+
+    if (pendingProgram?.valid) break
   }
 
   const lastMsg = [...chatMessages].reverse().find(m => m.role === 'assistant')

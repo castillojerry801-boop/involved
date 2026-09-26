@@ -1,6 +1,7 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
 import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training-context'
+import type { VTrainingContext } from '@/lib/v/training-context'
 
 // Compact structured context sent to the Coach.
 // AI receives summaries — not raw database records.
@@ -26,6 +27,7 @@ export interface CoachContext {
   goals: GoalSummary[]
   nutrition: NutritionContext
   trainingSnippet: string
+  trainingCtx: VTrainingContext | null
 }
 
 export async function buildCoachContext(userId: string, userEmail?: string): Promise<CoachContext> {
@@ -115,6 +117,7 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
     goals: goalSummaries,
     nutrition,
     trainingSnippet: trainingCtx ? trainingContextToPrompt(trainingCtx) : 'TRAINING: No data available.',
+    trainingCtx,
   }
 }
 
