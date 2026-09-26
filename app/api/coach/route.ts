@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getOpenAI } from '@/lib/ai/client'
-import { coachModel, V_CHAT_MODEL, V_PROGRAM_MODEL, V_ESCALATION_MODEL } from '@/lib/ai/models'
+import { coachModel, V_CHAT_MODEL, V_PROGRAM_MODEL, V_ESCALATION_MODEL, validateModelConfig, describeOpenAIError, isModelNotFoundError, isUnsupportedParamError } from '@/lib/ai/models'
 import { getAiLimit } from '@/lib/subscription/config'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { buildCoachContext, contextToSystemSnippet } from '@/lib/ai/context'
@@ -158,6 +158,13 @@ export async function POST(req: NextRequest) {
     // This is what routes the tool loop to the stronger programModel — intake and
     // plain chat stay on the cheap chatModel.
     const programGenerationMode = conversationHasProgramIntent && missingContext.length === 0
+    // Shallow config check surfaced BEFORE the call — a bad env value logs a clear
+    // config error rather than only failing deep inside the model call.
+    if (programGenerationMode) {
+      const cfg = validateModelConfig({ program: programModel, escalation: escalationModel })
+      if (!cfg.ok) console.error('[V-config-error]', { userId: user.id, issues: cfg.issues, programModel, escalationModel })
+      console.log('[V-config]', { userId: user.id, chatModel, programModel, escalationModel })
+    }
     console.log('[V-intake]', {
       userId: user.id,
       readinessState: intake.readinessState,
@@ -334,23 +341,54 @@ export async function POST(req: NextRequest) {
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
         let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
+        const roundStage = modelEscalated
+          ? 'quality_escalation'
+          : (programGenerationMode ? 'program_generation' : 'chat_intake')
         try {
           const tRound = Date.now()
-          const roundModel = toolRoundModel()
-          const roundStage = modelEscalated
-            ? 'quality_escalation'
-            : (programGenerationMode ? 'program_generation' : 'chat_intake')
-          console.log('[V-model]', { userId: user.id, stage: roundStage, model: roundModel, round })
+          console.log('[V-model]', { userId: user.id, stage: roundStage, model: toolRoundModel(), round })
           response = await callModel(chatMessages, true)
           console.log(`[V-perf] round=${round} llm=${Date.now() - tRound}ms`)
         } catch (err: unknown) {
-          const status = (err as { status?: number }).status
-          if (status === 429) {
+          const info = describeOpenAIError(err)
+          if (info.status === 429) {
             emitRaw({ type: 'text', content: "I'm over capacity right now — please try again in a minute." })
             emitRaw({ type: 'done' })
+            logModelSummary('rate_limited')
             return
           }
-          throw err
+
+          // Surface the EXACT model/API error instead of swallowing it into the
+          // generic handler. Do NOT silently fall back to another model.
+          const failedModel = toolRoundModel()
+          if (isModelNotFoundError(info)) {
+            console.error('[V-config-error]', {
+              userId: user.id,
+              stage: roundStage,
+              model: failedModel,
+              status: info.status, code: info.code, message: info.message,
+              hint: `The configured model "${failedModel}" is not available to this OpenAI project. Set the matching AI_MODEL_V_* env var to a valid model ID.`,
+            })
+          } else if (isUnsupportedParamError(info)) {
+            console.error('[V-model-error]', {
+              userId: user.id,
+              stage: roundStage,
+              model: failedModel,
+              status: info.status, code: info.code, param: info.param, message: info.message,
+              hint: `Model "${failedModel}" rejected a request parameter (likely max_tokens/temperature). It may require different parameters than the chat model.`,
+            })
+          } else {
+            console.error('[V-model-error]', {
+              userId: user.id,
+              stage: roundStage,
+              model: failedModel,
+              status: info.status, code: info.code, type: info.type, message: info.message,
+            })
+          }
+          logModelSummary('model_error')
+          emitRaw({ type: 'text', content: "I couldn't reach the program builder just now. Please try again in a moment." })
+          emitRaw({ type: 'done' })
+          return
         }
 
         const choice = response.choices[0]

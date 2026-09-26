@@ -408,6 +408,66 @@ describe('context-aware training-days extraction (the repeated-question bug)', (
   })
 })
 
+// ─── Post-"4" turn: gate decision drives which stage runs next ────────────────
+// Reproduces the production turn AFTER the bare 4 is accepted. Asserts that the
+// gate only allows program generation when ALL required context is present, and
+// otherwise routes to the next intake question — never to a model call.
+
+describe('post-answer gate decision (what runs after bare "4")', () => {
+  const daysQuestion = 'How many days per week can you train?'
+  const base: Msg[] = [
+    { role: 'user', content: 'I want to get back in shape and build some muscle. Make me a 12-week program.' },
+    { role: 'assistant', content: daysQuestion },
+    { role: 'user', content: '4' },
+  ]
+
+  it('resolves days=4 without throwing', () => {
+    expect(() => parseProgramIntake(base, emptyCtx())).not.toThrow()
+    expect(parseProgramIntake(base, emptyCtx()).trainingDaysPerWeek).toBe(4)
+  })
+
+  it('with EMPTY profile: readiness+equipment still missing → gate asks, NO generation', () => {
+    const state = parseProgramIntake(base, emptyCtx())
+    const missing = missingProgramContext(state, emptyCtx())
+    // program generation must NOT run — required context incomplete
+    expect(missing.length).toBeGreaterThan(0)
+    expect(missing.map(m => m.field)).toContain('readiness')
+    // the next question asked is readiness (first missing, required for 12wk)
+    expect(buildMissingContextPrompt(missing)).toMatch(/currently training|returning|first time/i)
+  })
+
+  it('when readiness is missing, V asks readiness (not equipment or days)', () => {
+    const state = parseProgramIntake(base, emptyCtx())
+    const missing = missingProgramContext(state, emptyCtx())
+    expect(missing[0].field).toBe('readiness')
+  })
+
+  it('with profile resolving readiness+equipment: nothing missing → generation may run', () => {
+    // This mirrors the reported user: the DB profile already had fitness level
+    // (→ readiness) and an active equipment profile, so after "4" the gate is
+    // satisfied and programGenerationMode becomes true (which then called Luna).
+    const resolvedCtx = emptyCtx({
+      readinessState: 'detrained',
+      equipment: { profileName: 'Home Gym', items: ['dumbbell', 'barbell', 'body weight'] },
+    })
+    const state = parseProgramIntake(base, resolvedCtx)
+    const missing = missingProgramContext(state, resolvedCtx)
+    expect(state.trainingDaysPerWeek).toBe(4)
+    expect(missing).toHaveLength(0)   // → programGenerationMode = true
+  })
+
+  it('ProgramDraft cannot proceed while any required field is missing', () => {
+    // equipment resolved but readiness still unknown → still blocked
+    const partialCtx = emptyCtx({
+      equipment: { profileName: 'Home', items: ['dumbbell', 'body weight'] },
+    })
+    const state = parseProgramIntake(base, partialCtx)
+    const missing = missingProgramContext(state, partialCtx)
+    expect(missing.map(m => m.field)).toContain('readiness')
+    expect(missing.length).toBeGreaterThan(0)
+  })
+})
+
 // ─── Determinism: identical inputs never produce a different question ──────────
 
 describe('deterministic gate — no-progress loop protection', () => {
