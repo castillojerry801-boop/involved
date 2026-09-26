@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Involved reads your workouts, weight, and resting heart rate from Apple Health to show your training history in one place. No data is written back to Health.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Involved uses HealthKit access to support your fitness and activity experience. Involved does not currently write health data without your permission.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
