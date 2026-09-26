@@ -34,6 +34,17 @@ function hasRecentMileageSignal(ctx: VTrainingContext): boolean {
   return runningGoal || runningPr
 }
 
+// Readiness signals the user may state in conversation before the DB is updated.
+// Returns a non-null state when readiness is known — sufficient to bypass the
+// 8-week program gate even if the DB profile hasn't been updated yet.
+// Scan only user messages (not assistant text) to avoid false positives.
+export function extractReadinessFromConversation(text: string): string | null {
+  if (/\breturning\b|\bback after a break\b|\bgetting back\b|\bcoming back\b/i.test(text)) return 'returning'
+  if (/\bfirst time\b|\bnever trained\b|\bnever\s+(?:worked out|trained|lifted)\b|\bjust starting\b/i.test(text)) return 'never_trained'
+  if (/\bstill training\b|\bcurrently training\b|\btraining consistently\b/i.test(text)) return 'active'
+  return null
+}
+
 export function assessIntakeGaps(
   ctx: VTrainingContext,
   request: {

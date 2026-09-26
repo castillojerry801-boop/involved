@@ -14,7 +14,8 @@ import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/progr
 import type { ProgramDraft } from '@/lib/ai/tools/program'
 import { validateProgramQuality } from '@/lib/v/program-quality'
 import { extractEquipmentFromConversation, buildEquipmentCapabilitySummary } from '@/lib/v/equipment-normalize'
-import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, FREEFORM_GUARD_RESPONSE, PROGRAM_INTENT_PATTERN } from './constants'
+import { extractReadinessFromConversation } from '@/lib/v/intake'
+import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, FREEFORM_GUARD_RESPONSE, FREEFORM_GUARD_RESPONSE_KNOWN_EQUIPMENT, PROGRAM_INTENT_PATTERN } from './constants'
 import type OpenAI from 'openai'
 
 const QUALITY_RETRY_LIMIT = 2
@@ -132,7 +133,12 @@ export async function POST(req: NextRequest) {
     // (normalized to canonical ExerciseDB values) always overrides the DB profile.
     // null means "no restriction" (full gym stated or no equipment detected).
     const conversationText = body.messages.map(m => m.content).join('\n')
+    // User-only text for readiness extraction — avoids matching V's own question text.
+    const userText = body.messages.filter(m => m.role === 'user').map(m => m.content).join('\n')
     const conversationEquipment = extractEquipmentFromConversation(conversationText)
+    // Readiness stated in conversation overrides DB profile (DB is only updated when
+    // the user explicitly edits their profile, not from chat answers).
+    const conversationReadiness = extractReadinessFromConversation(userText)
     const allowedEquipment = conversationEquipment ?? trainingCtx?.equipment?.items
 
     console.log('[V-equipment]', {
@@ -290,8 +296,11 @@ export async function POST(req: NextRequest) {
             if (!validation.valid) {
               result = JSON.stringify({ status: 'invalid', errors: validation.errors })
             } else {
+              // Conversation-stated readiness takes priority over DB (DB only updates when the
+              // user explicitly edits their profile — chat answers are never persisted).
+              const effectiveReadinessState = conversationReadiness ?? trainingCtx?.readinessState ?? null
               const isLongProgram = (draft.weeks ?? 0) >= 8
-              if (isLongProgram && trainingCtx && trainingCtx.readinessState === null) {
+              if (isLongProgram && effectiveReadinessState === null) {
                 result = JSON.stringify({
                   status: 'intake_incomplete',
                   message: "Before building an 8+ week program, you need to understand the user's training background. Ask them first:",
@@ -301,7 +310,7 @@ export async function POST(req: NextRequest) {
                 const qualityIssues = validateProgramQuality(draft, {
                   fitnessLevel: trainingCtx?.profile.fitnessLevel,
                   weeks: draft.weeks,
-                  readinessState: trainingCtx?.readinessState ?? undefined,
+                  readinessState: effectiveReadinessState ?? undefined,
                 })
                 const hardErrors = qualityIssues.filter(i => i.severity === 'error')
 
@@ -359,14 +368,19 @@ export async function POST(req: NextRequest) {
         (hasProgramIntent && hadSearchCalls && !pendingProgram?.valid && !pendingWorkout?.valid)
 
       if (freeformGuard) {
+        const equipmentKnown = !!(conversationEquipment?.length || trainingCtx?.equipment?.items?.length)
+        const guardMessage = equipmentKnown
+          ? FREEFORM_GUARD_RESPONSE_KNOWN_EQUIPMENT
+          : FREEFORM_GUARD_RESPONSE
         console.log('[V-freeform-guard]', {
           userId: user.id,
           qualityExhausted,
           proposeProgramAttempted,
           hasProgramIntent,
           hadSearchCalls,
+          equipmentKnown,
         })
-        const guardWords = FREEFORM_GUARD_RESPONSE.split(' ')
+        const guardWords = guardMessage.split(' ')
         for (let i = 0; i < guardWords.length; i++) {
           emitRaw({ type: 'text', content: (i > 0 ? ' ' : '') + guardWords[i] })
           await new Promise(resolve => setTimeout(resolve, 8))
