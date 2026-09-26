@@ -204,22 +204,43 @@ export async function POST(req: NextRequest) {
     let qualityRetries = 0
     const allowedEquipment = trainingCtx?.equipment?.items
 
-    try {
-      for (let round = 0; round < MAX_ROUNDS; round++) {
-        let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
+    const callModel = async (messages: OpenAI.Chat.ChatCompletionMessageParam[]) => {
+      for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          response = await openai.chat.completions.create({
+          return await openai.chat.completions.create({
             model,
-            messages: chatMessages,
+            messages,
             tools,
             tool_choice: 'auto',
             max_tokens: 4000,
             temperature: 0.7,
           })
         } catch (err: unknown) {
+          const apiErr = err as { status?: number; headers?: Record<string, string> }
+          if (apiErr.status === 429 && attempt < 2) {
+            const waitMs =
+              parseInt(apiErr.headers?.['retry-after-ms'] ?? '') ||
+              (parseInt(apiErr.headers?.['retry-after'] ?? '') * 1000) ||
+              30000
+            emitRaw({ type: 'status', message: 'V is thinking...' })
+            await new Promise(resolve => setTimeout(resolve, Math.min(waitMs, 60000)))
+            continue
+          }
+          throw err
+        }
+      }
+      throw new Error('OpenAI 429 retries exhausted')
+    }
+
+    try {
+      for (let round = 0; round < MAX_ROUNDS; round++) {
+        let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
+        try {
+          response = await callModel(chatMessages)
+        } catch (err: unknown) {
           const status = (err as { status?: number }).status
           if (status === 429) {
-            emitRaw({ type: 'text', content: "I'm a bit busy right now — try again in just a moment." })
+            emitRaw({ type: 'text', content: "I'm over capacity right now — please try again in a minute." })
             emitRaw({ type: 'done' })
             return
           }
