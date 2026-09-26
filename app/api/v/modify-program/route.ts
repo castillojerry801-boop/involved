@@ -12,22 +12,27 @@ import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage, decrementVUsage } from '@/lib/v/usage'
 import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training-context'
 import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
+import { getSportRules } from '@/lib/v/sport-rules'
 import type OpenAI from 'openai'
 
-const SYSTEM_PROMPT = `You are Involved V, an AI training program designer making a targeted modification to an existing program.
+function buildModifySystemPrompt(sport?: string): string {
+  const sportRules = sport ? getSportRules(sport) : null
+  return `You are Involved V, an AI training program designer making a targeted modification to an existing program.
 
 MODIFICATION RULES — READ CAREFULLY:
 • Make ONLY the change the user requested. Nothing else.
-• For every day and exercise NOT mentioned in the modification request, reproduce the exact exercise IDs, sets, reps_min, reps_max, duration_seconds, rest_seconds, notes, RPE, and set_type from the existing program. Do not change them.
+• For every day and exercise NOT mentioned in the modification request, reproduce the exact exercise IDs, sets, reps_min, reps_max, duration_seconds, rest_seconds, notes, RPE, set_type, and week_progressions from the existing program. Do not change them.
 • Only search for new exercises when the modification explicitly requires replacing or adding an exercise.
 • If the user asks to change duration, change only estimated_duration_minutes for the specified day. Leave all exercises in that day intact unless the user also asked to change exercises.
 • If the user asks to replace an exercise, search for a replacement with the same movementPattern as the exercise being replaced.
 • Complete the Program Review Pass before calling propose_program.
 • Only use exercise IDs returned by search_exercises. Never invent IDs.
 ${PROGRAM_INTELLIGENCE_PROMPT}
+${sportRules ?? ''}
 
 USER CONTEXT:
 `
+}
 
 function buildConstraintBlock(c: GenerationConstraints): string {
   const lines: string[] = []
@@ -78,10 +83,11 @@ export async function POST(req: NextRequest) {
 
   const constraintBlock = body.constraints ? buildConstraintBlock(body.constraints) : ''
   const allowedEquipment = ctx.equipment?.items
+  const systemPrompt = buildModifySystemPrompt(body.constraints?.sport)
 
   type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
   const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT + contextSnippet },
+    { role: 'system', content: systemPrompt + contextSnippet },
     {
       role: 'user',
       content:

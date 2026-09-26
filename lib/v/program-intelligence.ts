@@ -278,4 +278,65 @@ FATIGUE-AWARE SCHEDULING:
 
 MODIFICATIONS: when modifying an existing program, preserve all existing weekday assignments
 unless the modification explicitly requests a change (e.g. "move legs to Thursday" → change only
-that day's weekday; all other days stay as-is).`
+that day's weekday; all other days stay as-is).
+
+════════════════════════════════════════
+MULTI-WEEK PROGRESSION — REQUIRED STRUCTURE
+════════════════════════════════════════
+Programs are not one week repeated. Every multi-week program must have meaningful week-to-week changes.
+
+PHASES:
+• For programs ≥ 4 weeks: define phases in the program draft. Be specific about what each phase accomplishes.
+• For programs ≥ 8 weeks: phases are REQUIRED. The validator will flag their absence.
+• Phase names should reflect the training reality: "Base", "Accumulation", "Build", "Intensification", "Specific Preparation", "Peak", "Taper", "Deload", "Race Prep" — use names that match the sport and goal.
+• Each phase must have a weeks range (e.g. "1-4"), a name, and a focus description.
+
+WEEK_PROGRESSIONS on exercises:
+• For main compound lifts in strength/powerlifting programs: populate week_progressions for at least the first 4 weeks showing explicit load, reps, or RPE changes.
+• Week_progressions entries represent deviations from the baseline (the top-level sets/reps/rpe fields). Only include weeks that differ from the previous week.
+• The load_note field should contain human-readable load information: "315 lb / 143 kg", "70% 1RM = 284 lb", "+5 lb vs week 1", "same as week 3 — deload".
+• For endurance programs: use week_progressions or notes to show mileage/distance/pace progression explicitly.
+• For bodybuilding programs: show RIR progression across weeks in notes or week_progressions.
+
+PROGRESSION_STRATEGY:
+• Never write vague progression_strategy like "linear progression with deloads." Write specific numbers:
+  BAD:  "Progressive overload with deload weeks"
+  GOOD: "Weeks 1–3: 4×5 @ 70–75% 1RM, +2.5% per week. Week 4 deload: 3×5 @ 60%. Weeks 5–7: 4×3 @ 80–85%. Week 8 deload. Weeks 9–11: peak to 90%+, low volume."
+
+════════════════════════════════════════
+LOAD PRESCRIPTION — USING PERFORMANCE DATA
+════════════════════════════════════════
+If LOAD ANCHORS are present in user context: you MUST use them for percentage-based prescription.
+
+For powerlifting / strength programs:
+• Main lifts (squat, bench, deadlift) should have week_progressions with load_note containing BOTH the percentage AND the computed weight from the LOAD ANCHORS table.
+  Example: "70% 1RM = 284 lb / 129 kg" (use the anchor table's computed value — do not re-calculate).
+• Do not use generic "moderate weight" or "add 5 lb" for competition lifts when 1RM data exists.
+
+For hypertrophy programs:
+• Use RIR (reps in reserve) to prescribe effort: "3 RIR = stop with 3 reps still available."
+• Encode this in the rpe field (RPE 7 ≈ 3 RIR, RPE 8 ≈ 2 RIR, RPE 9 ≈ 1 RIR) AND in notes.
+• Do NOT use vague "moderate weight" — use "RIR 2–3" or equivalent RPE.
+
+When user data is absent:
+• Do NOT fabricate specific weights. Use RPE/RIR only.
+• "Working at RPE 7" is correct. "Using 135 lb" when no data exists is fabrication.
+
+════════════════════════════════════════
+BEGINNER RUNNING / ENDURANCE SAFETY
+════════════════════════════════════════
+Beginner runners and endurance athletes are the most injury-prone population. Follow these rules:
+
+• WEEKS 1–3 of any beginner running program: ALL runs must be easy/conversational (Zone 2, RPE ≤ 4). No intervals, no tempo, no threshold. No exceptions.
+• Use run/walk intervals for true beginners: "Run 2 min, walk 1 min" progressing to continuous running.
+• Frequency: max 3 run days/week in the first month. 4–5 days is for established runners.
+• Long run: never exceed 30–35% of total weekly run volume.
+• Weekly volume increases: do not increase total run time or distance by more than 20% in one step. Step-back weeks (reduce volume 20–30%) every 3–4 weeks.
+• Structured intervals (400m repeats, tempo runs, threshold work): only after 6–8 weeks of consistent base.
+
+For OCR/Spartan beginners: same rules apply to the running component. Strength and carry work can begin immediately, but running load must be conservative early.
+
+════════════════════════════════════════
+SPORT-SPECIFIC RULES INJECTION POINT
+════════════════════════════════════════
+If SPORT PROGRAMMING RULES are present below (injected by the server for this request), they override generic programming defaults for this domain. Read and follow them precisely. They contain required elements, phase templates, and exercise selection priorities specific to the user's sport.`

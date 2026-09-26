@@ -214,6 +214,46 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
   }
 }
 
+// ─── Load anchor helpers ──────────────────────────────────────────────────────
+
+export function isPowerliftingMovement(name: string): boolean {
+  const n = name.toLowerCase()
+  return /\bsquat\b/.test(n) || /bench\s*press/.test(n) || /\bdeadlift\b/.test(n)
+}
+
+const ANCHOR_PCTS = [50, 60, 65, 70, 72.5, 75, 77.5, 80, 82.5, 85, 87.5, 90, 92.5, 95]
+
+export function buildLoadAnchors(
+  prs: Array<{ exerciseName: string; metric: string; value: number; unit: string }>
+): string[] {
+  const lines: string[] = []
+  // Use estimated_1rm if available; if only weight is available, do NOT extrapolate
+  const seen = new Set<string>()
+  for (const pr of prs) {
+    if (!isPowerliftingMovement(pr.exerciseName)) continue
+    if (pr.metric !== 'estimated_1rm') continue
+    if (seen.has(pr.exerciseName)) continue
+    seen.add(pr.exerciseName)
+
+    const oneRmKg = pr.unit === 'lb' ? pr.value / 2.20462 : pr.value
+    const oneRmLb = pr.unit === 'lb' ? pr.value : pr.value * 2.20462
+
+    const pctPairs = ANCHOR_PCTS.map(pct => {
+      const lbs = Math.round(oneRmLb * pct / 100)
+      const kg  = Math.round(oneRmKg * pct / 100 * 10) / 10
+      return `${pct}% = ${lbs} lb / ${kg} kg`
+    })
+
+    const approxLb = Math.round(oneRmLb)
+    const approxKg = Math.round(oneRmKg * 10) / 10
+    lines.push(`  ${pr.exerciseName} (1RM ~${approxLb} lb / ${approxKg} kg):`)
+    // Two rows of 7
+    lines.push(`    ${pctPairs.slice(0, 7).join(' | ')}`)
+    lines.push(`    ${pctPairs.slice(7).join(' | ')}`)
+  }
+  return lines
+}
+
 // ─── Formatter ────────────────────────────────────────────────────────────────
 
 export function trainingContextToPrompt(ctx: VTrainingContext): string {
@@ -278,6 +318,13 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
       const metricLabel = pr.metric === 'estimated_1rm' ? 'est. 1RM' : 'max weight'
       lines.push(`  ${pr.exerciseName}: ${metricLabel} ${pr.value} ${pr.unit} (${pr.achievedAt})`)
     })
+
+    // Load anchors — compute percentage landmarks for powerlifting movements
+    const anchors = buildLoadAnchors(ctx.personalRecords)
+    if (anchors.length > 0) {
+      lines.push('LOAD ANCHORS — USE THESE for percentage-based prescription:')
+      anchors.forEach(a => lines.push(a))
+    }
   }
 
   // Recent training with actual performance

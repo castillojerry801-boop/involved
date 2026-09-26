@@ -11,9 +11,13 @@ import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage, decrementVUsage } from '@/lib/v/usage'
 import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training-context'
 import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
+import { getSportRules } from '@/lib/v/sport-rules'
+import { validateProgramQuality } from '@/lib/v/program-quality'
 import type OpenAI from 'openai'
 
-const SYSTEM_PROMPT = `You are Involved V, an AI training program designer.
+function buildSystemPrompt(sport?: string): string {
+  const sportRules = sport ? getSportRules(sport) : null
+  return `You are Involved V, an AI training program designer.
 
 RULES:
 • Only use exercise IDs returned by search_exercises. Never invent IDs.
@@ -22,10 +26,15 @@ RULES:
 • Respect equipment constraints and exercise preferences.
 • Complete the Program Review Pass before calling propose_program.
 • Set weeks and progression_strategy when designing programs longer than one week.
+• For programs ≥ 4 weeks: populate progression_strategy with specific percentages or volume changes.
+• For programs ≥ 8 weeks: define phases in the program draft.
+• For main compound lifts in strength programs: populate week_progressions for at least 4 weeks.
 ${PROGRAM_INTELLIGENCE_PROMPT}
+${sportRules ?? ''}
 
 USER CONTEXT:
 `
+}
 
 export interface ProgramPreviewExercise {
   exercise_id: string
@@ -118,9 +127,11 @@ export async function POST(req: NextRequest) {
   const weeksDesc = body.weeks ? ` (${body.weeks}-week program)` : ''
   const userMessage = `Create a ${body.days ?? 3}-day training program${focusDesc}${weeksDesc}. Search for exercises for each day, then propose the program.`
 
+  const systemPrompt = buildSystemPrompt(body.sport)
+
   type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
   const messages: ChatMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT + contextSnippet + extraContext },
+    { role: 'system', content: systemPrompt + contextSnippet + extraContext },
     { role: 'user', content: userMessage },
   ]
 
@@ -128,6 +139,8 @@ export async function POST(req: NextRequest) {
   let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
   let pendingDraft: ProgramDraft | null = null
   const MAX_ROUNDS = 12
+  const QUALITY_RETRY_LIMIT = 2
+  let qualityRetries = 0
   const allowedEquipment = ctx.equipment?.items
 
   // Credit was consumed above. If the AI loop fails (model error or exhausts
@@ -163,9 +176,27 @@ export async function POST(req: NextRequest) {
           const draft = JSON.parse(fn.arguments) as ProgramDraft
           const validation = validateProgramDraft(draft, { allowedEquipment })
           if (validation.valid) {
-            pendingProgram = validation
-            pendingDraft = draft
-            result = JSON.stringify({ status: 'valid', message: 'Program validated. You are done.' })
+            // Run semantic quality check
+            const qualityIssues = validateProgramQuality(draft, {
+              sport: body.sport,
+              fitnessLevel: ctx.profile.fitnessLevel,
+              weeks: body.weeks ?? draft.weeks,
+            })
+            const hardErrors = qualityIssues.filter(i => i.severity === 'error')
+
+            if (hardErrors.length > 0 && qualityRetries < QUALITY_RETRY_LIMIT) {
+              qualityRetries++
+              result = JSON.stringify({
+                status: 'quality_issues',
+                message: `Program passed structural validation but has ${hardErrors.length} quality error(s). Fix these and resubmit:`,
+                errors: hardErrors.map(e => `[${e.code}] ${e.message}`),
+              })
+            } else {
+              // Accept: hard errors exhausted retries or no hard errors
+              pendingProgram = validation
+              pendingDraft = draft
+              result = JSON.stringify({ status: 'valid', message: 'Program validated. You are done.' })
+            }
           } else {
             result = JSON.stringify({ status: 'invalid', errors: validation.errors })
           }
@@ -189,6 +220,17 @@ export async function POST(req: NextRequest) {
     await decrementVUsage(user.id, 'workout_generation')
     return Response.json({ error: 'V could not generate a valid program. Please try again.' }, { status: 422 })
   }
+
+  // Collect quality warnings from the final accepted program
+  const finalQualityIssues = validateProgramQuality(pendingDraft, {
+    sport: body.sport,
+    fitnessLevel: ctx.profile.fitnessLevel,
+    weeks: body.weeks ?? pendingDraft.weeks,
+  })
+  const qualityWarnings = [
+    ...(pendingProgram.warnings ?? []),
+    ...finalQualityIssues.filter(i => i.severity === 'warning').map(i => i.message),
+  ]
 
   const validated = pendingProgram.program
 
@@ -240,5 +282,5 @@ export async function POST(req: NextRequest) {
 
   // Return draft (for the save endpoint) + preview (for the UI)
   // No DB write — the user confirms before save
-  return Response.json({ draft: pendingDraft, preview, constraints: returnedConstraints }, { status: 200 })
+  return Response.json({ draft: pendingDraft, preview, constraints: returnedConstraints, qualityWarnings }, { status: 200 })
 }

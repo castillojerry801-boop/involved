@@ -2,6 +2,21 @@ import { validateExerciseId } from './exercises'
 import { classifyExercise } from '@/lib/exercises'
 import type { Exercise } from '@/lib/exercises'
 
+export interface WeekProgression {
+  week: number        // 1-based
+  sets?: number
+  reps_min?: number
+  reps_max?: number
+  rpe?: number
+  load_note?: string  // e.g. "315 lb", "70% 1RM", "+5 lb", "same"
+}
+
+export interface ProgramPhase {
+  name: string    // e.g. "Base", "Accumulation", "Build", "Intensification", "Peak", "Taper", "Deload"
+  weeks: string   // e.g. "1-4", "5-8", "9-12"
+  focus: string   // brief description of what this phase accomplishes
+}
+
 export interface ProgramExercise {
   exercise_id: string
   intended_pattern: string   // V must declare the movementPattern role this exercise fills; server validates it
@@ -13,6 +28,7 @@ export interface ProgramExercise {
   notes?: string
   rpe?: number               // target RPE (6–10 scale), optional
   set_type?: 'warmup' | 'working' | 'amrap'  // defaults to working
+  week_progressions?: WeekProgression[]      // per-week overrides for multi-week programs
 }
 
 export interface ProgramDayDraft {
@@ -29,6 +45,7 @@ export interface ProgramDraft {
   primary_goal?: string
   weeks?: number
   progression_strategy?: string
+  phases?: ProgramPhase[]    // required for programs ≥ 8 weeks
   days: ProgramDayDraft[]
 }
 
@@ -43,6 +60,7 @@ export interface ValidatedProgramDay {
 export interface ValidatedProgram {
   program_name: string
   description?: string
+  phases?: ProgramPhase[]
   days: ValidatedProgramDay[]
 }
 
@@ -50,6 +68,7 @@ export interface ProgramValidationResult {
   valid: boolean
   program?: ValidatedProgram
   errors: string[]
+  warnings: string[]
 }
 
 export interface ValidationOptions {
@@ -60,6 +79,7 @@ export interface ValidationOptions {
 
 export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOptions): ProgramValidationResult {
   const errors: string[] = []
+  const warnings: string[] = []
 
   if (!draft.program_name?.trim()) errors.push('Program name is required')
   if (draft.program_name && draft.program_name.length > 200) {
@@ -69,6 +89,18 @@ export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOp
     errors.push('Program must have at least one day')
   }
   if (draft.days.length > 7) errors.push('Program cannot have more than 7 days')
+
+  // Validate phases (optional, but required for ≥ 8 weeks)
+  if (draft.weeks != null && draft.weeks >= 8 && !draft.phases?.length) {
+    warnings.push(`Program is ${draft.weeks} weeks but has no phases defined. Add phases (e.g. "Base", "Build", "Peak") to describe the periodization structure.`)
+  }
+  if (Array.isArray(draft.phases)) {
+    for (const phase of draft.phases) {
+      if (!phase.name?.trim()) errors.push('Each phase must have a name')
+      if (!phase.weeks?.trim()) errors.push(`Phase "${phase.name}": weeks range is required (e.g. "1-4")`)
+      if (!phase.focus?.trim()) errors.push(`Phase "${phase.name}": focus description is required`)
+    }
+  }
 
   // Validate weekday assignments across all days (range + no duplicates)
   const seenWeekdays = new Set<number>()
@@ -178,6 +210,22 @@ export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOp
       if (ex.notes && ex.notes.length > 500) {
         errors.push(`${record.name}: notes must be 500 characters or fewer`)
       }
+
+      // Validate week_progressions
+      if (Array.isArray(ex.week_progressions)) {
+        const programWeeks = draft.weeks ?? Infinity
+        for (const wp of ex.week_progressions) {
+          if (!Number.isInteger(wp.week) || wp.week < 1) {
+            errors.push(`${record.name}: week_progressions[].week must be a positive integer, got ${wp.week}`)
+          } else if (wp.week > programWeeks) {
+            errors.push(`${record.name}: week_progressions week ${wp.week} exceeds program duration (${programWeeks} weeks)`)
+          }
+          if (wp.rpe !== undefined && (wp.rpe < 1 || wp.rpe > 10)) {
+            errors.push(`${record.name}: week_progressions week ${wp.week} RPE must be 1–10`)
+          }
+        }
+      }
+
       if (allowedEquipment) {
         const eq = record.equipment.toLowerCase()
         if (!allowedEquipment.has(eq)) {
@@ -202,14 +250,16 @@ export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOp
     }
   }
 
-  if (errors.length > 0) return { valid: false, errors }
+  if (errors.length > 0) return { valid: false, errors, warnings }
 
   return {
     valid: true,
     errors: [],
+    warnings,
     program: {
       program_name: draft.program_name.trim(),
       description: draft.description?.trim(),
+      phases: draft.phases,
       days: validatedDays,
     },
   }
@@ -238,11 +288,24 @@ export const PROPOSE_PROGRAM_TOOL = {
         },
         weeks: {
           type: 'number',
-          description: 'Total program duration in weeks (e.g. 4, 8, 12). The days represent Week 1; notes describe week-over-week progression.',
+          description: 'Total program duration in weeks (e.g. 4, 8, 12). The days represent Week 1; week_progressions on exercises describe week-over-week changes.',
         },
         progression_strategy: {
           type: 'string',
-          description: 'How the program progresses over weeks (e.g. "Linear load increase of 5 lb/week on main lifts. Deload every 4th week.").',
+          description: 'How the program progresses over weeks. Be specific — name actual percentages, rep ranges, or volume changes rather than generic phrases.',
+        },
+        phases: {
+          type: 'array',
+          description: 'REQUIRED for programs ≥ 8 weeks. Define the distinct training phases (e.g. Base → Build → Peak → Taper). Each phase must name the weeks it covers.',
+          items: {
+            type: 'object',
+            properties: {
+              name:  { type: 'string', description: 'Phase name, e.g. "Base", "Accumulation", "Intensification", "Peak", "Taper", "Deload"' },
+              weeks: { type: 'string', description: 'Week range, e.g. "1-4", "5-8", "9-11", "12"' },
+              focus: { type: 'string', description: 'What this phase accomplishes, e.g. "Build aerobic base and movement quality; higher reps, lower intensity"' },
+            },
+            required: ['name', 'weeks', 'focus'],
+          },
         },
         days: {
           type: 'array',
@@ -276,14 +339,30 @@ export const PROPOSE_PROGRAM_TOOL = {
                   properties: {
                     exercise_id:       { type: 'string', description: 'ID from search_exercises — never invent' },
                     intended_pattern:  { type: 'string', description: 'REQUIRED: the movementPattern role this exercise fills in this session (e.g. "squat", "hinge", "vertical_pull"). Must match the exercise\'s movementPattern from search_exercises or the server will reject it.' },
-                    sets:              { type: 'number', description: 'Sets (1–20)' },
-                    reps_min:          { type: 'number', description: 'Minimum reps per set (omit for time-based)' },
-                    reps_max:          { type: 'number', description: 'Maximum reps per set (omit for time-based)' },
+                    sets:              { type: 'number', description: 'Sets (1–20) — represents Week 1 baseline' },
+                    reps_min:          { type: 'number', description: 'Minimum reps per set (omit for time-based) — Week 1 baseline' },
+                    reps_max:          { type: 'number', description: 'Maximum reps per set (omit for time-based) — Week 1 baseline' },
                     duration_seconds:  { type: 'number', description: 'Duration per set in seconds (omit for rep-based)' },
                     rest_seconds:      { type: 'number', description: 'Rest between sets in seconds' },
-                    notes:             { type: 'string', description: 'Coaching cue, progression instruction, or form note' },
+                    notes:             { type: 'string', description: 'Coaching cue, progression instruction, or form note. For multi-week programs without week_progressions, describe the progression arc here.' },
                     rpe:               { type: 'number', description: 'Target RPE on the 1–10 scale (e.g. 7.5 = 2–3 reps left in tank). Omit if not applicable.' },
                     set_type:          { type: 'string', enum: ['working', 'warmup', 'amrap'], description: 'Set type: "working" (default), "warmup", or "amrap"' },
+                    week_progressions: {
+                      type: 'array',
+                      description: 'Per-week overrides for this exercise. Use on main compound lifts to show explicit week-by-week progression (sets, reps, RPE, or load). The baseline fields (sets/reps_min/reps_max/rpe) represent Week 1; only include entries for weeks that differ from the previous week.',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          week:      { type: 'integer', description: '1-based week number' },
+                          sets:      { type: 'number', description: 'Override sets for this week' },
+                          reps_min:  { type: 'number', description: 'Override reps_min for this week' },
+                          reps_max:  { type: 'number', description: 'Override reps_max for this week' },
+                          rpe:       { type: 'number', description: 'Override RPE for this week' },
+                          load_note: { type: 'string', description: 'Human-readable load for this week, e.g. "315 lb", "70% 1RM", "+5 lb vs last week", "same as week 3"' },
+                        },
+                        required: ['week'],
+                      },
+                    },
                   },
                   required: ['exercise_id', 'intended_pattern', 'sets', 'rest_seconds'],
                 },
