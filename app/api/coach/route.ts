@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getOpenAI } from '@/lib/ai/client'
-import { coachModel } from '@/lib/ai/models'
+import { coachModel, V_CHAT_MODEL, V_PROGRAM_MODEL, V_ESCALATION_MODEL } from '@/lib/ai/models'
 import { getAiLimit } from '@/lib/subscription/config'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { buildCoachContext, contextToSystemSnippet } from '@/lib/ai/context'
@@ -109,10 +109,16 @@ export async function POST(req: NextRequest) {
   console.log(`[V-perf] context=${Date.now() - tCtx}ms auth_to_ctx=${tCtx - t0}ms`)
   const trainingCtx = ctx.trainingCtx
   const contextSnippet = contextToSystemSnippet(ctx)
-  // gpt-4o-mini for tool-calling rounds: 10x faster, 200k TPM, no rate-limit stalls.
-  // Switch to the configured model only for the final prose response (no tool calls).
+  // ── Cost-conscious model routing ─────────────────────────────────────────────
+  //   chatModel      — cheap/fast: chat, intake, clarification, exercise-search
+  //                    orchestration, simple factual responses.
+  //   programModel   — stronger-but-low-cost: full structured ProgramDraft drafting.
+  //   escalationModel— strongest: ONLY the final recovery attempt when a drafted
+  //                    program still has hard validation errors after normal retries.
   const proseModel = coachModel(tier === 'free' ? 'free' : 'plus')
-  const toolModel = 'gpt-4o-mini'
+  const chatModel = V_CHAT_MODEL
+  const programModel = V_PROGRAM_MODEL
+  const escalationModel = V_ESCALATION_MODEL
   const openai = getOpenAI()
 
   // Open the stream immediately — the client gets HTTP headers right away and
@@ -148,6 +154,10 @@ export async function POST(req: NextRequest) {
     const conversationHasProgramIntent = body.messages.some(
       m => m.role === 'user' && PROGRAM_INTENT_PATTERN.test(m.content)
     )
+    // We are in program-generation mode only once all required context is present.
+    // This is what routes the tool loop to the stronger programModel — intake and
+    // plain chat stay on the cheap chatModel.
+    const programGenerationMode = conversationHasProgramIntent && missingContext.length === 0
     console.log('[V-intake]', {
       userId: user.id,
       readinessState: intake.readinessState,
@@ -219,7 +229,32 @@ export async function POST(req: NextRequest) {
     // field(s). This is what prevents generation starting on incomplete context
     // (e.g. trainingDaysPerWeek never supplied) and the resulting failure loop.
     if (conversationHasProgramIntent && missingContext.length > 0) {
-      const prompt = buildMissingContextPrompt(missingContext)!
+      let prompt = buildMissingContextPrompt(missingContext)!
+      console.log('[V-model]', { userId: user.id, stage: 'intake', model: 'deterministic' })
+
+      // Loop protection — if we're about to re-ask the EXACT question we asked last
+      // turn, the user presumably just answered it. Re-run extraction is already
+      // done (parseProgramIntake ran on the full history); if the field is STILL
+      // missing, that's an intake-state error, not a reason to parrot the question.
+      if (wouldRepeatLast(prompt)) {
+        const askedField = missingContext[0].field
+        const lastUser = [...body.messages].reverse().find(m => m.role === 'user')?.content ?? ''
+        console.error('[V-intake-error]', {
+          userId: user.id,
+          field: askedField,
+          lastUser,
+          reason: 'about_to_repeat_intake_question_after_user_reply',
+          note: 'extraction did not resolve the field from the latest answer',
+        })
+        // Prefer moving to the next missing field so we never emit an identical
+        // repeat. If this is the only missing field, ask a disambiguated variant
+        // once (different text → cannot form an identical-message loop).
+        const next = missingContext.find(m => m.field !== askedField)
+        prompt = next
+          ? next.question
+          : `Just to confirm — ${prompt.charAt(0).toLowerCase()}${prompt.slice(1)} (a number from 1 to 7)`
+      }
+
       console.log('[V-pregate]', {
         userId: user.id,
         missing: missingContext.map(m => m.field),
@@ -232,29 +267,53 @@ export async function POST(req: NextRequest) {
       return
     }
 
-    // useTools: tool-calling rounds use gpt-4o-mini (fast, 200k TPM).
-    // Final prose round (no tools) uses the configured proseModel (gpt-4o for plus).
+    // Token + timing telemetry, accumulated across all rounds.
+    let promptTokens = 0
+    let completionTokens = 0
+    const logModelSummary = (outcome: string) => {
+      console.log('[V-model-summary]', {
+        userId: user.id,
+        stage: programGenerationMode ? 'program_generation' : 'chat_intake',
+        programModel: programGenerationMode ? programModel : chatModel,
+        escalated: modelEscalated,
+        escalationModel: modelEscalated ? escalationModel : null,
+        qualityRetries,
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
+        totalMs: Date.now() - t0,
+        outcome,
+      })
+    }
+
+    // Resolve the model for a tool round from the current state:
+    //   escalation (Sol) > program-generation (Luna) > chat/intake/search (mini).
+    const toolRoundModel = () =>
+      modelEscalated ? escalationModel : (programGenerationMode ? programModel : chatModel)
+
     const callModel = async (
       messages: OpenAI.Chat.ChatCompletionMessageParam[],
       useTools: boolean,
     ) => {
-      // Tool rounds normally use the fast mini model. After a quality exhaustion
-      // on mini we ESCALATE to the more capable prose model for the retry — a
-      // genuinely different recovery strategy, not a re-ask of the same request.
-      const selectedModel = useTools ? (modelEscalated ? proseModel : toolModel) : proseModel
+      const selectedModel = useTools ? toolRoundModel() : proseModel
       // Intake turns (no prior tool calls) only need ~500 tokens — V asks one short question.
       // Once tool calls begin, use the full 4000 for exercise lists and program drafts.
       const hasToolHistory = messages.some(m => m.role === 'tool')
       const maxTokens = useTools ? (hasToolHistory ? 4000 : 500) : 1500
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          return await openai.chat.completions.create({
+          const res = await openai.chat.completions.create({
             model: selectedModel,
             messages,
             ...(useTools ? { tools, tool_choice: 'auto' } : {}),
             max_tokens: maxTokens,
             temperature: 0.7,
           })
+          if (res.usage) {
+            promptTokens += res.usage.prompt_tokens ?? 0
+            completionTokens += res.usage.completion_tokens ?? 0
+          }
+          return res
         } catch (err: unknown) {
           const apiErr = err as { status?: number; headers?: Record<string, string> }
           if (apiErr.status === 429 && attempt < 2) {
@@ -277,6 +336,11 @@ export async function POST(req: NextRequest) {
         let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
         try {
           const tRound = Date.now()
+          const roundModel = toolRoundModel()
+          const roundStage = modelEscalated
+            ? 'quality_escalation'
+            : (programGenerationMode ? 'program_generation' : 'chat_intake')
+          console.log('[V-model]', { userId: user.id, stage: roundStage, model: roundModel, round })
           response = await callModel(chatMessages, true)
           console.log(`[V-perf] round=${round} llm=${Date.now() - tRound}ms`)
         } catch (err: unknown) {
@@ -391,10 +455,12 @@ export async function POST(req: NextRequest) {
                     errors: hardErrors.map(e => `[${e.code}] ${e.message}`),
                   })
                 } else if (hardErrors.length > 0 && !modelEscalated) {
-                  // Mini exhausted its quality-retry budget. Escalate to the more
-                  // capable model and give it a fresh budget — a genuinely different
-                  // recovery strategy (not a re-ask with unchanged state).
-                  console.warn('[V-quality-escalate]', { userId: user.id, codes: hardErrors.map(e => e.code) })
+                  // Luna exhausted its quality-retry budget. Escalate the FINAL
+                  // recovery attempt to the strongest model (Sol) with a fresh
+                  // budget — a genuinely different strategy, not a re-ask. Sol is
+                  // reached only here: context complete, program drafted, hard
+                  // errors persist after normal retries.
+                  console.warn('[V-model]', { userId: user.id, stage: 'quality_escalation', model: escalationModel, from: programModel, codes: hardErrors.map(e => e.code) })
                   modelEscalated = true
                   qualityRetries = 0
                   emitRaw({ type: 'status', message: 'Refining your program...' })
@@ -466,6 +532,7 @@ export async function POST(req: NextRequest) {
         })
 
         await streamText(guardMessage)
+        logModelSummary(missingPrompt ? 'ask_missing_field' : 'generation_failed')
         emitRaw({ type: 'done' })
         return
       }
@@ -487,6 +554,7 @@ export async function POST(req: NextRequest) {
         emitRaw({ type: 'program', data: pendingProgram.program })
       }
       console.log(`[V-perf] total=${Date.now() - t0}ms`)
+      logModelSummary(pendingProgram?.valid ? 'program_delivered' : (pendingWorkout?.valid ? 'workout_delivered' : 'chat_reply'))
       emitRaw({ type: 'done' })
 
     } catch (err: unknown) {

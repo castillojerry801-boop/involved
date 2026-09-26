@@ -68,30 +68,92 @@ export function extractReadiness(text: string): ReadinessState | null {
 }
 
 /**
- * Training days per week from natural replies:
- *   "4 days", "4 days a week", "train 4x", "4x/week", "four days", "4"
- * Only accepts 1–7. Returns null if no confident signal.
+ * STRONG training-days signal — self-describing, safe to read from anywhere in the
+ * conversation because a unit word ("days", "x", "sessions", "per week") disambiguates
+ * it. "4 days", "4x/week", "four days a week", "train 4 days".
  */
-export function extractTrainingDays(text: string): number | null {
+export function extractTrainingDaysStrong(text: string): number | null {
   const t = text.toLowerCase()
 
-  // "4 days", "4 day", "4x", "4 times", "4 sessions", "4/week", "train 4"
   const digit = t.match(/\b([1-7])\s*(?:x|days?|times?|sessions?|d\/?w|\/\s*week|per week|day\/week)\b/)
   if (digit) return parseInt(digit[1], 10)
 
-  // "four days a week"
   const word = t.match(/\b(one|two|three|four|five|six|seven)\s*(?:x|days?|times?|sessions?)\b/)
   if (word) return WORD_NUMBERS[word[1]]
 
-  // "train 4 days", "training 4"
   const verb = t.match(/\b(?:train|training|lift|workout|work out)\s+([1-7])\b/)
   if (verb) return parseInt(verb[1], 10)
 
-  // Bare number reply to a days question — only when the message is essentially just the number.
-  const bare = t.trim().match(/^([1-7])\s*(?:days?)?$/)
-  if (bare) return parseInt(bare[1], 10)
-
   return null
+}
+
+/**
+ * BARE training-days answer — a lone number or number-word with no unit ("4",
+ * "four"). This is ambiguous on its own, so callers MUST only apply it when the
+ * immediately preceding assistant turn asked for training availability (active
+ * field = trainingDays). Applied to a single message, never to joined text.
+ */
+export function extractTrainingDaysBare(text: string): number | null {
+  const t = text.trim().toLowerCase()
+  const digit = t.match(/^([1-7])\b/)
+  if (digit) return parseInt(digit[1], 10)
+  const word = t.match(/^(one|two|three|four|five|six|seven)\b/)
+  if (word) return WORD_NUMBERS[word[1]]
+  return null
+}
+
+/**
+ * Permissive single-message extractor (strong OR bare). Convenience for callers
+ * that already know the message is a days answer. parseProgramIntake does NOT use
+ * this directly — it uses the strong/bare split with active-field context so a
+ * stray number in unrelated chat cannot mutate trainingDaysPerWeek.
+ */
+export function extractTrainingDays(text: string): number | null {
+  return extractTrainingDaysStrong(text) ?? extractTrainingDaysBare(text)
+}
+
+/**
+ * Classify what the assistant's last message was asking for. Used to make bare
+ * answers context-aware: a lone "4" only sets trainingDaysPerWeek when the prior
+ * assistant turn was the training-availability question.
+ */
+export function detectActiveField(assistantText: string): IntakeField | null {
+  const t = assistantText.toLowerCase()
+  if (/how many days|days per week|days can you|days.*(?:train|week)|training availability|how many.*sessions/.test(t)) return 'trainingDays'
+  if (/currently training|returning after|first time training|training background|how long have you been training|are you (?:currently )?training/.test(t)) return 'readiness'
+  if (/what equipment|equipment.*available|equipment do you have|equipment.*at home/.test(t)) return 'equipment'
+  if (/main focus|main goal|primary goal|build muscle.*lose fat|what.*your goal/.test(t)) return 'goal'
+  return null
+}
+
+/**
+ * Resolve training days from the whole conversation, message by message, with
+ * active-field context. Returns the most recent confidently-extracted value, or
+ * null. This is the authoritative extractor used by parseProgramIntake — never
+ * scan joined text for the bare answer, or a stray number elsewhere in the
+ * transcript (or an unanchored match) will be lost or misread.
+ */
+export function extractConversationDays(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+): number | null {
+  let days: number | null = null
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]
+    if (m.role !== 'user') continue
+
+    // Strong, self-describing signal — read from any user message.
+    const strong = extractTrainingDaysStrong(m.content)
+    if (strong != null) { days = strong; continue }
+
+    // Bare answer — only when the previous assistant turn asked for availability.
+    const prev = i > 0 ? messages[i - 1] : null
+    const activeField = prev && prev.role === 'assistant' ? detectActiveField(prev.content) : null
+    if (activeField === 'trainingDays') {
+      const bare = extractTrainingDaysBare(m.content)
+      if (bare != null) days = bare
+    }
+  }
+  return days
 }
 
 /**
@@ -178,8 +240,12 @@ export function parseProgramIntake(
   const readinessSource: ProgramIntakeState['readinessSource'] =
     convReadiness ? 'conversation' : (dbCtx?.readinessState ? 'profile' : null)
 
-  // Training days — conversation first, then DB weekly target (informational).
-  const convDays = extractTrainingDays(userText)
+  // Training days — CONTEXT-AWARE per-message extraction (the fix for the loop).
+  // Strong signals ("4 days", "4x/week") are read from any user message. A bare
+  // answer ("4", "four") is only accepted when the immediately preceding assistant
+  // turn asked for training availability — so a stray number elsewhere in the
+  // conversation cannot silently mutate the field.
+  const convDays = extractConversationDays(messages)
   const trainingDaysPerWeek = convDays ?? dbCtx?.profile.weeklyWorkoutTarget ?? null
   const trainingDaysSource: ProgramIntakeState['trainingDaysSource'] =
     convDays != null ? 'conversation' : (dbCtx?.profile.weeklyWorkoutTarget != null ? 'profile' : null)

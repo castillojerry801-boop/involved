@@ -23,6 +23,8 @@ import {
   missingProgramContext,
   buildMissingContextPrompt,
   extractTrainingDays,
+  extractConversationDays,
+  detectActiveField,
   extractGoals,
   extractReadiness,
   extractLocation,
@@ -323,6 +325,86 @@ describe('reported failure: first-timer, full home equipment, no days given', ()
     const missing = missingProgramContext(state, emptyCtx())
     expect(missing).toHaveLength(0)
     expect(buildMissingContextPrompt(missing)).toBeNull()
+  })
+})
+
+// ─── THE BARE-ANSWER BUG: context-aware day extraction ────────────────────────
+// Root cause: parseProgramIntake scanned all user messages JOINED, and the bare
+// "4" only matched an anchored ^4$ that never fires inside concatenated text.
+// Fix: per-message extraction with active-field context.
+
+describe('context-aware training-days extraction (the repeated-question bug)', () => {
+  const daysQuestion = 'How many days per week can you train?'
+
+  it('detectActiveField recognizes the training-days question', () => {
+    expect(detectActiveField(daysQuestion)).toBe('trainingDays')
+  })
+
+  function afterDaysQuestion(answer: string): Msg[] {
+    return [
+      { role: 'user', content: 'I want to get back in shape and build some muscle. Make me a 12-week program.' },
+      { role: 'assistant', content: 'Are you currently training, returning after a break, or is this your first time training consistently?' },
+      { role: 'user', content: 'first time training consistently' },
+      { role: 'assistant', content: 'What equipment do you have available at home?' },
+      { role: 'user', content: 'dumbbells, barbell, kettlebells, bench, pull-up bar' },
+      { role: 'assistant', content: daysQuestion },
+      { role: 'user', content: answer },
+    ]
+  }
+
+  it('bare "4" after the days question resolves to 4 (was the production bug)', () => {
+    expect(extractConversationDays(afterDaysQuestion('4'))).toBe(4)
+    const state = parseProgramIntake(afterDaysQuestion('4'), emptyCtx())
+    expect(state.trainingDaysPerWeek).toBe(4)
+    expect(state.trainingDaysSource).toBe('conversation')
+  })
+
+  it('"4 days" resolves', () => {
+    expect(parseProgramIntake(afterDaysQuestion('4 days'), emptyCtx()).trainingDaysPerWeek).toBe(4)
+  })
+
+  it('"four" resolves', () => {
+    expect(parseProgramIntake(afterDaysQuestion('four'), emptyCtx()).trainingDaysPerWeek).toBe(4)
+  })
+
+  it('"four days a week" resolves', () => {
+    expect(parseProgramIntake(afterDaysQuestion('four days a week'), emptyCtx()).trainingDaysPerWeek).toBe(4)
+  })
+
+  it('after the answer, the intake gate MOVES ON (days no longer missing)', () => {
+    const state = parseProgramIntake(afterDaysQuestion('4'), emptyCtx())
+    const missing = missingProgramContext(state, emptyCtx())
+    expect(missing.find(m => m.field === 'trainingDays')).toBeUndefined()
+  })
+
+  it('the exact repeated-question loop is impossible: 4 always resolves in context', () => {
+    for (const answer of ['4', '4 days', 'four', 'four days a week', '4 days a week']) {
+      const state = parseProgramIntake(afterDaysQuestion(answer), emptyCtx())
+      expect(state.trainingDaysPerWeek).toBe(4)
+      const missing = missingProgramContext(state, emptyCtx())
+      expect(missing.some(m => m.field === 'trainingDays')).toBe(false)
+    }
+  })
+
+  it('a bare "4" in UNRELATED context does NOT mutate training days', () => {
+    // No preceding days question — the number is about something else (e.g. sets).
+    const msgs: Msg[] = [
+      { role: 'user', content: 'Make me a 12-week muscle program' },
+      { role: 'assistant', content: 'How many exercises do you usually do?' },
+      { role: 'user', content: '4' },
+    ]
+    const state = parseProgramIntake(msgs, emptyCtx())
+    expect(state.trainingDaysPerWeek).toBeNull()
+    expect(state.trainingDaysSource).toBeNull()
+  })
+
+  it('a bare "4" as the very first message does not set days (no active field)', () => {
+    expect(extractConversationDays([{ role: 'user', content: '4' }])).toBeNull()
+  })
+
+  it('strong "train 4 days" resolves even without a preceding question', () => {
+    const msgs: Msg[] = [{ role: 'user', content: 'build me a program, I can train 4 days a week' }]
+    expect(parseProgramIntake(msgs, emptyCtx()).trainingDaysPerWeek).toBe(4)
   })
 })
 
