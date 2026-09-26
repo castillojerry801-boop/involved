@@ -113,16 +113,11 @@ export const EMPTY_SEARCH_RESULT = 'No exercises found. Search again with differ
 
 export const QUALITY_EXHAUSTED_MESSAGE = 'Quality validation failed after all retries. Ask the user: "I ran into a problem finding the right exercises for your setup — can you tell me exactly what equipment you have available?" Do NOT output a program. Do NOT list exercises. Do NOT say "I\'ll use standard exercises." Do NOT create a general outline. Ask the one clarifying question and stop.'
 
-// Server-controlled fallback when the freeform guard fires. Emitted directly by the
-// server — the model never sees it. Must be a targeted question, never a generic
-// outline or exercise list.
-
-// Used when equipment is unknown — asks the user to clarify.
-export const FREEFORM_GUARD_RESPONSE = "I ran into a problem finding the right exercises for your setup. Can you tell me exactly what equipment you have available? For example: barbell, dumbbells, cable machine, pull-up bar, resistance bands, kettlebells, bodyweight only, etc."
-
-// Used when equipment is already known but program generation still failed.
-// Asks for program structure details rather than re-asking for equipment.
-export const FREEFORM_GUARD_RESPONSE_KNOWN_EQUIPMENT = "I had trouble putting together a complete program for your setup. To help me get this right — how many days per week do you want to train, and what's your main focus: build muscle, get stronger, lose fat, or a combination?"
+// Server-controlled message used ONLY when generation failed AND every required
+// intake field is already resolved (so re-asking anything would be wrong). Emitted
+// directly by the server — never a generic outline or exercise list. Missing-field
+// questions are generated from the structured intake state, not from here.
+export const GENERATION_FAILED_MESSAGE = "I hit a snag finalizing your program just now. Give me one more try — send \"go ahead\" and I'll build it from what you've already told me."
 
 // Matches user messages that express program-building intent.
 // Used server-side to decide whether a freeform text response should be suppressed.

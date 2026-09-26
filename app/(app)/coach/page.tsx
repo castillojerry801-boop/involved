@@ -502,11 +502,11 @@ export default function CoachPage() {
           <p className="font-black text-zinc-900 dark:text-white">Involved Coach</p>
           <p className="text-xs text-zinc-400">
             {usage
-              ? usage.tier === 'plus'
+              ? usage.tier === 'plus' || usage.limit == null
                 ? 'Unlimited coaching'
                 : usage.tier === 'trial'
-                  ? `${usage.remaining ?? '—'} of ${usage.limit} messages · ${usage.trialDaysRemaining ?? '?'} trial days left`
-                  : `${usage.remaining ?? '—'} of ${usage.limit} messages this month`
+                  ? `${usage.remaining ?? usage.limit} of ${usage.limit} messages · ${usage.trialDaysRemaining ?? '?'} trial days left`
+                  : `${usage.remaining ?? usage.limit} of ${usage.limit} messages this month`
               : 'Loading...'}
           </p>
         </div>

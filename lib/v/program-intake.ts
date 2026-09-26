@@ -1,0 +1,303 @@
+import 'server-only'
+import { extractEquipmentFromConversation } from './equipment-normalize'
+import type { VTrainingContext, ReadinessState } from './training-context'
+
+/**
+ * Structured program-intake state.
+ *
+ * This is the single source of truth for what the coach knows about a program
+ * request. It is DERIVED FRESH each turn from the full conversation (which the
+ * client resends whole) merged with the persisted DB training context. There is
+ * no separate mutable store to fall out of sync — the conversation IS the store.
+ */
+export interface ProgramIntakeState {
+  readinessState: ReadinessState | null
+  readinessSource: 'conversation' | 'profile' | null
+  trainingDaysPerWeek: number | null
+  trainingLocation: 'home' | 'gym' | null
+  primaryGoal: string | null
+  secondaryGoals: string[]
+  /** Canonical equipment list. null = not yet resolved. Empty-but-resolved is impossible; "body weight" always present once resolved. */
+  equipmentProfile: string[] | null
+  weeks: number | null
+}
+
+export type IntakeField =
+  | 'readiness'
+  | 'equipment'
+  | 'trainingDays'
+  | 'goal'
+
+export interface MissingContextItem {
+  field: IntakeField
+  question: string
+}
+
+// ─── Word-number map for natural replies ("four days") ────────────────────────
+
+const WORD_NUMBERS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
+}
+
+// ─── Field extractors ─────────────────────────────────────────────────────────
+
+/**
+ * Readiness from natural replies. Maps colloquial phrases to the canonical
+ * ReadinessState enum so downstream (quality validator, gate) sees one vocabulary.
+ * Returns null when no confident signal is present.
+ */
+export function extractReadiness(text: string): ReadinessState | null {
+  const t = text.toLowerCase()
+  // First-timer signals take priority — "never" is unambiguous.
+  if (/\bnever\s+(?:trained|worked out|lifted|exercised)\b|\bfirst[\s-]?time\b|\bbrand new\b|\bnever done\b/.test(t)) {
+    return 'never_trained'
+  }
+  // Returning / detrained
+  if (/\breturning\b|\bcoming back\b|\bgetting back\b|\bback (?:in|into|after)\b|\bafter a (?:long )?break\b|\btime off\b|\bhaven'?t trained\b|\bused to (?:train|lift)\b|\bgot out of\b/.test(t)) {
+    return 'detrained'
+  }
+  // Currently training / active
+  if (/\bcurrently training\b|\bstill training\b|\btraining consistently\b|\btrain regularly\b|\bactively (?:training|lifting)\b|\bi (?:train|lift) \d/.test(t)) {
+    return 'recreationally_active'
+  }
+  return null
+}
+
+/**
+ * Training days per week from natural replies:
+ *   "4 days", "4 days a week", "train 4x", "4x/week", "four days", "4"
+ * Only accepts 1–7. Returns null if no confident signal.
+ */
+export function extractTrainingDays(text: string): number | null {
+  const t = text.toLowerCase()
+
+  // "4 days", "4 day", "4x", "4 times", "4 sessions", "4/week", "train 4"
+  const digit = t.match(/\b([1-7])\s*(?:x|days?|times?|sessions?|d\/?w|\/\s*week|per week|day\/week)\b/)
+  if (digit) return parseInt(digit[1], 10)
+
+  // "four days a week"
+  const word = t.match(/\b(one|two|three|four|five|six|seven)\s*(?:x|days?|times?|sessions?)\b/)
+  if (word) return WORD_NUMBERS[word[1]]
+
+  // "train 4 days", "training 4"
+  const verb = t.match(/\b(?:train|training|lift|workout|work out)\s+([1-7])\b/)
+  if (verb) return parseInt(verb[1], 10)
+
+  // Bare number reply to a days question — only when the message is essentially just the number.
+  const bare = t.trim().match(/^([1-7])\s*(?:days?)?$/)
+  if (bare) return parseInt(bare[1], 10)
+
+  return null
+}
+
+/**
+ * Location from natural replies. Returns 'gym', 'home', or null.
+ * "gym" resolves equipment (full access); "home" requires an explicit list.
+ */
+export function extractLocation(text: string): 'home' | 'gym' | null {
+  const t = text.toLowerCase()
+  if (/\b(?:at |from )?home\b|home gym|garage gym|my (?:house|garage|apartment|place)|no gym/.test(t)) {
+    return 'home'
+  }
+  if (/\bcommercial gym\b|\bfull gym\b|\bthe gym\b|\bat (?:the |a |my )?gym\b|\bgym access\b|\bglobo gym\b|\bplanet fitness\b|\blocal gym\b|\bi (?:go to|have) (?:a |the )?gym\b/.test(t)) {
+    return 'gym'
+  }
+  return null
+}
+
+/**
+ * Goals from natural replies. Returns an ordered list; first is primary.
+ * "4 days I want to build muscle and lose fat" → ['muscle_gain', 'fat_loss']
+ */
+export function extractGoals(text: string): string[] {
+  const t = text.toLowerCase()
+  const goals: string[] = []
+  const add = (g: string) => { if (!goals.includes(g)) goals.push(g) }
+
+  // Order the scan so the first-appearing goal in the text becomes primary.
+  const matchers: Array<{ goal: string; re: RegExp }> = [
+    { goal: 'muscle_gain', re: /build (?:some )?muscle|gain muscle|muscle|hypertrophy|get (?:big|bigger|jacked|swole)|put on (?:size|mass)|\bmass\b|tone up|get toned/ },
+    { goal: 'fat_loss',    re: /lose (?:some )?(?:fat|weight)|fat loss|weight loss|cut(?:ting)?\b|lean(?:er)? out|get lean|slim down|drop (?:weight|pounds|lbs)|shred/ },
+    { goal: 'strength',    re: /get stronger|build strength|\bstrength\b|\bstronger\b|powerlifting|increase my (?:squat|bench|deadlift|lifts)|hit a (?:pr|1rm)/ },
+    { goal: 'endurance',   re: /endurance|conditioning|stamina|cardio fitness|aerobic|run (?:a|longer|farther)/ },
+    { goal: 'general_fitness', re: /get (?:back )?in shape|overall fitness|general fitness|be healthier|feel better|get fit/ },
+  ]
+
+  // Find each goal's first index in the text, then sort by appearance — but
+  // 'general_fitness' is a vague catch-all ("get in shape") and must never
+  // outrank a specific training goal, so it is always demoted to last.
+  const found = matchers
+    .map(m => ({ goal: m.goal, idx: t.search(m.re) }))
+    .filter(m => m.idx >= 0)
+    .sort((a, b) => {
+      const aGen = a.goal === 'general_fitness'
+      const bGen = b.goal === 'general_fitness'
+      if (aGen !== bGen) return aGen ? 1 : -1
+      return a.idx - b.idx
+    })
+
+  for (const f of found) add(f.goal)
+  return goals
+}
+
+/** Program length in weeks from "12-week", "12 week", "8 weeks". */
+export function extractWeeks(text: string): number | null {
+  const m = text.toLowerCase().match(/\b(\d{1,2})[\s-]*week/)
+  if (m) {
+    const n = parseInt(m[1], 10)
+    if (n >= 1 && n <= 52) return n
+  }
+  return null
+}
+
+// ─── Aggregate parser ─────────────────────────────────────────────────────────
+
+/**
+ * Parse the full conversation into structured intake state, merged with the
+ * persisted DB context. Conversation-stated values take priority over the DB
+ * (the DB is only updated by explicit profile edits — chat answers are never
+ * written back, so the conversation is the more current signal).
+ *
+ * Scans USER messages only for the natural-language fields to avoid matching
+ * the coach's own question text back as an answer.
+ */
+export function parseProgramIntake(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  dbCtx?: VTrainingContext | null,
+): ProgramIntakeState {
+  const userText = messages.filter(m => m.role === 'user').map(m => m.content).join('\n')
+  const fullText = messages.map(m => m.content).join('\n')
+
+  // Readiness — conversation first, then DB.
+  const convReadiness = extractReadiness(userText)
+  const readinessState = convReadiness ?? dbCtx?.readinessState ?? null
+  const readinessSource: ProgramIntakeState['readinessSource'] =
+    convReadiness ? 'conversation' : (dbCtx?.readinessState ? 'profile' : null)
+
+  // Training days — conversation first, then DB weekly target.
+  const trainingDaysPerWeek =
+    extractTrainingDays(userText) ?? dbCtx?.profile.weeklyWorkoutTarget ?? null
+
+  // Location.
+  const trainingLocation = extractLocation(userText)
+
+  // Goals — conversation first; fall back to DB goals (mapped loosely).
+  const convGoals = extractGoals(userText)
+  const goals = convGoals.length > 0 ? convGoals : mapDbGoals(dbCtx)
+  const primaryGoal = goals[0] ?? null
+  const secondaryGoals = goals.slice(1)
+
+  // Equipment — conversation (canonical) first, then DB, then location inference.
+  const convEquipment = extractEquipmentFromConversation(fullText)
+  let equipmentProfile: string[] | null
+  if (convEquipment && convEquipment.length > 0) {
+    equipmentProfile = convEquipment
+  } else if (dbCtx?.equipment?.items?.length) {
+    equipmentProfile = dbCtx.equipment.items
+  } else if (trainingLocation === 'gym') {
+    // Gym stated → full access. Represent as null downstream (no restriction),
+    // but mark as resolved via a sentinel non-empty list is wrong; use the flag
+    // in isEquipmentResolved() instead. Keep equipmentProfile null here.
+    equipmentProfile = null
+  } else {
+    equipmentProfile = null
+  }
+
+  const weeks = extractWeeks(fullText)
+
+  return {
+    readinessState,
+    readinessSource,
+    trainingDaysPerWeek,
+    trainingLocation,
+    primaryGoal,
+    secondaryGoals,
+    equipmentProfile,
+    weeks,
+  }
+}
+
+function mapDbGoals(dbCtx?: VTrainingContext | null): string[] {
+  if (!dbCtx?.profile.goals?.length) return []
+  const goals: string[] = []
+  for (const g of dbCtx.profile.goals) {
+    const parsed = extractGoals(g.title + ' ' + g.type)
+    for (const p of parsed) if (!goals.includes(p)) goals.push(p)
+  }
+  return goals
+}
+
+// ─── Resolution + missing-field check ─────────────────────────────────────────
+
+/**
+ * Equipment is resolved when either explicit equipment was stated, the DB has an
+ * equipment profile, or the user said they train at a gym (full access).
+ */
+export function isEquipmentResolved(
+  state: ProgramIntakeState,
+  dbCtx?: VTrainingContext | null,
+): boolean {
+  if (state.equipmentProfile && state.equipmentProfile.length > 0) return true
+  if (dbCtx?.equipment?.items?.length) return true
+  if (state.trainingLocation === 'gym') return true
+  return false
+}
+
+/**
+ * Deterministic check: which required program-intake fields are still missing.
+ * Each turn asks ONLY for what is not yet confidently resolved. A field is never
+ * re-asked once resolved unless the user later contradicts it (which produces a
+ * new extraction that overwrites the old value on the next parse).
+ *
+ * Readiness is only required for programs of significant length (≥ 8 weeks),
+ * matching the existing generation gate.
+ */
+export function missingProgramContext(
+  state: ProgramIntakeState,
+  dbCtx?: VTrainingContext | null,
+): MissingContextItem[] {
+  const missing: MissingContextItem[] = []
+  const requiresReadiness = (state.weeks ?? 0) >= 8
+
+  if (requiresReadiness && state.readinessState === null) {
+    missing.push({
+      field: 'readiness',
+      question: 'Are you currently training, returning after a break, or is this your first time training consistently?',
+    })
+  }
+
+  if (!isEquipmentResolved(state, dbCtx)) {
+    missing.push({
+      field: 'equipment',
+      question: 'What equipment do you have available? For example: dumbbells, barbell, kettlebells, bench, pull-up bar, resistance bands, cable machine, or bodyweight only.',
+    })
+  }
+
+  if (state.trainingDaysPerWeek === null) {
+    missing.push({
+      field: 'trainingDays',
+      question: 'How many days per week do you want to train?',
+    })
+  }
+
+  if (state.primaryGoal === null) {
+    missing.push({
+      field: 'goal',
+      question: "What's your main focus: build muscle, get stronger, lose fat, or a combination?",
+    })
+  }
+
+  return missing
+}
+
+/**
+ * Compose a single user-facing message asking only for the missing fields.
+ * Returns null when nothing is missing (caller must not emit a re-ask).
+ */
+export function buildMissingContextPrompt(missing: MissingContextItem[]): string | null {
+  if (missing.length === 0) return null
+  if (missing.length === 1) return missing[0].question
+  // Ask the first missing field only, to keep the exchange tight and avoid a wall
+  // of questions. Subsequent turns resolve the rest one at a time.
+  return missing[0].question
+}

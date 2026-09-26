@@ -14,8 +14,8 @@ import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/progr
 import type { ProgramDraft } from '@/lib/ai/tools/program'
 import { validateProgramQuality } from '@/lib/v/program-quality'
 import { extractEquipmentFromConversation, buildEquipmentCapabilitySummary } from '@/lib/v/equipment-normalize'
-import { extractReadinessFromConversation } from '@/lib/v/intake'
-import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, FREEFORM_GUARD_RESPONSE, FREEFORM_GUARD_RESPONSE_KNOWN_EQUIPMENT, PROGRAM_INTENT_PATTERN } from './constants'
+import { parseProgramIntake, missingProgramContext, buildMissingContextPrompt } from '@/lib/v/program-intake'
+import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, PROGRAM_INTENT_PATTERN } from './constants'
 import type OpenAI from 'openai'
 
 const QUALITY_RETRY_LIMIT = 2
@@ -133,13 +133,26 @@ export async function POST(req: NextRequest) {
     // (normalized to canonical ExerciseDB values) always overrides the DB profile.
     // null means "no restriction" (full gym stated or no equipment detected).
     const conversationText = body.messages.map(m => m.content).join('\n')
-    // User-only text for readiness extraction — avoids matching V's own question text.
-    const userText = body.messages.filter(m => m.role === 'user').map(m => m.content).join('\n')
     const conversationEquipment = extractEquipmentFromConversation(conversationText)
-    // Readiness stated in conversation overrides DB profile (DB is only updated when
-    // the user explicitly edits their profile, not from chat answers).
-    const conversationReadiness = extractReadinessFromConversation(userText)
     const allowedEquipment = conversationEquipment ?? trainingCtx?.equipment?.items
+
+    // ── Structured program-intake state ──────────────────────────────────────
+    // Single source of truth for the request, re-derived from the whole
+    // conversation each turn (the client resends full history) merged with the
+    // DB profile. Conversation-stated values win over the DB.
+    const intake = parseProgramIntake(body.messages, trainingCtx)
+    const missingContext = missingProgramContext(intake, trainingCtx)
+    console.log('[V-intake]', {
+      userId: user.id,
+      readinessState: intake.readinessState,
+      readinessSource: intake.readinessSource,
+      trainingDaysPerWeek: intake.trainingDaysPerWeek,
+      trainingLocation: intake.trainingLocation,
+      primaryGoal: intake.primaryGoal,
+      secondaryGoals: intake.secondaryGoals,
+      weeks: intake.weeks,
+      missing: missingContext.map(m => m.field),
+    })
 
     console.log('[V-equipment]', {
       userId: user.id,
@@ -164,8 +177,9 @@ export async function POST(req: NextRequest) {
     const MAX_ROUNDS = 12
     let qualityRetries = 0
     // Freeform guard state — tracks whether the model attempted program generation
-    // without producing a validated result. If true at loop exit, the server
-    // substitutes FREEFORM_GUARD_RESPONSE instead of streaming the model's text.
+    // without producing a validated result. If true at loop exit, the server asks
+    // for the missing intake field (or a controlled failure) instead of streaming
+    // the model's untrusted text.
     let proposeProgramAttempted = false
     let hadSearchCalls = false
     let qualityExhausted = false
@@ -296,9 +310,8 @@ export async function POST(req: NextRequest) {
             if (!validation.valid) {
               result = JSON.stringify({ status: 'invalid', errors: validation.errors })
             } else {
-              // Conversation-stated readiness takes priority over DB (DB only updates when the
-              // user explicitly edits their profile — chat answers are never persisted).
-              const effectiveReadinessState = conversationReadiness ?? trainingCtx?.readinessState ?? null
+              // Readiness from the structured intake state (conversation wins over DB).
+              const effectiveReadinessState = intake.readinessState
               const isLongProgram = (draft.weeks ?? 0) >= 8
               if (isLongProgram && effectiveReadinessState === null) {
                 result = JSON.stringify({
@@ -360,26 +373,29 @@ export async function POST(req: NextRequest) {
       // ── Freeform guard ───────────────────────────────────────────────────────
       // If program generation was attempted but no valid program emerged, the
       // model's final text is untrusted — it may be an improvised outline or
-      // "I'll use common movements" fallback. Substitute the server-controlled
-      // clarification response instead of streaming whatever the model produced.
-      const freeformGuard =
+      // "I'll use common movements" fallback. Instead of streaming it, decide what
+      // to say from the STRUCTURED INTAKE STATE, not a hardcoded question.
+      const generationFailed =
         qualityExhausted ||
         (proposeProgramAttempted && !pendingProgram?.valid) ||
         (hasProgramIntent && hadSearchCalls && !pendingProgram?.valid && !pendingWorkout?.valid)
 
-      if (freeformGuard) {
-        const equipmentKnown = !!(conversationEquipment?.length || trainingCtx?.equipment?.items?.length)
-        const guardMessage = equipmentKnown
-          ? FREEFORM_GUARD_RESPONSE_KNOWN_EQUIPMENT
-          : FREEFORM_GUARD_RESPONSE
+      if (generationFailed) {
+        const missingPrompt = buildMissingContextPrompt(missingContext)
         console.log('[V-freeform-guard]', {
           userId: user.id,
           qualityExhausted,
           proposeProgramAttempted,
           hasProgramIntent,
           hadSearchCalls,
-          equipmentKnown,
+          missing: missingContext.map(m => m.field),
+          action: missingPrompt ? 'ask_missing_field' : 'generation_failed_no_reask',
         })
+
+        // Ask ONLY for a field that is genuinely still missing. If nothing is
+        // missing, the failure is in generation — do NOT re-ask resolved fields;
+        // emit a single controlled failure message instead.
+        const guardMessage = missingPrompt ?? GENERATION_FAILED_MESSAGE
         const guardWords = guardMessage.split(' ')
         for (let i = 0; i < guardWords.length; i++) {
           emitRaw({ type: 'text', content: (i > 0 ? ' ' : '') + guardWords[i] })

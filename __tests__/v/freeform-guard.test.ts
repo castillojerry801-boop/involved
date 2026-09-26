@@ -19,27 +19,39 @@
  *   User:  "I want to get back in shape and build some muscle. Make me a 12-week program."
  *   User:  "returning"
  *   Setup: confirmed home equipment profile
- *   Expected: guard fires → FREEFORM_GUARD_RESPONSE is the only possible output.
+ *   Expected: guard fires → a missing-field question or GENERATION_FAILED_MESSAGE,
+ *             never the model's improvised text.
  *   Never:  "I'll use common movements", "here's a basic outline", or any exercise list.
  */
 
 import { describe, it, expect } from 'vitest'
 import {
-  FREEFORM_GUARD_RESPONSE,
+  GENERATION_FAILED_MESSAGE,
   PROGRAM_INTENT_PATTERN,
   QUALITY_EXHAUSTED_MESSAGE,
 } from '../../app/api/coach/constants'
 
-// ─── Guard response content ───────────────────────────────────────────────────
+// ─── Generation-failed message content ────────────────────────────────────────
+// Emitted ONLY when all intake fields are resolved but generation still failed.
+// Must never re-ask intake fields and never contain a freeform outline.
 
-describe('FREEFORM_GUARD_RESPONSE constant', () => {
+describe('GENERATION_FAILED_MESSAGE constant', () => {
   it('is a non-empty string', () => {
-    expect(typeof FREEFORM_GUARD_RESPONSE).toBe('string')
-    expect(FREEFORM_GUARD_RESPONSE.length).toBeGreaterThan(10)
+    expect(typeof GENERATION_FAILED_MESSAGE).toBe('string')
+    expect(GENERATION_FAILED_MESSAGE.length).toBeGreaterThan(10)
   })
 
-  it('asks about equipment (must be a targeted question, not a generic outline)', () => {
-    expect(FREEFORM_GUARD_RESPONSE.toLowerCase()).toMatch(/equipment/)
+  it('does not re-ask any intake field (days, goal, equipment, readiness)', () => {
+    const reAskPatterns = [
+      /how many days/i,
+      /main focus/i,
+      /what equipment/i,
+      /currently training/i,
+      /build muscle.*lose fat/i,
+    ]
+    for (const pattern of reAskPatterns) {
+      expect(GENERATION_FAILED_MESSAGE).not.toMatch(pattern)
+    }
   })
 
   it('does not contain any freeform workout language', () => {
@@ -52,12 +64,8 @@ describe('FREEFORM_GUARD_RESPONSE constant', () => {
       /week 1/i,
     ]
     for (const pattern of forbidden) {
-      expect(FREEFORM_GUARD_RESPONSE).not.toMatch(pattern)
+      expect(GENERATION_FAILED_MESSAGE).not.toMatch(pattern)
     }
-  })
-
-  it('is phrased as a question to the user', () => {
-    expect(FREEFORM_GUARD_RESPONSE).toMatch(/\?/)
   })
 })
 
