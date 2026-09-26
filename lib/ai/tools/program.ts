@@ -68,9 +68,27 @@ export interface ProgramExercise {
   sequencing_group?: number         // exercises with the same positive integer are grouped together
 }
 
+export type SessionType =
+  | 'upper_push'           // push-focused upper (chest/shoulders/triceps)
+  | 'upper_pull'           // pull-focused upper (back/biceps)
+  | 'upper_full'           // balanced upper (push + pull)
+  | 'lower_quad'           // quad-dominant lower (squat, leg press)
+  | 'lower_posterior'      // posterior chain lower (deadlift, RDL, hip hinge)
+  | 'lower_full'           // balanced lower (quad + posterior)
+  | 'full_body'            // full body
+  | 'push_pull_legs_push'  // PPL push day
+  | 'push_pull_legs_pull'  // PPL pull day
+  | 'push_pull_legs_legs'  // PPL legs day
+  | 'conditioning'         // conditioning / metcon
+  | 'endurance'            // steady-state cardio / endurance
+  | 'sport_skill'          // sport-specific skill work
+  | 'recovery'             // recovery / mobility
+  | 'other'
+
 export interface ProgramDayDraft {
   name: string
   focus?: string
+  session_type?: SessionType    // explicit session type — drives role validation
   day_rationale?: string        // why this session is structured this way
   weekday?: number              // 0=Monday … 6=Sunday; omit if unscheduled
   estimated_duration_minutes: number
@@ -393,6 +411,11 @@ export const PROPOSE_PROGRAM_TOOL = {
               focus: {
                 type: 'string',
                 description: 'Session focus in one phrase, e.g. "Quad-dominant strength + posterior chain accessory"',
+              },
+              session_type: {
+                type: 'string',
+                enum: ['upper_push', 'upper_pull', 'upper_full', 'lower_quad', 'lower_posterior', 'lower_full', 'full_body', 'push_pull_legs_push', 'push_pull_legs_pull', 'push_pull_legs_legs', 'conditioning', 'endurance', 'sport_skill', 'recovery', 'other'],
+                description: 'REQUIRED for every strength and conditioning day. Explicitly declares the session type so movement-pattern role coverage can be validated. "upper_full" = balanced upper (push + pull). Use "other" only for warm-up-only days.',
               },
               day_rationale: {
                 type: 'string',

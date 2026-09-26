@@ -13,6 +13,7 @@ import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training
 import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
 import { getSportRules } from '@/lib/v/sport-rules'
 import { validateProgramQuality } from '@/lib/v/program-quality'
+import { assessIntakeGaps } from '@/lib/v/intake'
 import type OpenAI from 'openai'
 
 function buildSystemPrompt(sport?: string): string {
@@ -104,12 +105,25 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Involved+ required for AI program generation' }, { status: 403 })
   }
 
+  // Build context before consuming credit so intake gate can run for free
+  const ctx = await buildVTrainingContext(user.id)
+
+  // Intake gate: block generation when context is insufficient — no credit consumed
+  const intakeAssessment = assessIntakeGaps(ctx, {
+    weeks: body.weeks,
+    days: body.days,
+    sport: body.sport,
+    focus: body.focus,
+    injuries: body.injuries,
+  })
+  if (!intakeAssessment.hasEnough) {
+    return Response.json({ error: 'intake_incomplete', questions: intakeAssessment.missingHighValue }, { status: 200 })
+  }
+
   const usage = await checkAndConsumeVUsage(user.id, tier, 'workout_generation')
   if (!usage.allowed) {
     return Response.json({ error: 'limit_reached', limit: usage.limit }, { status: 429 })
   }
-
-  const ctx = await buildVTrainingContext(user.id)
   const contextSnippet = trainingContextToPrompt(ctx)
   const model = workoutModel(tier === 'free' ? 'free' : 'plus')
   const openai = getOpenAI()
@@ -144,6 +158,7 @@ export async function POST(req: NextRequest) {
   const MAX_ROUNDS = 12
   const QUALITY_RETRY_LIMIT = 2
   let qualityRetries = 0
+  let qualityFailed = false
   const allowedEquipment = ctx.equipment?.items
 
   // Credit was consumed above. If the AI loop fails (model error or exhausts
@@ -194,8 +209,13 @@ export async function POST(req: NextRequest) {
                 message: `Program passed structural validation but has ${hardErrors.length} quality error(s). Fix these and resubmit:`,
                 errors: hardErrors.map(e => `[${e.code}] ${e.message}`),
               })
+            } else if (hardErrors.length > 0) {
+              // Final retry exhausted with remaining hard errors — mark failed, halt loop
+              qualityFailed = true
+              console.error('[V quality-failure]', { userId: user.id, codes: hardErrors.map(e => e.code) })
+              result = JSON.stringify({ status: 'quality_exhausted', message: 'Quality improvement retries exhausted.' })
             } else {
-              // Accept: hard errors exhausted retries or no hard errors
+              // No hard errors — accept
               pendingProgram = validation
               pendingDraft = draft
               result = JSON.stringify({ status: 'valid', message: 'Program validated. You are done.' })
@@ -210,12 +230,21 @@ export async function POST(req: NextRequest) {
         messages.push({ role: 'tool', tool_call_id: call.id, content: result })
       }
 
-      if (pendingProgram?.valid) break
+      if (pendingProgram?.valid || qualityFailed) break
     }
   } catch {
     // OpenAI API failure — return the credit
     await decrementVUsage(user.id, 'workout_generation')
     return Response.json({ error: 'V encountered an error. Please try again.' }, { status: 503 })
+  }
+
+  // Hard quality errors remained after all retries — refund credit, surface clean message
+  if (qualityFailed) {
+    await decrementVUsage(user.id, 'workout_generation')
+    return Response.json({
+      error: 'quality_failure',
+      message: "I couldn't build this program to the quality standard I want yet. Let me try again with a slightly different approach.",
+    }, { status: 422 })
   }
 
   if (!pendingProgram?.valid || !pendingProgram.program || !pendingDraft) {

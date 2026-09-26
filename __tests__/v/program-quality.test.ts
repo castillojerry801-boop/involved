@@ -286,6 +286,7 @@ describe('Scenario 8 — Well-formed intermediate strength program → no issues
     days: [
       {
         name: 'Lower Body Strength',
+        session_type: 'lower_full' as const,
         focus: 'Squat-dominant compound work',
         estimated_duration_minutes: 60,
         exercises: [
@@ -305,6 +306,7 @@ describe('Scenario 8 — Well-formed intermediate strength program → no issues
       },
       {
         name: 'Upper Body Strength',
+        session_type: 'upper_full' as const,
         focus: 'Horizontal push and pull',
         estimated_duration_minutes: 55,
         exercises: [

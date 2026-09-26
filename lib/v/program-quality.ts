@@ -2,6 +2,12 @@ import 'server-only'
 import type { ProgramDraft, ProgressionModel } from '@/lib/ai/tools/program'
 import { getSessionRoles } from '@/lib/v/session-composition'
 
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+const PUSH_PATTERNS = new Set(['horizontal_push', 'incline_push', 'vertical_push', 'fly'])
+const PULL_PATTERNS = new Set(['vertical_pull', 'horizontal_pull'])
+const LOWER_PATTERNS = new Set(['squat', 'hinge', 'lunge', 'leg_press', 'lower_body'])
+
 export interface QualityIssue {
   severity: 'error' | 'warning'
   code: string
@@ -404,7 +410,7 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
     const expLevel = toExperienceLevel(fitnessLevel)
     if (expLevel) {
       for (const day of draft.days) {
-        const sessionType = inferSessionType(day.name, day.focus)
+        const sessionType = day.session_type ?? inferSessionType(day.name, day.focus)
         if (!sessionType) continue
 
         const roles = getSessionRoles(sessionType, expLevel)
@@ -512,6 +518,128 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
         code: 'SUPERSET_MISSING_GROUP',
         message: `${missingGroup.length} exercise(s) have a superset/compound_set/giant_set sequencing_mode but no sequencing_group set. Exercises grouped in a superset must share the same sequencing_group integer so the app can pair them correctly.`,
       })
+    }
+  }
+
+  // ── Alternating enforcement ────────────────────────────────────────────────
+
+  // ALTERNATING_ORDER_VIOLATED: exercises marked alternating with groups assigned but NOT interleaved
+  for (const day of draft.days) {
+    const alternatingExs = day.exercises.filter(
+      ex => ex.sequencing_mode === 'alternating' && ex.sequencing_group != null
+    )
+    if (alternatingExs.length < 2) continue
+    const groups = new Set(alternatingExs.map(ex => ex.sequencing_group))
+    if (groups.size < 2) continue
+
+    // Exercises should interleave: 1, 2, 1, 2 — not 1, 1, 2, 2
+    // Find the alternating subsequence within the full day exercise list
+    const groupSeq = alternatingExs.map(ex => ex.sequencing_group)
+    let violated = false
+    for (let i = 1; i < groupSeq.length; i++) {
+      if (groupSeq[i] === groupSeq[i - 1]) { violated = true; break }
+    }
+    if (violated) {
+      issues.push({
+        severity: 'error',
+        code: 'ALTERNATING_ORDER_VIOLATED',
+        message: `Day "${day.name}": exercises marked sequencing_mode "alternating" are not interleaved. Alternating pairs must appear as A, B, A, B in the exercise list — not A, A, B, B. Reorder so exercises from different groups alternate.`,
+      })
+    }
+  }
+
+  // ALTERNATING_INSUFFICIENT_DEPTH: alternating requested/set but too shallow to be effective
+  for (const day of draft.days) {
+    const alternatingExs = day.exercises.filter(ex => ex.sequencing_mode === 'alternating')
+    if (alternatingExs.length === 0) continue
+    const groups = new Set(alternatingExs.map(ex => ex.sequencing_group).filter((g): g is number => g != null))
+    if (alternatingExs.length < 4 || groups.size < 2) {
+      issues.push({
+        severity: 'warning',
+        code: 'ALTERNATING_INSUFFICIENT_DEPTH',
+        message: `Day "${day.name}": alternating sequencing has ${alternatingExs.length} exercise(s) across ${groups.size} group(s). Effective alternating requires at least 4 exercises across 2 muscle groups so each group gets adequate rest between sets.`,
+      })
+    }
+  }
+
+  // ── Progression meaningfulness ─────────────────────────────────────────────
+
+  // PROGRESSION_NOT_MEANINGFUL: only progression present is 'auto' with no condition or week_progressions
+  if (weeks >= 6) {
+    const exercises = allExercises(draft)
+    const withModel = exercises.filter(ex => ex.progression_model != null)
+    if (withModel.length > 0) {
+      const hasMeaningful = withModel.some(ex =>
+        ex.progression_model !== 'auto' ||
+        !!ex.progression_condition ||
+        (ex.week_progressions && ex.week_progressions.length > 0)
+      )
+      if (!hasMeaningful) {
+        issues.push({
+          severity: 'error',
+          code: 'PROGRESSION_NOT_MEANINGFUL',
+          message: `Every exercise uses progression_model "auto" with no condition and no week_progressions. "auto" alone gives the app nothing to act on. Assign explicit models (linear, double_progression, percentage_rpe) with conditions or week_progressions on main compound lifts.`,
+        })
+      }
+    }
+  }
+
+  // ── Session type checks ────────────────────────────────────────────────────
+
+  // MISSING_SESSION_TYPE: training day in a ≥ 4 week program without session_type
+  if (weeks >= 4) {
+    for (const day of draft.days) {
+      if (!day.session_type && day.exercises.length > 0) {
+        issues.push({
+          severity: 'warning',
+          code: 'MISSING_SESSION_TYPE',
+          message: `Day "${day.name}" has no session_type set. Programs ≥ 4 weeks should declare session_type on every training day so role coverage can be validated without relying on name inference.`,
+        })
+      }
+    }
+  }
+
+  // SESSION_TYPE_ROLE_MISMATCH: session_type declared but exercises don't match
+  if (weeks >= 4) {
+    for (const day of draft.days) {
+      const st = day.session_type
+      if (!st || st === 'other' || st === 'recovery' || st === 'sport_skill' || st === 'endurance') continue
+      if (day.exercises.length === 0) continue
+
+      const patterns = new Set(day.exercises.map(ex => ex.intended_pattern))
+      const hasPush = [...patterns].some(p => PUSH_PATTERNS.has(p))
+      const hasPull = [...patterns].some(p => PULL_PATTERNS.has(p))
+      const hasLower = [...patterns].some(p => LOWER_PATTERNS.has(p))
+
+      let mismatch = false
+      let reason = ''
+
+      if (st === 'upper_push' && !hasPush) {
+        mismatch = true; reason = 'no push patterns (horizontal_push, vertical_push, fly)'
+      } else if (st === 'upper_pull' && !hasPull) {
+        mismatch = true; reason = 'no pull patterns (vertical_pull, horizontal_pull)'
+      } else if ((st === 'upper_full' || st === 'push_pull_legs_push' || st === 'push_pull_legs_pull') && !hasPush && !hasPull) {
+        mismatch = true; reason = 'no upper body push or pull patterns'
+      } else if ((st === 'lower_quad' || st === 'lower_posterior' || st === 'lower_full' || st === 'push_pull_legs_legs') && !hasLower) {
+        mismatch = true; reason = 'no lower body patterns (squat, hinge, lunge)'
+      } else if (st === 'full_body' && (!hasPush && !hasPull)) {
+        mismatch = true; reason = 'no upper body push or pull patterns for a full body session'
+      } else if (st === 'full_body' && !hasLower) {
+        mismatch = true; reason = 'no lower body patterns for a full body session'
+      } else if (st === 'conditioning') {
+        const hasConditioningPattern = [...patterns].some(p => /cardio|carry|conditioning/.test(p))
+        if (!hasConditioningPattern && !hasPush && !hasPull && !hasLower) {
+          mismatch = true; reason = 'session_type is "conditioning" but has no cardio or conditioning patterns'
+        }
+      }
+
+      if (mismatch) {
+        issues.push({
+          severity: 'warning',
+          code: 'SESSION_TYPE_ROLE_MISMATCH',
+          message: `Day "${day.name}" declares session_type "${st}" but has ${reason}. The exercise selection doesn't match the declared session type.`,
+        })
+      }
     }
   }
 
