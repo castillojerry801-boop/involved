@@ -82,13 +82,13 @@ export async function GET() {
 // ─── POST: coach message ──────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  const t0 = Date.now()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const [{ data: { user } }, body] = await Promise.all([
+    supabase.auth.getUser(),
+    req.json() as Promise<{ messages: Array<{ role: 'user' | 'assistant'; content: string }> }>,
+  ])
   if (!user) return new Response('Unauthorized', { status: 401 })
-
-  const body = await req.json() as {
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>
-  }
   if (!body.messages?.length) return new Response('No messages', { status: 400 })
 
   const entitlement = await getUserEntitlement(user.id)
@@ -102,7 +102,9 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  const tCtx = Date.now()
   const ctx = await buildCoachContext(user.id, user.email)
+  console.log(`[V-perf] context=${Date.now() - tCtx}ms auth_to_ctx=${tCtx - t0}ms`)
   const trainingCtx = ctx.trainingCtx
   const contextSnippet = contextToSystemSnippet(ctx)
   // gpt-4o-mini for tool-calling rounds: 10x faster, 200k TPM, no rate-limit stalls.
@@ -134,6 +136,8 @@ export async function POST(req: NextRequest) {
     let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
     const MAX_ROUNDS = 12
     let qualityRetries = 0
+    // Deduplicates repeated searches with identical params within one generation turn.
+    const searchCache = new Map<string, string>()
 
     // If the user stated gym/commercial access in the conversation, lift the
     // equipment restriction entirely — their words override the DB profile.
@@ -148,13 +152,17 @@ export async function POST(req: NextRequest) {
       useTools: boolean,
     ) => {
       const selectedModel = useTools ? toolModel : proseModel
+      // Intake turns (no prior tool calls) only need ~500 tokens — V asks one short question.
+      // Once tool calls begin, use the full 4000 for exercise lists and program drafts.
+      const hasToolHistory = messages.some(m => m.role === 'tool')
+      const maxTokens = useTools ? (hasToolHistory ? 4000 : 500) : 1500
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           return await openai.chat.completions.create({
             model: selectedModel,
             messages,
             ...(useTools ? { tools, tool_choice: 'auto' } : {}),
-            max_tokens: useTools ? 4000 : 1500,
+            max_tokens: maxTokens,
             temperature: 0.7,
           })
         } catch (err: unknown) {
@@ -178,7 +186,9 @@ export async function POST(req: NextRequest) {
       for (let round = 0; round < MAX_ROUNDS; round++) {
         let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
         try {
+          const tRound = Date.now()
           response = await callModel(chatMessages, true)
+          console.log(`[V-perf] round=${round} llm=${Date.now() - tRound}ms`)
         } catch (err: unknown) {
           const status = (err as { status?: number }).status
           if (status === 429) {
@@ -199,12 +209,19 @@ export async function POST(req: NextRequest) {
           let result: string
 
           if (fn.name === 'search_exercises') {
-            emitRaw({ type: 'status', message: 'Searching exercises...' })
             const params = JSON.parse(fn.arguments) as Parameters<typeof executeExerciseSearch>[0]
-            const exercises = executeExerciseSearch({ ...params, limit: Math.min(params.limit ?? 15, 20) })
-            result = exercises.length > 0
-              ? JSON.stringify(exercises)
-              : JSON.stringify({ message: EMPTY_SEARCH_RESULT })
+            const normalizedParams = { ...params, limit: Math.min(params.limit ?? 15, 20) }
+            const cacheKey = JSON.stringify(normalizedParams)
+            if (searchCache.has(cacheKey)) {
+              result = searchCache.get(cacheKey)!
+            } else {
+              emitRaw({ type: 'status', message: 'Searching exercises...' })
+              const found = executeExerciseSearch(normalizedParams)
+              result = found.length > 0
+                ? JSON.stringify(found)
+                : JSON.stringify({ message: EMPTY_SEARCH_RESULT })
+              searchCache.set(cacheKey, result)
+            }
 
           } else if (fn.name === 'propose_workout') {
             const draft = JSON.parse(fn.arguments) as WorkoutDraft
@@ -306,6 +323,7 @@ export async function POST(req: NextRequest) {
       if (pendingProgram?.valid && pendingProgram.program) {
         emitRaw({ type: 'program', data: pendingProgram.program })
       }
+      console.log(`[V-perf] total=${Date.now() - t0}ms`)
       emitRaw({ type: 'done' })
 
     } catch (err: unknown) {

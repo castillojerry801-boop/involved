@@ -14,6 +14,9 @@ export interface Exercise {
 
 export const exercises = exercisesRaw as Exercise[]
 
+// O(1) lookup — exercises are module-level constants and never mutate
+const _byId = new Map<string, Exercise>(exercises.map(e => [e.id, e]))
+
 export const BODY_PARTS = [
   'all',
   'back',
@@ -479,12 +482,16 @@ function _deriveLaterality(name: string): Laterality {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+const _classifyCache = new Map<string, ExerciseClassification>()
+
 export function classifyExercise(exercise: Exercise): ExerciseClassification {
+  const cached = _classifyCache.get(exercise.id)
+  if (cached) return cached
   const name = exercise.name.toLowerCase()
   const bp   = exercise.bodyPart.toLowerCase()
   const tgt  = exercise.target.toLowerCase()
   const { pattern, secondary, confidence, reviewReason } = _derivePrimaryPattern(name, bp, tgt)
-  return {
+  const result: ExerciseClassification = {
     primaryMovementPattern:    pattern,
     secondaryMovementPatterns: secondary,
     movementFamily:            _deriveMovementFamily(name, bp, pattern),
@@ -493,6 +500,8 @@ export function classifyExercise(exercise: Exercise): ExerciseClassification {
     classificationConfidence:  confidence,
     reviewReason,
   }
+  _classifyCache.set(exercise.id, result)
+  return result
 }
 
 // Thin wrapper kept for backwards-compatible call sites.
@@ -595,7 +604,7 @@ export function searchExercises(query: string, bodyPart: string, limit = 30, off
 }
 
 export function getExerciseById(id: string): Exercise | undefined {
-  return exercises.find(e => e.id === id)
+  return _byId.get(id)
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
