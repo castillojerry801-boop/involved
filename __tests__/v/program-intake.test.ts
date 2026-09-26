@@ -108,8 +108,8 @@ describe('extractReadiness — natural replies', () => {
   it('maps "returning from a break" → detrained', () => {
     expect(extractReadiness('returning from a break')).toBe('detrained')
   })
-  it('maps "get back in shape" → detrained', () => {
-    expect(extractReadiness('I want to get back in shape')).toBe('detrained')
+  it('does NOT infer readiness from vague "get back in shape" — must be asked', () => {
+    expect(extractReadiness('I want to get back in shape')).toBeNull()
   })
   it('maps "first time" → never_trained', () => {
     expect(extractReadiness('this is my first time')).toBe('never_trained')
@@ -131,11 +131,11 @@ describe('extractLocation + extractWeeks', () => {
 // ─── Multi-turn state accumulation ────────────────────────────────────────────
 
 describe('parseProgramIntake — turn-by-turn accumulation', () => {
-  it('Turn 1: only weeks + goal known, readiness/days/equipment missing', () => {
+  it('Turn 1: weeks + goal known; readiness NOT assumed from "get back in shape"', () => {
     const state = parseProgramIntake(TURN_1, emptyCtx())
     expect(state.weeks).toBe(12)
     expect(state.primaryGoal).toBe('muscle_gain')     // "build some muscle"
-    expect(state.readinessState).toBe('detrained')     // "get back in shape"
+    expect(state.readinessState).toBeNull()            // vague phrase → must ask
     expect(state.trainingDaysPerWeek).toBeNull()
     expect(state.equipmentProfile).toBeNull()
   })
@@ -197,15 +197,17 @@ describe('missingProgramContext — no re-asking resolved fields', () => {
     expect(buildMissingContextPrompt(missing)).toMatch(/how many days/i)
   })
 
-  it('Turn 1 asks equipment + days (readiness & goal already inferred)', () => {
+  it('Turn 1 asks readiness + equipment + days (goal inferred, readiness NOT)', () => {
     const state = parseProgramIntake(TURN_1, emptyCtx())
     const missing = missingProgramContext(state, emptyCtx())
     const fields = missing.map(m => m.field)
+    expect(fields).toContain('readiness')   // "get back in shape" is too vague to assume
     expect(fields).toContain('equipment')
     expect(fields).toContain('trainingDays')
-    // readiness inferred from "get back in shape", goal from "build muscle"
-    expect(fields).not.toContain('readiness')
+    // goal inferred from "build muscle"
     expect(fields).not.toContain('goal')
+    // readiness is asked first (12-week program requires it)
+    expect(buildMissingContextPrompt(missing)).toMatch(/currently training|returning|first time/i)
   })
 })
 
@@ -254,5 +256,83 @@ describe('parseProgramIntake — DB fallback and conversation priority', () => {
     const state = parseProgramIntake(msgs, emptyCtx())
     const missing = missingProgramContext(state, emptyCtx())
     expect(missing.find(m => m.field === 'equipment')).toBeUndefined()
+  })
+})
+
+// ─── EXACT reported production conversation (the go-ahead loop) ────────────────
+
+describe('reported failure: first-timer, full home equipment, no days given', () => {
+  // 1. user: 12-week program
+  // 2. V: readiness?  3. user: "first time training consistently"
+  // 4. V: equipment?  5. user: full home equipment list (NO training days anywhere)
+  const conversation: Msg[] = [
+    { role: 'user', content: 'I want to get back in shape and build some muscle. Make me a 12-week program.' },
+    { role: 'assistant', content: 'Are you currently training, returning after a break, or is this your first time training consistently?' },
+    { role: 'user', content: 'first time training consistently' },
+    { role: 'assistant', content: 'What equipment do you have available at home? For example: dumbbells, barbell, kettlebells, bench, pull-up bar, resistance bands, bodyweight only, etc.' },
+    { role: 'user', content: 'dumbbells, barbell, kettlebells, bench, pull-up bar, resistance bands, cable machine, treadmill, rower and air dyne' },
+  ]
+
+  it('readiness (first time) and equipment resolve, but training days is MISSING', () => {
+    const state = parseProgramIntake(conversation, emptyCtx())
+    expect(state.readinessState).toBe('never_trained')
+    expect(state.equipmentProfile).not.toBeNull()
+    expect(state.trainingDaysSource).toBeNull()      // never stated
+    expect(state.trainingDaysPerWeek).toBeNull()
+    expect(state.weeks).toBe(12)
+  })
+
+  it('the ONLY missing field is training days → V must ask exactly that', () => {
+    const state = parseProgramIntake(conversation, emptyCtx())
+    const missing = missingProgramContext(state, emptyCtx())
+    expect(missing.map(m => m.field)).toEqual(['trainingDays'])
+    expect(buildMissingContextPrompt(missing)).toBe('How many days per week can you train?')
+  })
+
+  it('pre-gate fires: program intent present AND context missing → no generation', () => {
+    const state = parseProgramIntake(conversation, emptyCtx())
+    const missing = missingProgramContext(state, emptyCtx())
+    const conversationHasProgramIntent = conversation.some(
+      m => m.role === 'user' && /\b(program|plan|routine|\d+[\s-]?week|split|schedule|build\s+me|make\s+me)\b/i.test(m.content),
+    )
+    // This is the exact route pre-gate condition. When true, the tool loop
+    // (search + propose_program) never runs.
+    expect(conversationHasProgramIntent && missing.length > 0).toBe(true)
+  })
+
+  it('a DB weeklyWorkoutTarget does NOT silently satisfy the days requirement', () => {
+    // The reported user had generation proceed on a day-count they never chose.
+    // Even with a profile default of 3, the program-specific requirement is unmet.
+    const ctxWithTarget = emptyCtx({
+      profile: { fitnessLevel: null, goals: [], bodyMetrics: { ageYears: null, weightKg: null }, weeklyWorkoutTarget: 3 },
+    })
+    const state = parseProgramIntake(conversation, ctxWithTarget)
+    const missing = missingProgramContext(state, ctxWithTarget)
+    expect(missing.map(m => m.field)).toContain('trainingDays')
+  })
+
+  it('once user answers "4 days", nothing is missing → V proceeds to generation', () => {
+    const answered: Msg[] = [
+      ...conversation,
+      { role: 'assistant', content: 'How many days per week can you train?' },
+      { role: 'user', content: '4 days' },
+    ]
+    const state = parseProgramIntake(answered, emptyCtx())
+    expect(state.trainingDaysPerWeek).toBe(4)
+    expect(state.trainingDaysSource).toBe('conversation')
+    const missing = missingProgramContext(state, emptyCtx())
+    expect(missing).toHaveLength(0)
+    expect(buildMissingContextPrompt(missing)).toBeNull()
+  })
+})
+
+// ─── Determinism: identical inputs never produce a different question ──────────
+
+describe('deterministic gate — no-progress loop protection', () => {
+  it('same conversation state yields byte-identical missing-context prompt', () => {
+    const msgs: Msg[] = [{ role: 'user', content: 'make me a 12 week program, first time, dumbbells only' }]
+    const a = buildMissingContextPrompt(missingProgramContext(parseProgramIntake(msgs, null), null))
+    const b = buildMissingContextPrompt(missingProgramContext(parseProgramIntake(msgs, null), null))
+    expect(a).toBe(b)
   })
 })

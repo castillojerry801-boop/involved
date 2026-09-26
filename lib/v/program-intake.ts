@@ -14,8 +14,10 @@ export interface ProgramIntakeState {
   readinessState: ReadinessState | null
   readinessSource: 'conversation' | 'profile' | null
   trainingDaysPerWeek: number | null
+  trainingDaysSource: 'conversation' | 'profile' | null
   trainingLocation: 'home' | 'gym' | null
   primaryGoal: string | null
+  primaryGoalSource: 'conversation' | 'profile' | null
   secondaryGoals: string[]
   /** Canonical equipment list. null = not yet resolved. Empty-but-resolved is impossible; "body weight" always present once resolved. */
   equipmentProfile: string[] | null
@@ -52,8 +54,10 @@ export function extractReadiness(text: string): ReadinessState | null {
   if (/\bnever\s+(?:trained|worked out|lifted|exercised)\b|\bfirst[\s-]?time\b|\bbrand new\b|\bnever done\b/.test(t)) {
     return 'never_trained'
   }
-  // Returning / detrained
-  if (/\breturning\b|\bcoming back\b|\bgetting back\b|\bback (?:in|into|after)\b|\bafter a (?:long )?break\b|\btime off\b|\bhaven'?t trained\b|\bused to (?:train|lift)\b|\bgot out of\b/.test(t)) {
+  // Returning / detrained — only STRONG signals of a prior training history + gap.
+  // Deliberately excludes vague phrases like "get back in shape", which a
+  // never-trained person also uses — those must be asked, not assumed.
+  if (/\breturning\b|\bcoming back\b|\bback (?:after|into training|to (?:lifting|training|the gym))\b|\bafter a (?:long )?break\b|\btime off\b|\bhaven'?t trained\b|\bused to (?:train|lift|work ?out)\b|\bgot out of (?:shape|the habit|training)\b/.test(t)) {
     return 'detrained'
   }
   // Currently training / active
@@ -174,9 +178,11 @@ export function parseProgramIntake(
   const readinessSource: ProgramIntakeState['readinessSource'] =
     convReadiness ? 'conversation' : (dbCtx?.readinessState ? 'profile' : null)
 
-  // Training days — conversation first, then DB weekly target.
-  const trainingDaysPerWeek =
-    extractTrainingDays(userText) ?? dbCtx?.profile.weeklyWorkoutTarget ?? null
+  // Training days — conversation first, then DB weekly target (informational).
+  const convDays = extractTrainingDays(userText)
+  const trainingDaysPerWeek = convDays ?? dbCtx?.profile.weeklyWorkoutTarget ?? null
+  const trainingDaysSource: ProgramIntakeState['trainingDaysSource'] =
+    convDays != null ? 'conversation' : (dbCtx?.profile.weeklyWorkoutTarget != null ? 'profile' : null)
 
   // Location.
   const trainingLocation = extractLocation(userText)
@@ -185,6 +191,8 @@ export function parseProgramIntake(
   const convGoals = extractGoals(userText)
   const goals = convGoals.length > 0 ? convGoals : mapDbGoals(dbCtx)
   const primaryGoal = goals[0] ?? null
+  const primaryGoalSource: ProgramIntakeState['primaryGoalSource'] =
+    convGoals.length > 0 ? 'conversation' : (goals.length > 0 ? 'profile' : null)
   const secondaryGoals = goals.slice(1)
 
   // Equipment — conversation (canonical) first, then DB, then location inference.
@@ -209,8 +217,10 @@ export function parseProgramIntake(
     readinessState,
     readinessSource,
     trainingDaysPerWeek,
+    trainingDaysSource,
     trainingLocation,
     primaryGoal,
+    primaryGoalSource,
     secondaryGoals,
     equipmentProfile,
     weeks,
@@ -273,10 +283,14 @@ export function missingProgramContext(
     })
   }
 
-  if (state.trainingDaysPerWeek === null) {
+  // Training days must be confirmed for THIS program. A general profile
+  // weeklyWorkoutTarget is program-agnostic and must not silently satisfy the
+  // requirement — otherwise generation begins on a day-count the user never
+  // chose for this program (the exact bug that produced garbage + a retry loop).
+  if (state.trainingDaysSource !== 'conversation') {
     missing.push({
       field: 'trainingDays',
-      question: 'How many days per week do you want to train?',
+      question: 'How many days per week can you train?',
     })
   }
 

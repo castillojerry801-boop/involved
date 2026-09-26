@@ -15,7 +15,7 @@ import type { ProgramDraft } from '@/lib/ai/tools/program'
 import { validateProgramQuality } from '@/lib/v/program-quality'
 import { extractEquipmentFromConversation, buildEquipmentCapabilitySummary } from '@/lib/v/equipment-normalize'
 import { parseProgramIntake, missingProgramContext, buildMissingContextPrompt } from '@/lib/v/program-intake'
-import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, PROGRAM_INTENT_PATTERN } from './constants'
+import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN } from './constants'
 import type OpenAI from 'openai'
 
 const QUALITY_RETRY_LIMIT = 2
@@ -142,17 +142,42 @@ export async function POST(req: NextRequest) {
     // DB profile. Conversation-stated values win over the DB.
     const intake = parseProgramIntake(body.messages, trainingCtx)
     const missingContext = missingProgramContext(intake, trainingCtx)
+    // Program intent is a property of the whole conversation, not just the last
+    // message — the user's answer to "what equipment?" doesn't itself look like a
+    // program request, but the intake is still in flight.
+    const conversationHasProgramIntent = body.messages.some(
+      m => m.role === 'user' && PROGRAM_INTENT_PATTERN.test(m.content)
+    )
     console.log('[V-intake]', {
       userId: user.id,
       readinessState: intake.readinessState,
       readinessSource: intake.readinessSource,
       trainingDaysPerWeek: intake.trainingDaysPerWeek,
+      trainingDaysSource: intake.trainingDaysSource,
       trainingLocation: intake.trainingLocation,
       primaryGoal: intake.primaryGoal,
       secondaryGoals: intake.secondaryGoals,
       weeks: intake.weeks,
+      conversationHasProgramIntent,
       missing: missingContext.map(m => m.field),
     })
+
+    // ── Loop protection ──────────────────────────────────────────────────────
+    // The client resends the full history, so the prior assistant turn is right
+    // here. If we're about to emit a message identical to the last one with no
+    // state change, that's a no-progress loop — block it.
+    const priorAssistant = body.messages.filter(m => m.role === 'assistant').map(m => m.content)
+    const lastAssistantText = priorAssistant[priorAssistant.length - 1] ?? ''
+    const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+    const wouldRepeatLast = (msg: string) => lastAssistantText !== '' && norm(msg) === norm(lastAssistantText)
+
+    const streamText = async (msg: string) => {
+      const words = msg.split(' ')
+      for (let i = 0; i < words.length; i++) {
+        emitRaw({ type: 'text', content: (i > 0 ? ' ' : '') + words[i] })
+        await new Promise(resolve => setTimeout(resolve, 8))
+      }
+    }
 
     console.log('[V-equipment]', {
       userId: user.id,
@@ -183,10 +208,29 @@ export async function POST(req: NextRequest) {
     let proposeProgramAttempted = false
     let hadSearchCalls = false
     let qualityExhausted = false
-    const lastUserContent = [...body.messages].reverse().find(m => m.role === 'user')?.content ?? ''
-    const hasProgramIntent = PROGRAM_INTENT_PATTERN.test(lastUserContent)
+    let modelEscalated = false
     // Deduplicates repeated searches with identical params within one generation turn.
     const searchCache = new Map<string, string>()
+
+    // ── AUTHORITATIVE PRE-GENERATION GATE ────────────────────────────────────
+    // The single deterministic checkpoint. It runs BEFORE any exercise search and
+    // BEFORE any propose_program call. If required program context is missing, we
+    // do NOT let the model search or generate — we ask only for the missing
+    // field(s). This is what prevents generation starting on incomplete context
+    // (e.g. trainingDaysPerWeek never supplied) and the resulting failure loop.
+    if (conversationHasProgramIntent && missingContext.length > 0) {
+      const prompt = buildMissingContextPrompt(missingContext)!
+      console.log('[V-pregate]', {
+        userId: user.id,
+        missing: missingContext.map(m => m.field),
+        asked: missingContext[0].field,
+        action: 'ask_before_search_and_generation',
+      })
+      await streamText(prompt)
+      emitRaw({ type: 'done' })
+      await writer.close().catch(() => {})
+      return
+    }
 
     // useTools: tool-calling rounds use gpt-4o-mini (fast, 200k TPM).
     // Final prose round (no tools) uses the configured proseModel (gpt-4o for plus).
@@ -194,7 +238,10 @@ export async function POST(req: NextRequest) {
       messages: OpenAI.Chat.ChatCompletionMessageParam[],
       useTools: boolean,
     ) => {
-      const selectedModel = useTools ? toolModel : proseModel
+      // Tool rounds normally use the fast mini model. After a quality exhaustion
+      // on mini we ESCALATE to the more capable prose model for the retry — a
+      // genuinely different recovery strategy, not a re-ask of the same request.
+      const selectedModel = useTools ? (modelEscalated ? proseModel : toolModel) : proseModel
       // Intake turns (no prior tool calls) only need ~500 tokens — V asks one short question.
       // Once tool calls begin, use the full 4000 for exercise lists and program drafts.
       const hasToolHistory = messages.some(m => m.role === 'tool')
@@ -343,8 +390,21 @@ export async function POST(req: NextRequest) {
                     message: `Program passed structural validation but has ${hardErrors.length} quality error(s). Fix ALL listed errors and call propose_program again with a corrected draft. Do not respond to the user yet.`,
                     errors: hardErrors.map(e => `[${e.code}] ${e.message}`),
                   })
+                } else if (hardErrors.length > 0 && !modelEscalated) {
+                  // Mini exhausted its quality-retry budget. Escalate to the more
+                  // capable model and give it a fresh budget — a genuinely different
+                  // recovery strategy (not a re-ask with unchanged state).
+                  console.warn('[V-quality-escalate]', { userId: user.id, codes: hardErrors.map(e => e.code) })
+                  modelEscalated = true
+                  qualityRetries = 0
+                  emitRaw({ type: 'status', message: 'Refining your program...' })
+                  result = JSON.stringify({
+                    status: 'quality_issues',
+                    message: `Program has ${hardErrors.length} quality error(s). Fix ALL listed errors and call propose_program again with a corrected draft. Do not respond to the user yet.`,
+                    errors: hardErrors.map(e => `[${e.code}] ${e.message}`),
+                  })
                 } else if (hardErrors.length > 0) {
-                  console.error('[V-quality-retry-exhausted]', { userId: user.id, codes: hardErrors.map(e => e.code) })
+                  console.error('[V-quality-retry-exhausted]', { userId: user.id, codes: hardErrors.map(e => e.code), escalated: modelEscalated })
                   qualityExhausted = true
                   result = JSON.stringify({
                     status: 'quality_exhausted',
@@ -378,29 +438,34 @@ export async function POST(req: NextRequest) {
       const generationFailed =
         qualityExhausted ||
         (proposeProgramAttempted && !pendingProgram?.valid) ||
-        (hasProgramIntent && hadSearchCalls && !pendingProgram?.valid && !pendingWorkout?.valid)
+        (conversationHasProgramIntent && hadSearchCalls && !pendingProgram?.valid && !pendingWorkout?.valid)
 
       if (generationFailed) {
+        // Prefer asking for a genuinely-missing field. Only if nothing is missing
+        // is this a true generation failure (context complete, model still failed).
         const missingPrompt = buildMissingContextPrompt(missingContext)
+        let guardMessage = missingPrompt ?? GENERATION_FAILED_MESSAGE
+
+        // Loop protection: if this exact message was already the last thing we said
+        // and no state changed, do not repeat it. Fall back to the missing-context
+        // question, or a controlled scope-reducing alternative for a hard failure.
+        if (wouldRepeatLast(guardMessage)) {
+          guardMessage = missingPrompt ?? GENERATION_FAILED_ALT_MESSAGE
+        }
+
         console.log('[V-freeform-guard]', {
           userId: user.id,
           qualityExhausted,
           proposeProgramAttempted,
-          hasProgramIntent,
+          conversationHasProgramIntent,
           hadSearchCalls,
+          modelEscalated,
           missing: missingContext.map(m => m.field),
-          action: missingPrompt ? 'ask_missing_field' : 'generation_failed_no_reask',
+          loopBlocked: wouldRepeatLast(missingPrompt ?? GENERATION_FAILED_MESSAGE),
+          action: missingPrompt ? 'ask_missing_field' : 'generation_failed',
         })
 
-        // Ask ONLY for a field that is genuinely still missing. If nothing is
-        // missing, the failure is in generation — do NOT re-ask resolved fields;
-        // emit a single controlled failure message instead.
-        const guardMessage = missingPrompt ?? GENERATION_FAILED_MESSAGE
-        const guardWords = guardMessage.split(' ')
-        for (let i = 0; i < guardWords.length; i++) {
-          emitRaw({ type: 'text', content: (i > 0 ? ' ' : '') + guardWords[i] })
-          await new Promise(resolve => setTimeout(resolve, 8))
-        }
+        await streamText(guardMessage)
         emitRaw({ type: 'done' })
         return
       }

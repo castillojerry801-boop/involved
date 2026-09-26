@@ -27,9 +27,28 @@
 import { describe, it, expect } from 'vitest'
 import {
   GENERATION_FAILED_MESSAGE,
+  GENERATION_FAILED_ALT_MESSAGE,
   PROGRAM_INTENT_PATTERN,
   QUALITY_EXHAUSTED_MESSAGE,
 } from '../../app/api/coach/constants'
+
+// ─── No generic "go ahead" retry anywhere ─────────────────────────────────────
+
+describe('failure messages never request a generic "go ahead" retry', () => {
+  it('GENERATION_FAILED_MESSAGE does not ask for "go ahead"', () => {
+    expect(GENERATION_FAILED_MESSAGE.toLowerCase()).not.toMatch(/go ahead/)
+  })
+  it('GENERATION_FAILED_ALT_MESSAGE does not ask for "go ahead"', () => {
+    expect(GENERATION_FAILED_ALT_MESSAGE.toLowerCase()).not.toMatch(/go ahead/)
+  })
+  it('both offer a specific, material change (shorter block or narrowed goal)', () => {
+    expect(GENERATION_FAILED_MESSAGE.toLowerCase()).toMatch(/4 weeks|shorter|simpler|starter/)
+    expect(GENERATION_FAILED_ALT_MESSAGE.toLowerCase()).toMatch(/muscle|fat|narrow|focus/)
+  })
+  it('the two messages differ, so a repeat turn changes the wording/ask', () => {
+    expect(GENERATION_FAILED_MESSAGE).not.toBe(GENERATION_FAILED_ALT_MESSAGE)
+  })
+})
 
 // ─── Generation-failed message content ────────────────────────────────────────
 // Emitted ONLY when all intake fields are resolved but generation still failed.

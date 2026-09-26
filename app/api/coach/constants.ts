@@ -114,10 +114,15 @@ export const EMPTY_SEARCH_RESULT = 'No exercises found. Search again with differ
 export const QUALITY_EXHAUSTED_MESSAGE = 'Quality validation failed after all retries. Ask the user: "I ran into a problem finding the right exercises for your setup — can you tell me exactly what equipment you have available?" Do NOT output a program. Do NOT list exercises. Do NOT say "I\'ll use standard exercises." Do NOT create a general outline. Ask the one clarifying question and stop.'
 
 // Server-controlled message used ONLY when generation failed AND every required
-// intake field is already resolved (so re-asking anything would be wrong). Emitted
-// directly by the server — never a generic outline or exercise list. Missing-field
-// questions are generated from the structured intake state, not from here.
-export const GENERATION_FAILED_MESSAGE = "I hit a snag finalizing your program just now. Give me one more try — send \"go ahead\" and I'll build it from what you've already told me."
+// intake field is already resolved (so re-asking intake would be wrong). It offers
+// a SPECIFIC, material change — never a generic "go ahead" that would just repeat
+// the same failed generation with unchanged state.
+export const GENERATION_FAILED_MESSAGE = "I couldn't finalize a full program that meets the quality bar for your setup right now. Want me to build a simpler, shorter starter block — say, 4 weeks focused on the essentials — instead? Let me know and I'll rework it."
+
+// Loop-protection fallback: emitted only when GENERATION_FAILED_MESSAGE was already
+// the previous turn and nothing changed. Narrows the request to a single goal so the
+// next attempt has materially different (easier to satisfy) inputs.
+export const GENERATION_FAILED_ALT_MESSAGE = "I'm still not able to assemble a complete program that passes our quality checks for this setup. Let's narrow it down: what's the single most important focus right now — building muscle, or losing fat? I'll build a focused version around just that."
 
 // Matches user messages that express program-building intent.
 // Used server-side to decide whether a freeform text response should be suppressed.
