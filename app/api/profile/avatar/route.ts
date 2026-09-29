@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { getUser } from '@/lib/supabase/server'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { prisma } from '@/lib/prisma'
-
-const admin = createSupabaseAdmin(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
 
 const BUCKET = 'avatars'
 const MAX_BYTES = 5 * 1024 * 1024 // 5 MB
@@ -26,9 +20,9 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(await file.arrayBuffer())
 
   // Ensure bucket exists
-  await admin.storage.createBucket(BUCKET, { public: true }).catch(() => null)
+  await getSupabaseAdmin().storage.createBucket(BUCKET, { public: true }).catch(() => null)
 
-  const { error: uploadError } = await admin.storage
+  const { error: uploadError } = await getSupabaseAdmin().storage
     .from(BUCKET)
     .upload(key, buffer, { contentType: file.type, upsert: true })
 
@@ -36,7 +30,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
   }
 
-  const { data: { publicUrl } } = admin.storage.from(BUCKET).getPublicUrl(key)
+  const { data: { publicUrl } } = getSupabaseAdmin().storage.from(BUCKET).getPublicUrl(key)
   // Bust cache with a timestamp
   const url = `${publicUrl}?t=${Date.now()}`
 

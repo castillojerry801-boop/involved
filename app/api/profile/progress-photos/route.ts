@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { getUser } from '@/lib/supabase/server'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { prisma } from '@/lib/prisma'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
-
-const admin = createSupabaseAdmin(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
 
 const BUCKET = 'progress-photos'
 const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
@@ -63,20 +57,20 @@ export async function POST(req: NextRequest) {
   if (file.size > MAX_BYTES) return NextResponse.json({ error: 'File too large (max 10 MB)' }, { status: 413 })
 
   // Ensure private bucket exists
-  await admin.storage.createBucket(BUCKET, { public: false }).catch(() => null)
+  await getSupabaseAdmin().storage.createBucket(BUCKET, { public: false }).catch(() => null)
 
   const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
   const key = `${user.id}/${Date.now()}.${ext}`
   const buffer = Buffer.from(await file.arrayBuffer())
 
-  const { error: uploadError } = await admin.storage
+  const { error: uploadError } = await getSupabaseAdmin().storage
     .from(BUCKET)
     .upload(key, buffer, { contentType: file.type })
 
   if (uploadError) return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
 
   // Generate a signed URL valid for 1 year — stored in DB, refreshed on GET if needed
-  const { data: signedData } = await admin.storage
+  const { data: signedData } = await getSupabaseAdmin().storage
     .from(BUCKET)
     .createSignedUrl(key, 60 * 60 * 24 * 365)
 
