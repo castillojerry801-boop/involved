@@ -487,6 +487,13 @@ export async function POST(req: NextRequest) {
                   qualityErrors: hardErrors.map(i => i.code),
                   qualityRetry: qualityRetries,
                 })
+                console.log('[V-quality-summary]', {
+                  durationWeeks: draft.weeks ?? null,
+                  model: modelEscalated ? escalationModel : programModel,
+                  attempt: qualityRetries + (modelEscalated ? QUALITY_RETRY_LIMIT + 1 : 0),
+                  errors: hardErrors.map(e => e.code),
+                  warnings: qualityIssues.filter(i => i.severity === 'warning').map(i => i.code),
+                })
 
                 if (hardErrors.length > 0 && qualityRetries < QUALITY_RETRY_LIMIT) {
                   qualityRetries++

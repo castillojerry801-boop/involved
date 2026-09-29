@@ -593,9 +593,10 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
     const exWithWP = allExercises(draft).filter(ex => (ex.week_progressions?.length ?? 0) >= 2)
 
     // WEEK_PROGRESSIONS_UNIFORM: entries exist but never change (prose-only "12-week").
+    // deload/taper flags count as a structural change even when sets/reps are identical.
     if (exWithWP.length > 0) {
       const wpSig = (ex: (typeof exWithWP)[number], w: NonNullable<typeof ex.week_progressions>[number]) =>
-        `${w.sets ?? ex.sets}|${w.reps_min ?? ex.reps_min}|${w.reps_max ?? ex.reps_max}|${w.rpe ?? ''}|${(w.load_note ?? '').trim().toLowerCase()}`
+        `${w.sets ?? ex.sets}|${w.reps_min ?? ex.reps_min}|${w.reps_max ?? ex.reps_max}|${w.rpe ?? ''}|${(w.load_note ?? '').trim().toLowerCase()}|${w.deload ?? ''}|${w.taper ?? ''}`
       const anyExerciseChangesAcrossWeeks = exWithWP.some(ex => {
         const sigs = new Set(ex.week_progressions!.map(w => wpSig(ex, w)))
         return sigs.size > 1
@@ -610,12 +611,15 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
     }
 
     // NO_STRUCTURED_DELOAD: a real ≥8-week plan reduces volume at least once
-    // (deload), either via a labeled phase or a week_progressions set-count drop.
+    // (deload), either via a labeled phase, a set-count drop, or the deload:true flag.
     const hasDeloadPhase = draft.phases?.some(p => /deload|recovery|taper|unload|back[\s-]?off/i.test(p.name + ' ' + (p.focus ?? ''))) ?? false
     const hasVolumeDrop = allExercises(draft).some(ex => {
-      const wps = (ex.week_progressions ?? []).slice().sort((a, b) => a.week - b.week)
-      for (let i = 1; i < wps.length; i++) {
-        if ((wps[i].sets ?? ex.sets) < (wps[i - 1].sets ?? ex.sets)) return true
+      const wps = ex.week_progressions ?? []
+      // Explicit deload flag satisfies the requirement without requiring a set reduction
+      if (wps.some(wp => wp.deload === true)) return true
+      const sorted = wps.slice().sort((a, b) => a.week - b.week)
+      for (let i = 1; i < sorted.length; i++) {
+        if ((sorted[i].sets ?? ex.sets) < (sorted[i - 1].sets ?? ex.sets)) return true
       }
       return false
     })
@@ -658,6 +662,7 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
   }
 
   // NO_FINAL_TAPER: a 12+ week program should end with reduced volume (peak/taper).
+  // Not a hard error — taper/peak applies to strength/sport programs, not all muscle-building blocks.
   if (weeks >= 12) {
     const hasTaperPhase = draft.phases?.some(p => /taper|peak|deload|recovery|unload/i.test(p.name + ' ' + (p.focus ?? ''))) ?? false
     const finalReduced = allExercises(draft).some(ex => {
@@ -665,13 +670,15 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
       if (wps.length < 2) return false
       const maxSets = Math.max(...wps.map(w => w.sets ?? ex.sets))
       const finalW = wps.reduce((a, b) => (b.week > a.week ? b : a))
+      // Explicit taper flag satisfies the requirement without requiring a set-count comparison
+      if (finalW.week >= weeks - 1 && finalW.taper === true) return true
       return finalW.week >= weeks - 1 && (finalW.sets ?? ex.sets) < maxSets
     })
     if (!hasTaperPhase && !finalReduced) {
       issues.push({
         severity: 'warning',
         code: 'NO_FINAL_TAPER',
-        message: `The final week of a ${weeks}-week program should reduce volume (taper/peak) so the block resolves rather than ending at peak fatigue. Add a reduced-volume final week in week_progressions or a taper phase.`,
+        message: `The final week of a ${weeks}-week program should reduce volume (taper/peak) so the block resolves rather than ending at peak fatigue. Add a reduced-volume final week in week_progressions (with taper:true or fewer sets) or a taper phase.`,
       })
     }
   }
@@ -732,6 +739,27 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
           message: `Day "${day.name}" declares session_type "${st}" but has ${reason}. The exercise selection doesn't match the declared session type.`,
         })
       }
+    }
+  }
+
+  // CONDITIONING_NO_AEROBIC_MODALITY: a day labeled "conditioning" has no actual
+  // aerobic/cardio exercise. Resistance-only circuits labeled conditioning are
+  // valid but the day should either include a real cardio modality or be relabeled.
+  for (const day of draft.days) {
+    const isConditioningDay =
+      day.session_type === 'conditioning' ||
+      /\bcondition|metcon|\bcardio\b|\baerob/i.test(day.name + ' ' + (day.focus ?? ''))
+    if (!isConditioningDay) continue
+
+    const hasAerobicExercise = day.exercises.some(ex =>
+      ex.intended_pattern === 'cardio' || ex.intended_pattern === 'carry'
+    )
+    if (!hasAerobicExercise && day.exercises.length > 0) {
+      issues.push({
+        severity: 'warning',
+        code: 'CONDITIONING_NO_AEROBIC_MODALITY',
+        message: `Day "${day.name}" is labeled as conditioning but contains no exercise with intended_pattern "cardio" or "carry". Add a real conditioning modality (treadmill run, rower, Airdyne, sled push, farmer carry, etc.) or rename the day to reflect its actual content.`,
+      })
     }
   }
 

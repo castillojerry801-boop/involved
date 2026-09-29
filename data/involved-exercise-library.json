@@ -5506,7 +5506,7 @@
         },
         {
           "implementationId": "edb_0998",
-          "displayLabel": "Band Side Triceps Extension",
+          "displayLabel": "Resistance Band Triceps Extension (Single Arm)",
           "equipment": "band",
           "source": {
             "provider": "ExerciseDB",
@@ -29835,7 +29835,7 @@
       "implementations": [
         {
           "implementationId": "edb_0988",
-          "displayLabel": "Band Single-Arm Standing Low Row",
+          "displayLabel": "Resistance Band Row (Single Arm)",
           "equipment": "band",
           "source": {
             "provider": "ExerciseDB",
@@ -31664,7 +31664,7 @@
       "implementations": [
         {
           "implementationId": "edb_0977",
-          "displayLabel": "Band Front Lateral Raise",
+          "displayLabel": "Resistance Band Front Raise",
           "equipment": "band",
           "source": {
             "provider": "ExerciseDB",
