@@ -1,25 +1,25 @@
 /**
  * Deterministic search-phase orchestration for V program generation.
  *
- * The program-generation tool loop has two model phases:
- *   1. SEARCH  — the cheap chat model (gpt-4o-mini) discovers exercise candidates
- *                by calling search_exercises. Bounded by a hard round budget and a
- *                coverage target so it can never wander indefinitely.
- *   2. DRAFT   — the program model (Luna) receives the accumulated candidate pool
- *                and builds the structured ProgramDraft (propose_program). Sol is
- *                reached only on quality escalation.
+ * Program generation runs in two steps:
+ *   1. SEARCH — a DETERMINISTIC, server-driven pass. For each movement pattern the
+ *               program needs, the route calls search_exercises directly (no model
+ *               turn). This cannot wander, cannot skip a pattern, and costs zero
+ *               model tokens. It replaced a model-driven loop that spent up to 12
+ *               rounds "deciding" whether to search and never reached horizontal_pull.
+ *   2. DRAFT  — the program model (Luna) receives the accumulated candidate pool and
+ *               builds the ProgramDraft (propose_program, forced). Sol is reached
+ *               only on quality escalation.
  *
- * This module holds the pure decision logic (no I/O, no model calls) so it is
- * unit-testable in isolation. The route wires it to OpenAI and the exercise tool.
+ * This module holds the pure logic (no I/O, no model calls) so it is unit-testable
+ * in isolation. The route wires it to the exercise search tool and OpenAI.
  */
 
 import type { ExerciseSummary } from '@/lib/ai/tools/exercises'
 
 // Foundational compound movement patterns any resistance program needs to cover.
-// Accessory patterns (bicep, tricep, fly, calf, core, shoulder_isolation, lunge)
-// are intentionally NOT here — a missing accessory must never block the handoff to
-// the drafting model. Luna builds accessories from whatever appropriate candidates
-// are already in the pool.
+// These are searched first and define "coverage". Accessory patterns are searched
+// too (ENRICHMENT_PATTERNS) but a missing accessory never blocks the draft handoff.
 export const CORE_MOVEMENT_PATTERNS = [
   'squat',
   'hinge',
@@ -29,21 +29,33 @@ export const CORE_MOVEMENT_PATTERNS = [
   'horizontal_pull',
 ] as const
 
-// Deterministic search budget. A well-behaved mini covers all six core patterns in
-// ~5 broad searches; this leaves headroom without ever approaching the runaway that
-// produced 12 model rounds. Kept well under MAX_ROUNDS so the draft/quality phases
-// always have rounds left.
-export const MAX_SEARCH_ROUNDS = 6
+// Accessory / isolation patterns searched deterministically after the core so Luna
+// has arms, delts, calves, and trunk work to build a complete hypertrophy program.
+// Their absence is never fatal — they only enrich the pool.
+export const ENRICHMENT_PATTERNS = [
+  'incline_push',
+  'fly',
+  'shoulder_isolation',
+  'bicep',
+  'tricep',
+  'lunge',
+  'calf',
+  'core_antiextension',
+] as const
 
-// Minimum distinct movement patterns that must have at least one candidate before we
-// consider the pool viable when core coverage is only partial (e.g. equipment can't
-// support a squat). Below this, handing off to Luna would produce a thin program.
-export const MIN_VIABLE_PATTERNS = 4
+// Handoff thresholds when core coverage is only partial (e.g. equipment can't support
+// a given pattern). The drafting model can build from a partial-but-adequate pool;
+// perfect coverage is NEVER required. The production pool (21 candidates, 5/6 core,
+// only horizontal_pull missing) clears these easily.
+export const MIN_VIABLE_CORE_PATTERNS = 4
+export const MIN_VIABLE_CANDIDATES = 8
 
-// Hard orchestration cost ceiling for a single program-generation request. The
-// production failure consumed 75,143 tokens on Luna without ever proposing. This cap
-// (comfortably below that) aborts with a targeted failure rather than burning more.
-export const MAX_ORCHESTRATION_TOKENS = 60_000
+// Emergency orchestration cost ceiling. With deterministic search the search phase
+// spends ZERO model tokens, so in practice only the Luna draft (+ any quality retry)
+// consumes tokens. This ceiling is a last-resort guard against a pathological draft
+// loop — not the practical budget. The real cost control is: deterministic search
+// (0 tokens) + a single forced Luna draft.
+export const MAX_ORCHESTRATION_TOKENS = 45_000
 
 export type SearchPhase = 'search' | 'draft' | 'escalation'
 
@@ -61,7 +73,7 @@ export function createCandidatePool(): CandidatePool {
 /**
  * Merge search results into the pool. Returns the number of genuinely NEW
  * candidates added (already-seen ids are ignored) so telemetry can show whether a
- * search round made progress or just re-covered known ground.
+ * search made progress or just re-covered known ground.
  */
 export function addCandidates(pool: CandidatePool, results: ExerciseSummary[]): number {
   let added = 0
@@ -83,83 +95,64 @@ export function missingCorePatterns(pool: CandidatePool): string[] {
 }
 
 /**
- * Full core coverage — every foundational compound pattern has a candidate. This is
- * the BEST-CASE early-exit signal for the search phase: once true, more searching
- * only wastes tokens. It is deliberately strict (all six) so we never hand off a
- * pool that is missing a squat, hinge, or press just because a few accessory
- * patterns happen to be present.
+ * Full core coverage — every foundational compound pattern has a candidate. The
+ * best case: the deterministic search found something for all six.
  */
 export function hasFullCoreCoverage(pool: CandidatePool): boolean {
   return pool.byId.size > 0 && missingCorePatterns(pool).length === 0
 }
 
 /**
- * Minimum viable coverage for a handoff to the drafting model when the search phase
- * ends WITHOUT full core coverage (budget/token/model-done). Requires at least
- * MIN_VIABLE_PATTERNS distinct movement patterns so Luna has a real base to build
- * from. Perfect coverage is deliberately NOT required — a missing accessory role must
- * never block generation; the drafting model fills gaps from the available pool.
- */
-export function hasMinimumViableCoverage(pool: CandidatePool): boolean {
-  return pool.patterns.size >= MIN_VIABLE_PATTERNS
-}
-
-export interface SearchTerminationInput {
-  /** Number of search-phase rounds already completed. */
-  searchRounds: number
-  pool: CandidatePool
-  /** promptTokens + completionTokens accumulated so far. */
-  totalTokens: number
-  /** True when the last search-phase model turn returned no tool calls. */
-  modelStoppedSearching: boolean
-}
-
-export type SearchEndReason =
-  | 'coverage_met'
-  | 'model_done'
-  | 'budget_exhausted'
-  | 'token_budget'
-
-export interface SearchTerminationDecision {
-  end: boolean
-  reason: SearchEndReason | null
-}
-
-/**
- * Deterministic rule for ending the search phase. End when ANY of:
- *   - minimum viable candidate coverage exists (best case — early exit),
- *   - the model itself stopped calling search (it thinks it's done),
- *   - the search round budget is exhausted,
- *   - the orchestration token ceiling is hit.
- * The route decides what to do next (draft handoff vs. targeted failure) based on
- * whether the pool actually has candidates.
- */
-export function shouldEndSearchPhase(input: SearchTerminationInput): SearchTerminationDecision {
-  const { searchRounds, pool, totalTokens, modelStoppedSearching } = input
-
-  if (totalTokens >= MAX_ORCHESTRATION_TOKENS) return { end: true, reason: 'token_budget' }
-  if (hasFullCoreCoverage(pool)) return { end: true, reason: 'coverage_met' }
-  if (modelStoppedSearching && pool.byId.size > 0) return { end: true, reason: 'model_done' }
-  if (searchRounds >= MAX_SEARCH_ROUNDS) return { end: true, reason: 'budget_exhausted' }
-
-  return { end: false, reason: null }
-}
-
-/**
- * True when the accumulated pool is rich enough to hand to the drafting model —
- * at least MIN_VIABLE_PATTERNS distinct movement patterns. A pool that is empty or
- * too thin (every search returned nothing, or only a couple of patterns) must NOT
- * hand off — that becomes a targeted generation failure instead of a thin program.
+ * Whether the accumulated pool is rich enough to hand to the drafting model.
+ *   - full core coverage, OR
+ *   - at least MIN_VIABLE_CORE_PATTERNS core patterns AND MIN_VIABLE_CANDIDATES total.
+ * One missing pattern (e.g. horizontal_pull) must NOT fail the request — Luna builds
+ * from the available pool. Only a genuinely thin pool is rejected.
  */
 export function canHandoffToDraft(pool: CandidatePool): boolean {
-  return hasMinimumViableCoverage(pool)
+  if (hasFullCoreCoverage(pool)) return true
+  return coveredCorePatterns(pool).length >= MIN_VIABLE_CORE_PATTERNS
+    && pool.byId.size >= MIN_VIABLE_CANDIDATES
+}
+
+export interface SearchStep {
+  pattern: string
+  /** True for the six core compound patterns; false for enrichment/accessory. */
+  core: boolean
+}
+
+/**
+ * The deterministic search plan: core patterns first (define coverage), then
+ * accessory patterns (enrich the pool). The route executes each step with a direct
+ * search_exercises call — no model decides the query. This is the fix for "mini
+ * never searched horizontal_pull": the server always searches every needed pattern.
+ */
+export function buildDeterministicSearchPlan(): SearchStep[] {
+  return [
+    ...CORE_MOVEMENT_PATTERNS.map(pattern => ({ pattern, core: true })),
+    ...ENRICHMENT_PATTERNS.map(pattern => ({ pattern, core: false })),
+  ]
+}
+
+/**
+ * Filter raw search results to the user's equipment profile using the SAME exact
+ * (lowercased) equality the draft validator uses (validateProgramDraft →
+ * allowedEquipment), so a candidate placed in the pool can never be rejected later.
+ * "body weight" is always allowed. A null/empty profile means unrestricted.
+ */
+export function filterCandidatesByEquipment(
+  results: ExerciseSummary[],
+  allowedEquipment: string[] | null | undefined,
+): ExerciseSummary[] {
+  if (!allowedEquipment || allowedEquipment.length === 0) return results
+  const allowed = new Set([...allowedEquipment.map(e => e.toLowerCase()), 'body weight'])
+  return results.filter(e => allowed.has(e.equipment.toLowerCase()))
 }
 
 /**
  * Compact candidate summary injected into the drafting model's context. Groups
  * candidates by movement pattern and lists id + name so Luna builds strictly from
- * validated ids without re-searching. Never includes provider/internal fields the
- * user shouldn't see (those never reach the user anyway — this is model context).
+ * validated ids without re-searching.
  */
 export function buildCandidatePoolSummary(pool: CandidatePool): string {
   const byPattern = new Map<string, ExerciseSummary[]>()

@@ -33,28 +33,22 @@ describe('model routing defaults', () => {
   })
 })
 
-// Mirrors the route's PHASE-AWARE toolRoundModel() selection so a change to the
-// precedence is caught here. In program-generation mode the loop runs in phases:
-//   search     → cheap model (mini) discovers exercise candidates
-//   draft       → Luna builds the ProgramDraft
+// Mirrors the route's PHASE-AWARE toolRoundModel() selection. The SEARCH phase is now
+// DETERMINISTIC and server-driven (zero model turns), so it never selects a model. The
+// model loop runs only two program phases:
+//   draft       → Luna builds the ProgramDraft (propose_program forced)
 //   escalation  → Sol, quality recovery only.
-type GenPhase = 'search' | 'draft' | 'escalation'
+// Plain chat / intake runs on the cheap model.
+type GenPhase = 'draft' | 'escalation'
 function toolRoundModel(state: { programGenerationMode: boolean; genPhase: GenPhase }): string {
   if (!state.programGenerationMode) return V_CHAT_MODEL
   if (state.genPhase === 'escalation') return V_ESCALATION_MODEL
-  if (state.genPhase === 'draft') return V_PROGRAM_MODEL
-  return V_CHAT_MODEL // 'search' phase runs on the cheap model
+  return V_PROGRAM_MODEL // 'draft' — the only loop phase for program generation
 }
 
 describe('toolRoundModel precedence (phase-aware)', () => {
   it('plain chat / intake → cheap model', () => {
-    expect(toolRoundModel({ programGenerationMode: false, genPhase: 'search' })).toBe('gpt-4o-mini')
-  })
-
-  it('program-generation SEARCH phase runs on the cheap model, NOT Luna', () => {
-    // This is the production bug: search/tool discovery was running on Luna.
-    expect(toolRoundModel({ programGenerationMode: true, genPhase: 'search' })).toBe('gpt-4o-mini')
-    expect(toolRoundModel({ programGenerationMode: true, genPhase: 'search' })).not.toBe('gpt-6-luna')
+    expect(toolRoundModel({ programGenerationMode: false, genPhase: 'draft' })).toBe('gpt-4o-mini')
   })
 
   it('program-generation DRAFT phase → Luna', () => {
@@ -65,14 +59,12 @@ describe('toolRoundModel precedence (phase-aware)', () => {
     expect(toolRoundModel({ programGenerationMode: true, genPhase: 'escalation' })).toBe('gpt-6-sol')
   })
 
-  it('Sol is NOT used for search or draft', () => {
-    expect(toolRoundModel({ programGenerationMode: true, genPhase: 'search' })).not.toBe('gpt-6-sol')
-    expect(toolRoundModel({ programGenerationMode: true, genPhase: 'draft' })).not.toBe('gpt-6-sol')
+  it('Luna is NOT used for intake/chat (the loop model is mini there)', () => {
+    expect(toolRoundModel({ programGenerationMode: false, genPhase: 'draft' })).not.toBe('gpt-6-luna')
   })
 
-  it('Luna is NOT used for intake/chat or the search loop', () => {
-    expect(toolRoundModel({ programGenerationMode: false, genPhase: 'search' })).not.toBe('gpt-6-luna')
-    expect(toolRoundModel({ programGenerationMode: true, genPhase: 'search' })).not.toBe('gpt-6-luna')
+  it('Sol is NOT used for the draft phase (escalation only)', () => {
+    expect(toolRoundModel({ programGenerationMode: true, genPhase: 'draft' })).not.toBe('gpt-6-sol')
   })
 })
 

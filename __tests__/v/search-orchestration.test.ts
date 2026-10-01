@@ -1,28 +1,31 @@
 /**
- * Search-phase orchestration — deterministic termination + candidate handoff.
+ * Deterministic search-phase orchestration — the fix for two production incidents:
  *
- * These tests reproduce the production incident (dpl_CVMcbF3MPi5N6DVRVpoybjgsYadX):
- * a 4-day muscle-building request ran ~12 search rounds on Luna and NEVER called
- * propose_program. The orchestration layer now enforces a bounded search budget,
- * a coverage target, dedup, and a forced handoff to the drafting model.
+ *   dpl_...SadX: a model-driven search loop ran ~12 rounds on Luna, never proposed.
+ *   (next run):  routing fixed, but the loop spent rounds 0–10 making NO tool call,
+ *                then searched 5 patterns at round 11 and exited before transitioning —
+ *                genPhase stayed "search", proposeProgramAttempted stayed false, and the
+ *                pool (21 candidates, only horizontal_pull missing) never reached Luna.
  *
- * The route wiring (model selection per phase) is asserted separately in
- * model-routing.test.ts; here we lock the pure decision logic.
+ * The search phase is now fully DETERMINISTIC (server-driven, zero model turns): a
+ * fixed plan of movement-pattern searches that cannot wander, cannot skip a pattern,
+ * and cannot run to an outer model round. These tests lock that logic.
  */
 
 import { describe, it, expect } from 'vitest'
 import {
   CORE_MOVEMENT_PATTERNS,
-  MAX_SEARCH_ROUNDS,
-  MAX_ORCHESTRATION_TOKENS,
+  ENRICHMENT_PATTERNS,
+  MIN_VIABLE_CORE_PATTERNS,
+  MIN_VIABLE_CANDIDATES,
   createCandidatePool,
   addCandidates,
   coveredCorePatterns,
   missingCorePatterns,
   hasFullCoreCoverage,
-  hasMinimumViableCoverage,
   canHandoffToDraft,
-  shouldEndSearchPhase,
+  buildDeterministicSearchPlan,
+  filterCandidatesByEquipment,
   buildCandidatePoolSummary,
 } from '../../lib/v/search-orchestration'
 import type { ExerciseSummary } from '../../lib/ai/tools/exercises'
@@ -48,13 +51,35 @@ function ex(pattern: string, opts: Partial<ExerciseSummary> = {}): ExerciseSumma
   }
 }
 
+// ─── Deterministic search plan — the structural fix ────────────────────────────
+
+describe('buildDeterministicSearchPlan — bounded, cannot skip a pattern', () => {
+  const plan = buildDeterministicSearchPlan()
+
+  it('is a fixed-length plan (6 core + 8 enrichment), not an open-ended model loop', () => {
+    expect(plan).toHaveLength(CORE_MOVEMENT_PATTERNS.length + ENRICHMENT_PATTERNS.length)
+    expect(plan.length).toBeLessThan(16) // never the 12-round runaway, and bounded
+  })
+
+  it('searches EVERY core pattern — including horizontal_pull, which mini never reached', () => {
+    const patterns = plan.filter(s => s.core).map(s => s.pattern)
+    for (const core of CORE_MOVEMENT_PATTERNS) expect(patterns).toContain(core)
+    expect(patterns).toContain('horizontal_pull')
+  })
+
+  it('core patterns come before enrichment patterns', () => {
+    const firstEnrichment = plan.findIndex(s => !s.core)
+    const lastCore = plan.map(s => s.core).lastIndexOf(true)
+    expect(lastCore).toBeLessThan(firstEnrichment)
+  })
+})
+
 // ─── Candidate pool + dedup ────────────────────────────────────────────────────
 
 describe('candidate pool accumulation and dedup', () => {
   it('adds new candidates and reports the new count', () => {
     const pool = createCandidatePool()
-    const added = addCandidates(pool, [ex('squat'), ex('hinge')])
-    expect(added).toBe(2)
+    expect(addCandidates(pool, [ex('squat'), ex('hinge')])).toBe(2)
     expect(pool.byId.size).toBe(2)
   })
 
@@ -62,124 +87,100 @@ describe('candidate pool accumulation and dedup', () => {
     const pool = createCandidatePool()
     const a = ex('squat', { id: '0001' })
     addCandidates(pool, [a])
-    const added = addCandidates(pool, [a, ex('hinge', { id: '0002' })])
-    expect(added).toBe(1)            // only the hinge is new
+    expect(addCandidates(pool, [a, ex('hinge', { id: '0002' })])).toBe(1)
     expect(pool.byId.size).toBe(2)
-  })
-
-  it('tracks distinct movement patterns', () => {
-    const pool = createCandidatePool()
-    addCandidates(pool, [ex('squat'), ex('squat'), ex('hinge')])
-    expect(pool.patterns.has('squat')).toBe(true)
-    expect(pool.patterns.has('hinge')).toBe(true)
-    expect(pool.patterns.size).toBe(2)
   })
 })
 
-// ─── Coverage detection ────────────────────────────────────────────────────────
+// ─── Equipment filtering — must match the draft validator exactly ──────────────
 
-describe('core pattern coverage', () => {
-  it('reports missing core patterns for an empty pool', () => {
-    const pool = createCandidatePool()
-    expect(missingCorePatterns(pool)).toEqual([...CORE_MOVEMENT_PATTERNS])
-    expect(coveredCorePatterns(pool)).toEqual([])
+describe('filterCandidatesByEquipment', () => {
+  it('unrestricted profile (null/empty) keeps everything', () => {
+    const results = [ex('squat', { equipment: 'barbell' }), ex('hinge', { equipment: 'cable' })]
+    expect(filterCandidatesByEquipment(results, null)).toHaveLength(2)
+    expect(filterCandidatesByEquipment(results, [])).toHaveLength(2)
   })
 
-  it('reports full core coverage once every core pattern has a candidate', () => {
+  it('keeps only exact (lowercased) equipment matches, plus body weight always', () => {
+    const results = [
+      ex('squat', { equipment: 'barbell' }),
+      ex('fly', { equipment: 'cable' }),
+      ex('core_antiextension', { equipment: 'body weight' }),
+    ]
+    const kept = filterCandidatesByEquipment(results, ['Barbell'])
+    const names = kept.map(e => e.equipment)
+    expect(names).toContain('barbell')
+    expect(names).toContain('body weight') // always allowed
+    expect(names).not.toContain('cable')   // not in profile
+  })
+})
+
+// ─── Coverage + handoff rule ───────────────────────────────────────────────────
+
+describe('core coverage and handoff', () => {
+  it('full core coverage once every core pattern has a candidate', () => {
     const pool = createCandidatePool()
     addCandidates(pool, CORE_MOVEMENT_PATTERNS.map(p => ex(p)))
     expect(missingCorePatterns(pool)).toEqual([])
     expect(hasFullCoreCoverage(pool)).toBe(true)
+    expect(canHandoffToDraft(pool)).toBe(true)
   })
 
-  it('accessory-only patterns do NOT satisfy full core coverage (no early exit)', () => {
-    const pool = createCandidatePool()
-    addCandidates(pool, [ex('bicep'), ex('tricep'), ex('fly'), ex('calf')])
-    expect(missingCorePatterns(pool)).toEqual([...CORE_MOVEMENT_PATTERNS])
-    expect(hasFullCoreCoverage(pool)).toBe(false)
-    // 4 distinct patterns still clears the handoff floor if the budget forces a stop
-    expect(hasMinimumViableCoverage(pool)).toBe(true)
+  it('empty pool does not hand off', () => {
+    expect(canHandoffToDraft(createCandidatePool())).toBe(false)
   })
 
-  it('a thin pool (few patterns) is NOT viable for handoff', () => {
+  it('a thin pool (few core patterns, few candidates) does NOT hand off', () => {
     const pool = createCandidatePool()
-    addCandidates(pool, [ex('bicep'), ex('tricep')])
-    expect(hasMinimumViableCoverage(pool)).toBe(false)
+    addCandidates(pool, [ex('squat'), ex('hinge')]) // 2 core, 2 candidates
+    expect(canHandoffToDraft(pool)).toBe(false)
+  })
+
+  it('needs BOTH enough core patterns AND enough total candidates', () => {
+    // 4 core patterns but only 4 candidates → below candidate floor
+    const pool = createCandidatePool()
+    addCandidates(pool, [ex('squat'), ex('hinge'), ex('horizontal_push'), ex('vertical_pull')])
+    expect(coveredCorePatterns(pool).length).toBeGreaterThanOrEqual(MIN_VIABLE_CORE_PATTERNS)
+    expect(pool.byId.size).toBeLessThan(MIN_VIABLE_CANDIDATES)
+    expect(canHandoffToDraft(pool)).toBe(false)
   })
 })
 
-// ─── Termination rule ──────────────────────────────────────────────────────────
+// ─── The exact production scenario ─────────────────────────────────────────────
+// 21 candidates, 5/6 core patterns covered, ONLY horizontal_pull missing. The prior
+// build failed the whole request here. It must now hand off to Luna.
 
-describe('shouldEndSearchPhase — deterministic termination', () => {
-  const fullCore = () => {
+describe('production scenario — 5/6 core, horizontal_pull missing, 21 candidates', () => {
+  function productionPool() {
     const pool = createCandidatePool()
-    addCandidates(pool, CORE_MOVEMENT_PATTERNS.map(p => ex(p)))
+    // squat(5), deadlift→hinge(5), bench→horizontal_push(5), pull-up→vertical_pull(5),
+    // overhead press→vertical_push(1) = 21 candidates. horizontal_pull: none.
+    addCandidates(pool, Array.from({ length: 5 }, () => ex('squat')))
+    addCandidates(pool, Array.from({ length: 5 }, () => ex('hinge')))
+    addCandidates(pool, Array.from({ length: 5 }, () => ex('horizontal_push')))
+    addCandidates(pool, Array.from({ length: 5 }, () => ex('vertical_pull')))
+    addCandidates(pool, Array.from({ length: 1 }, () => ex('vertical_push')))
     return pool
   }
 
-  it('ends early with coverage_met once all core patterns are present', () => {
-    const d = shouldEndSearchPhase({ searchRounds: 3, pool: fullCore(), totalTokens: 10_000, modelStoppedSearching: false })
-    expect(d.end).toBe(true)
-    expect(d.reason).toBe('coverage_met')
+  it('reproduces the pool: 21 candidates, only horizontal_pull missing', () => {
+    const pool = productionPool()
+    expect(pool.byId.size).toBe(21)
+    expect(missingCorePatterns(pool)).toEqual(['horizontal_pull'])
+    expect(coveredCorePatterns(pool)).toHaveLength(5)
   })
 
-  it('does NOT end while coverage is incomplete and budget/tokens remain', () => {
-    const pool = createCandidatePool()
-    addCandidates(pool, [ex('squat'), ex('hinge')])
-    const d = shouldEndSearchPhase({ searchRounds: 2, pool, totalTokens: 10_000, modelStoppedSearching: false })
-    expect(d.end).toBe(false)
-    expect(d.reason).toBeNull()
+  it('HANDS OFF to the drafting model instead of failing the request', () => {
+    const pool = productionPool()
+    expect(hasFullCoreCoverage(pool)).toBe(false)  // one missing
+    expect(canHandoffToDraft(pool)).toBe(true)      // but still viable → draft, not fail
   })
 
-  it('ends with budget_exhausted at the search round cap even without coverage', () => {
-    const pool = createCandidatePool()
-    addCandidates(pool, [ex('squat')]) // 1 pattern — below viable floor
-    const d = shouldEndSearchPhase({ searchRounds: MAX_SEARCH_ROUNDS, pool, totalTokens: 10_000, modelStoppedSearching: false })
-    expect(d.end).toBe(true)
-    expect(d.reason).toBe('budget_exhausted')
-  })
-
-  it('ends with model_done when the model stops searching AND candidates exist', () => {
-    const pool = createCandidatePool()
-    addCandidates(pool, [ex('squat')])
-    const d = shouldEndSearchPhase({ searchRounds: 2, pool, totalTokens: 10_000, modelStoppedSearching: true })
-    expect(d.end).toBe(true)
-    expect(d.reason).toBe('model_done')
-  })
-
-  it('model_done with an EMPTY pool still ends (route then fails targeted, not endless)', () => {
-    const pool = createCandidatePool()
-    const d = shouldEndSearchPhase({ searchRounds: 2, pool, totalTokens: 10_000, modelStoppedSearching: true })
-    // Empty pool: coverage false, model_done requires candidates, so this falls through
-    // to budget check — not yet at budget → keeps searching. Confirm it does NOT
-    // spuriously claim model_done on an empty pool.
-    expect(d.reason).not.toBe('model_done')
-  })
-
-  it('ends with token_budget when the orchestration ceiling is hit', () => {
-    const pool = createCandidatePool()
-    addCandidates(pool, [ex('squat')])
-    const d = shouldEndSearchPhase({ searchRounds: 1, pool, totalTokens: MAX_ORCHESTRATION_TOKENS, modelStoppedSearching: false })
-    expect(d.end).toBe(true)
-    expect(d.reason).toBe('token_budget')
-  })
-})
-
-// ─── Handoff gating ────────────────────────────────────────────────────────────
-
-describe('canHandoffToDraft', () => {
-  it('true when the pool has a viable base of patterns', () => {
-    const pool = createCandidatePool()
-    addCandidates(pool, [ex('squat'), ex('hinge'), ex('horizontal_push'), ex('vertical_pull')])
-    expect(canHandoffToDraft(pool)).toBe(true)
-  })
-  it('false when the pool is empty', () => {
-    expect(canHandoffToDraft(createCandidatePool())).toBe(false)
-  })
-  it('false when the pool is too thin (below the pattern floor)', () => {
-    const pool = createCandidatePool()
-    addCandidates(pool, [ex('squat'), ex('hinge')])
-    expect(canHandoffToDraft(pool)).toBe(false)
+  it('the deterministic plan WOULD have searched horizontal_pull (root-cause fix)', () => {
+    // The incident was mini never issuing a horizontal_pull search. The deterministic
+    // plan always does — so in production this pattern would be covered too.
+    const planned = buildDeterministicSearchPlan().map(s => s.pattern)
+    expect(planned).toContain('horizontal_pull')
   })
 })
 
@@ -190,61 +191,12 @@ describe('buildCandidatePoolSummary', () => {
     const pool = createCandidatePool()
     addCandidates(pool, [
       ex('squat', { id: '0026', name: 'Barbell Back Squat', equipment: 'barbell' }),
-      ex('hinge', { id: '0032', name: 'Romanian Deadlift', equipment: 'barbell' }),
+      ex('horizontal_pull', { id: '0100', name: 'Barbell Row', equipment: 'barbell' }),
     ])
     const summary = buildCandidatePoolSummary(pool)
     expect(summary).toContain('squat:')
     expect(summary).toContain('0026=Barbell Back Squat (barbell)')
-    expect(summary).toContain('hinge:')
-    expect(summary).toContain('0032=Romanian Deadlift (barbell)')
-  })
-})
-
-// ─── The exact production scenario, simulated round-by-round ───────────────────
-// "I want to get back in shape and build some muscle. Make me a 12-week program."
-// 4 training days, broad equipment. The prior loop searched 12 rounds on Luna and
-// never proposed. Here we simulate an efficient mini search and assert the loop
-// terminates within budget and hands off with the required patterns covered.
-
-describe('production scenario — 4-day muscle-building, broad equipment', () => {
-  it('efficient broad searches reach coverage and hand off well within budget', () => {
-    const pool = createCandidatePool()
-    let searchRounds = 0
-    const runSearch = (results: ExerciseSummary[]) => {
-      searchRounds++
-      addCandidates(pool, results)
-      return shouldEndSearchPhase({ searchRounds, pool, totalTokens: searchRounds * 6000, modelStoppedSearching: false })
-    }
-
-    // Round 1: chest search → horizontal_push + incline_push + fly
-    expect(runSearch([ex('horizontal_push'), ex('incline_push'), ex('fly')]).end).toBe(false)
-    // Round 2: back search → vertical_pull + horizontal_pull + bicep
-    expect(runSearch([ex('vertical_pull'), ex('horizontal_pull'), ex('bicep')]).end).toBe(false)
-    // Round 3: legs search → squat + lunge + calf
-    expect(runSearch([ex('squat'), ex('lunge'), ex('calf')]).end).toBe(false)
-    // Round 4: posterior/shoulders → hinge + vertical_push
-    const d = runSearch([ex('hinge'), ex('vertical_push')])
-
-    expect(d.end).toBe(true)
-    expect(d.reason).toBe('coverage_met')
-    expect(searchRounds).toBeLessThanOrEqual(MAX_SEARCH_ROUNDS)
-    expect(missingCorePatterns(pool)).toEqual([])
-    expect(canHandoffToDraft(pool)).toBe(true)
-  })
-
-  it('a model repeating overlapping searches still terminates at the budget', () => {
-    const pool = createCandidatePool()
-    let searchRounds = 0
-    let end = false
-    // The model keeps searching only chest (duplicate/overlapping) — dedup means the
-    // pool never grows past one pattern, coverage never completes, but the round
-    // budget guarantees termination instead of an endless loop.
-    for (let i = 0; i < 20 && !end; i++) {
-      searchRounds++
-      addCandidates(pool, [ex('horizontal_push', { id: '0025' })]) // same id every time
-      end = shouldEndSearchPhase({ searchRounds, pool, totalTokens: searchRounds * 6000, modelStoppedSearching: false }).end
-    }
-    expect(searchRounds).toBe(MAX_SEARCH_ROUNDS)
-    expect(pool.byId.size).toBe(1) // dedup held — one candidate, not 6
+    expect(summary).toContain('horizontal_pull:')
+    expect(summary).toContain('0100=Barbell Row (barbell)')
   })
 })

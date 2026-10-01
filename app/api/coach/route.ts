@@ -16,11 +16,11 @@ import { validateProgramQuality } from '@/lib/v/program-quality'
 import { extractEquipmentFromConversation, buildEquipmentCapabilitySummary } from '@/lib/v/equipment-normalize'
 import { parseProgramIntake, missingProgramContext, buildMissingContextPrompt } from '@/lib/v/program-intake'
 import {
-  createCandidatePool, addCandidates, missingCorePatterns, canHandoffToDraft,
-  buildCandidatePoolSummary, shouldEndSearchPhase, MAX_ORCHESTRATION_TOKENS,
+  createCandidatePool, addCandidates, coveredCorePatterns, missingCorePatterns,
+  canHandoffToDraft, hasFullCoreCoverage, buildCandidatePoolSummary,
+  buildDeterministicSearchPlan, filterCandidatesByEquipment, MAX_ORCHESTRATION_TOKENS,
   type SearchPhase,
 } from '@/lib/v/search-orchestration'
-import type { ExerciseSummary } from '@/lib/ai/tools/exercises'
 import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN } from './constants'
 import type OpenAI from 'openai'
 
@@ -299,38 +299,34 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // ── Search-phase orchestration state ──────────────────────────────────────
-    // In program-generation mode the tool loop runs in explicit phases:
-    //   'search'     — cheap chat model (mini) discovers exercise candidates,
-    //   'draft'      — program model (Luna) builds the ProgramDraft,
-    //   'escalation' — strongest model (Sol), quality recovery only.
-    // Plain chat / workout requests never enter this machine (genPhase unused).
-    let genPhase: SearchPhase = 'search'
+    // ── Program-generation phase state ────────────────────────────────────────
+    // The SEARCH phase is deterministic and runs BEFORE the model loop (see below):
+    // the server calls search_exercises directly for each needed movement pattern,
+    // spending zero model turns. By the time the model loop runs for a program, the
+    // phase is already 'draft' (Luna) or escalates to 'escalation' (Sol) on quality
+    // failure. Plain chat / workout requests never set genPhase to anything but the
+    // initial 'draft' sentinel (unused — those run on the cheap chat model).
+    let genPhase: SearchPhase = 'draft'
     const candidatePool = createCandidatePool()
-    let searchRounds = 0
-    let modelStoppedSearching = false
-    let searchHandoffInjected = false
-    let uniqueSearchCount = 0
 
     // Resolve the model for a tool round from the current phase/state:
-    //   escalation (Sol) > draft (Luna) > search/chat/intake (mini).
+    //   escalation (Sol) > draft (Luna) > chat/intake (mini).
     const toolRoundModel = () => {
       if (!programGenerationMode) return chatModel
       if (genPhase === 'escalation') return escalationModel
-      if (genPhase === 'draft') return programModel
-      return chatModel // 'search' phase runs on the cheap model
+      return programModel // 'draft' — the only loop phase for program generation
     }
 
-    // Tools + tool_choice for the current round. During the search phase we expose
-    // ONLY search_exercises (mini cannot draft prematurely); during draft/escalation
-    // we expose ONLY propose_program and FORCE it, so the loop can never stall in an
-    // endless search — the drafting model must produce a draft from the candidate pool.
+    // Tools + tool_choice for the current round. For program generation the loop only
+    // ever runs the DRAFT/ESCALATION phase (search already happened deterministically),
+    // so we expose ONLY propose_program and FORCE it — the drafting model must produce
+    // a draft from the candidate pool and can never stall in a search loop. Plain chat
+    // keeps all tools on auto.
     const roundToolShape = (): {
       tools: typeof tools
       tool_choice: OpenAI.Chat.ChatCompletionToolChoiceOption
     } => {
       if (!programGenerationMode) return { tools, tool_choice: 'auto' }
-      if (genPhase === 'search') return { tools: [SEARCH_EXERCISES_TOOL], tool_choice: 'auto' }
       return {
         tools: [PROPOSE_PROGRAM_TOOL],
         tool_choice: { type: 'function', function: { name: 'propose_program' } },
@@ -381,65 +377,93 @@ export async function POST(req: NextRequest) {
       throw new Error('OpenAI retries exhausted')
     }
 
-    // Emitted once when the search phase ends — the deterministic record of how
-    // candidate discovery terminated and whether it handed off to the drafting model.
-    let searchFinalLogged = false
-    const logSearchFinal = (transitioned: boolean) => {
-      if (searchFinalLogged) return
-      searchFinalLogged = true
+    // ── DETERMINISTIC SEARCH PHASE (program generation only) ──────────────────
+    // Runs BEFORE the model loop and spends ZERO model turns. For each movement
+    // pattern the program needs, we call search_exercises directly, filter the
+    // results to the user's equipment profile (same exact-match the draft validator
+    // uses), and accumulate a deduped candidate pool. This replaces the model-driven
+    // search loop that could spin for 12 rounds and never search a required pattern
+    // (production: horizontal_pull was never searched). It cannot wander, cannot skip
+    // a pattern, and is bounded by a fixed plan.
+    if (programGenerationMode) {
+      const plan = buildDeterministicSearchPlan()
+      const RAW_LIMIT = 25
+      let searchTurn = 0
+      for (const step of plan) {
+        searchTurn++
+        const raw = executeExerciseSearch({ movementPattern: step.pattern, limit: RAW_LIMIT })
+        const filtered = filterCandidatesByEquipment(raw, allowedEquipment).slice(0, step.core ? 8 : 5)
+        const added = addCandidates(candidatePool, filtered)
+        console.log('[V-search-turn]', {
+          userId: user.id,
+          outerRound: 0,
+          searchTurn,
+          pattern: step.pattern,
+          core: step.core,
+          toolCallsThisTurn: 1,
+          resultCount: filtered.length,
+          newCandidateCount: added,
+          candidateCount: candidatePool.byId.size,
+          coveredPatterns: coveredCorePatterns(candidatePool),
+          missingPatterns: missingCorePatterns(candidatePool),
+          decision: hasFullCoreCoverage(candidatePool) ? 'core_complete' : 'continue',
+        })
+      }
+      hadSearchCalls = true
+
+      const transitioned = canHandoffToDraft(candidatePool)
       console.log('[V-search-final]', {
         userId: user.id,
-        totalSearchCalls: searchRounds,
-        uniqueSearches: uniqueSearchCount,
+        searchModelTurns: 0, // deterministic — no model turns spent on search
+        searchToolCalls: plan.length,
+        uniqueSearches: plan.length,
         totalCandidates: candidatePool.byId.size,
-        missingRequiredPatterns: missingCorePatterns(candidatePool),
+        coveredPatterns: coveredCorePatterns(candidatePool),
+        missingPatterns: missingCorePatterns(candidatePool),
+        terminationReason: hasFullCoreCoverage(candidatePool)
+          ? 'coverage_met'
+          : (transitioned ? 'viable_partial' : 'insufficient'),
         transitionedToProposal: transitioned,
+      })
+
+      if (!transitioned) {
+        // Genuinely too thin a pool (empty or below the viable floor) — a targeted
+        // failure, not a wasted Luna call. Ask for the missing intake field if any,
+        // else stream the controlled generation-failed message.
+        console.error('[V-search-insufficient]', {
+          userId: user.id,
+          totalCandidates: candidatePool.byId.size,
+          coveredPatterns: coveredCorePatterns(candidatePool),
+          missingRequiredPatterns: missingCorePatterns(candidatePool),
+        })
+        const missingPrompt = buildMissingContextPrompt(missingContext)
+        let failMsg = missingPrompt ?? GENERATION_FAILED_MESSAGE
+        if (wouldRepeatLast(failMsg)) failMsg = missingPrompt ?? GENERATION_FAILED_ALT_MESSAGE
+        await streamText(failMsg)
+        logModelSummary(missingPrompt ? 'ask_missing_field' : 'generation_failed')
+        emitRaw({ type: 'done' })
+        await writer.close().catch(() => {})
+        return
+      }
+
+      // Hand the candidate pool to Luna and FORCE propose_program in the loop below.
+      genPhase = 'draft'
+      chatMessages.push({
+        role: 'system',
+        content:
+          `EXERCISE CANDIDATE POOL — ${candidatePool.byId.size} validated exercises found for the user's equipment. ` +
+          `Build the full ${intake.weeks ?? 'requested'}-week program NOW by calling propose_program, using ONLY these exercise IDs:\n` +
+          buildCandidatePoolSummary(candidatePool) +
+          `\n\nYou have sufficient candidates. Do NOT request more searches. If a minor accessory role lacks an ideal match, pick the closest appropriate candidate above.`,
       })
     }
 
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
-        // ── Deterministic phase transition (program-generation only) ───────────
-        // Before each round, decide whether the search phase should end and the
-        // accumulated candidate pool be handed to the drafting model. This is the
-        // single guard that prevents an endless search loop and the token blowup.
-        if (programGenerationMode && genPhase === 'search') {
-          const totalTokens = promptTokens + completionTokens
-          const decision = shouldEndSearchPhase({ searchRounds, pool: candidatePool, totalTokens, modelStoppedSearching })
-          if (decision.end) {
-            if (!canHandoffToDraft(candidatePool)) {
-              // Every search returned nothing — a targeted failure, not an endless
-              // retry. The freeform guard below streams the controlled message.
-              logSearchFinal(false)
-              console.error('[V-search-insufficient]', {
-                userId: user.id,
-                reason: decision.reason,
-                missingRequiredPatterns: missingCorePatterns(candidatePool),
-                searchRounds,
-              })
-              break
-            }
-            genPhase = 'draft'
-            if (!searchHandoffInjected) {
-              searchHandoffInjected = true
-              logSearchFinal(true)
-              chatMessages.push({
-                role: 'system',
-                content:
-                  `EXERCISE CANDIDATE POOL — ${candidatePool.byId.size} validated exercises found for the user's equipment. ` +
-                  `Build the full ${intake.weeks ?? 'requested'}-week program NOW by calling propose_program, using ONLY these exercise IDs:\n` +
-                  buildCandidatePoolSummary(candidatePool) +
-                  `\n\nYou have sufficient candidates. Do NOT request more searches. If a minor accessory role lacks an ideal match, pick the closest appropriate candidate above.`,
-              })
-            }
-          }
-        }
-
-        // Hard cost guard — abort a runaway program-generation request before it can
-        // consume the token budget the production incident did (75k without a proposal).
-        // A valid program already breaks at the loop bottom, so reaching here means none exists yet.
+        // Emergency cost guard — the deterministic search phase spends zero model
+        // tokens, so reaching this means the Luna draft / quality loop itself ran
+        // away. A valid program already breaks at the loop bottom, so none exists yet.
         if (programGenerationMode && (promptTokens + completionTokens) >= MAX_ORCHESTRATION_TOKENS) {
-          logSearchFinal(genPhase !== 'search')
           console.error('[V-orchestration-budget-exhausted]', {
             userId: user.id,
             phase: genPhase,
@@ -453,9 +477,7 @@ export async function POST(req: NextRequest) {
         let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
         const roundStage = genPhase === 'escalation'
           ? 'quality_escalation'
-          : programGenerationMode
-            ? (genPhase === 'search' ? 'program_search' : 'program_generation')
-            : 'chat_intake'
+          : programGenerationMode ? 'program_generation' : 'chat_intake'
         try {
           const tRound = Date.now()
           console.log('[V-model]', { userId: user.id, stage: roundStage, model: toolRoundModel(), round, phase: programGenerationMode ? genPhase : 'chat' })
@@ -506,65 +528,30 @@ export async function POST(req: NextRequest) {
         const choice = response.choices[0]
         chatMessages.push(choice.message)
 
-        if (!choice.message.tool_calls?.length) {
-          // In the search phase, no tool call means the model believes it's done
-          // discovering exercises. Don't end the whole loop — flag it so the next
-          // iteration's transition check hands the pool to the drafting model.
-          if (programGenerationMode && genPhase === 'search') {
-            modelStoppedSearching = true
-            continue
-          }
-          break
-        }
-
-        // Count this as a search round only when it actually issued search calls.
-        const roundHasSearch = choice.message.tool_calls.some(
-          c => (c as unknown as { function: { name: string } }).function.name === 'search_exercises'
-        )
-        if (programGenerationMode && genPhase === 'search' && roundHasSearch) searchRounds++
+        if (!choice.message.tool_calls?.length) break
 
         for (const call of choice.message.tool_calls) {
           const fn = (call as unknown as { function: { name: string; arguments: string } }).function
           let result: string
 
           if (fn.name === 'search_exercises') {
+            // Only reachable in plain-chat / workout mode — program generation does
+            // its searching deterministically before the loop. tool_choice forces
+            // propose_program in the program draft phase, so this never fires there.
             hadSearchCalls = true
             const params = JSON.parse(fn.arguments) as Parameters<typeof executeExerciseSearch>[0]
             const normalizedParams = { ...params, limit: Math.min(params.limit ?? 15, 20) }
             const cacheKey = JSON.stringify(normalizedParams)
-            let found: ExerciseSummary[]
-            const cached = searchCache.has(cacheKey)
-            if (cached) {
+            if (searchCache.has(cacheKey)) {
               result = searchCache.get(cacheKey)!
-              found = []
             } else {
-              uniqueSearchCount++
               emitRaw({ type: 'status', message: 'Searching exercises...' })
-              found = executeExerciseSearch(normalizedParams)
+              const found = executeExerciseSearch(normalizedParams)
               result = found.length > 0
                 ? JSON.stringify(found)
                 : JSON.stringify({ message: EMPTY_SEARCH_RESULT })
               searchCache.set(cacheKey, result)
             }
-            const newCandidateCount = addCandidates(candidatePool, found)
-            // Concise search telemetry — no user free text, only structured filters.
-            console.log('[V-search-summary]', {
-              userId: user.id,
-              round,
-              model: toolRoundModel(),
-              query: normalizedParams.query ?? null,
-              filters: {
-                movementPattern: normalizedParams.movementPattern ?? null,
-                equipment: normalizedParams.equipment ?? null,
-                bodyPart: normalizedParams.bodyPart ?? null,
-                muscle: normalizedParams.muscle ?? null,
-              },
-              resultCount: cached ? 'cached' : found.length,
-              newCandidateCount,
-              totalCandidateCount: candidatePool.byId.size,
-              missingPatterns: missingCorePatterns(candidatePool),
-              nextAction: 'continue_search',
-            })
 
           } else if (fn.name === 'propose_workout') {
             const draft = JSON.parse(fn.arguments) as WorkoutDraft
