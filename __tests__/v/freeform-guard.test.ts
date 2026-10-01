@@ -30,7 +30,24 @@ import {
   GENERATION_FAILED_ALT_MESSAGE,
   PROGRAM_INTENT_PATTERN,
   QUALITY_EXHAUSTED_MESSAGE,
+  CORRECTION_SYSTEM_PROMPT,
+  SYSTEM_PROMPT,
 } from '../../app/api/coach/constants'
+
+// ─── Delta-focused correction prompt is compact ───────────────────────────────
+// A quality-correction round must NOT resend the full system prompt. The correction
+// system prompt carries only the minimal fix instructions.
+
+describe('CORRECTION_SYSTEM_PROMPT is compact and targeted', () => {
+  it('is far smaller than the full SYSTEM_PROMPT', () => {
+    expect(CORRECTION_SYSTEM_PROMPT.length).toBeLessThan(SYSTEM_PROMPT.length / 2)
+  })
+  it('instructs minimal, pool-only correction via propose_program', () => {
+    expect(CORRECTION_SYSTEM_PROMPT).toMatch(/propose_program/)
+    expect(CORRECTION_SYSTEM_PROMPT).toMatch(/only|minimum/i)
+    expect(CORRECTION_SYSTEM_PROMPT).toMatch(/deload/i)
+  })
+})
 
 // ─── No generic "go ahead" retry anywhere ─────────────────────────────────────
 

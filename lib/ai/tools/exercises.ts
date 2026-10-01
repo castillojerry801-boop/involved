@@ -46,6 +46,20 @@ export interface ExerciseSearchParams {
   limit?: number
 }
 
+// Role priority for search ranking: compounds surface before accessories/isolations.
+// This prevents dataset-order bias (ExerciseDB IDs 0001-0200 are mostly barbell) from
+// making barbell the default equipment when V searches without an equipment filter.
+const ROLE_PRIORITY: Record<string, number> = {
+  primary_compound:   0,
+  secondary_compound: 1,
+  accessory:          2,
+  power:              3,
+  isolation:          4,
+  conditioning:       5,
+  mobility:           6,
+  unknown:            7,
+}
+
 export function executeExerciseSearch(params: ExerciseSearchParams): ExerciseSummary[] {
   const { query = '', bodyPart = 'all', equipment, muscle, movementPattern, limit = 15 } = params
 
@@ -65,6 +79,15 @@ export function executeExerciseSearch(params: ExerciseSearchParams): ExerciseSum
   if (movementPattern) {
     results = results.filter(e => classifyExercise(e).primaryMovementPattern === movementPattern)
   }
+
+  // Rank by exerciseRole so primary/secondary compounds appear before accessories
+  // and isolations, regardless of the underlying dataset order. Within the same role,
+  // preserve the original order (which text-match relevance already implies).
+  results.sort((a, b) => {
+    const ra = ROLE_PRIORITY[classifyExercise(a).exerciseRole] ?? 7
+    const rb = ROLE_PRIORITY[classifyExercise(b).exerciseRole] ?? 7
+    return ra - rb
+  })
 
   return results.slice(0, limit).map(toSummary)
 }

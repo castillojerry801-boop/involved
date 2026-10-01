@@ -12,6 +12,12 @@ export interface QualityIssue {
   severity: 'error' | 'warning'
   code: string
   message: string
+  /**
+   * Optional structured diagnostics for telemetry. Lets the route log the exact
+   * day/role/draft state behind an error instead of a bare repeated code. Never
+   * user-facing.
+   */
+  meta?: Record<string, unknown>
 }
 
 export interface QualityContext {
@@ -409,7 +415,7 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
   if (fitnessLevel) {
     const expLevel = toExperienceLevel(fitnessLevel)
     if (expLevel) {
-      for (const day of draft.days) {
+      for (const [dayIndex, day] of draft.days.entries()) {
         const sessionType = day.session_type ?? inferSessionType(day.name, day.focus)
         if (!sessionType) continue
 
@@ -428,6 +434,17 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
             severity: 'error',
             code: 'MISSING_REQUIRED_ROLE',
             message: `Day "${day.name}" (${sessionType}, ${expLevel}) is missing required movement-pattern roles: ${missingRoleNames.join(', ')}. Search for exercises with these movementPatterns and add them to this session.`,
+            meta: {
+              dayIndex,
+              dayName: day.name,
+              sessionType,
+              experienceLevel: expLevel,
+              inferredSessionType: !day.session_type,
+              requiredRoles: roles.filter(r => r.required).map(r => `${r.role}(${r.pattern})`),
+              missingRoles: missingRoleNames,
+              presentPatterns: [...dayPatterns],
+              exercises: day.exercises.map(ex => ({ id: ex.exercise_id, pattern: ex.intended_pattern })),
+            },
           })
         }
       }
@@ -593,9 +610,10 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
     const exWithWP = allExercises(draft).filter(ex => (ex.week_progressions?.length ?? 0) >= 2)
 
     // WEEK_PROGRESSIONS_UNIFORM: entries exist but never change (prose-only "12-week").
+    // deload/taper flags count as a structural change even when sets/reps are identical.
     if (exWithWP.length > 0) {
       const wpSig = (ex: (typeof exWithWP)[number], w: NonNullable<typeof ex.week_progressions>[number]) =>
-        `${w.sets ?? ex.sets}|${w.reps_min ?? ex.reps_min}|${w.reps_max ?? ex.reps_max}|${w.rpe ?? ''}|${(w.load_note ?? '').trim().toLowerCase()}`
+        `${w.sets ?? ex.sets}|${w.reps_min ?? ex.reps_min}|${w.reps_max ?? ex.reps_max}|${w.rpe ?? ''}|${(w.load_note ?? '').trim().toLowerCase()}|${w.deload ?? ''}|${w.taper ?? ''}`
       const anyExerciseChangesAcrossWeeks = exWithWP.some(ex => {
         const sigs = new Set(ex.week_progressions!.map(w => wpSig(ex, w)))
         return sigs.size > 1
@@ -610,20 +628,31 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
     }
 
     // NO_STRUCTURED_DELOAD: a real ≥8-week plan reduces volume at least once
-    // (deload), either via a labeled phase or a week_progressions set-count drop.
+    // (deload), either via a labeled phase, a set-count drop, or the deload:true flag.
     const hasDeloadPhase = draft.phases?.some(p => /deload|recovery|taper|unload|back[\s-]?off/i.test(p.name + ' ' + (p.focus ?? ''))) ?? false
-    const hasVolumeDrop = allExercises(draft).some(ex => {
-      const wps = (ex.week_progressions ?? []).slice().sort((a, b) => a.week - b.week)
-      for (let i = 1; i < wps.length; i++) {
-        if ((wps[i].sets ?? ex.sets) < (wps[i - 1].sets ?? ex.sets)) return true
+    const anyDeloadFlag = allExercises(draft).some(ex => (ex.week_progressions ?? []).some(wp => wp.deload === true))
+    const anySetDrop = allExercises(draft).some(ex => {
+      const sorted = (ex.week_progressions ?? []).slice().sort((a, b) => a.week - b.week)
+      for (let i = 1; i < sorted.length; i++) {
+        if ((sorted[i].sets ?? ex.sets) < (sorted[i - 1].sets ?? ex.sets)) return true
       }
       return false
     })
+    const hasVolumeDrop = anyDeloadFlag || anySetDrop
     if (!hasDeloadPhase && !hasVolumeDrop) {
       issues.push({
         severity: 'error',
         code: 'NO_STRUCTURED_DELOAD',
         message: `${weeks}-week program has no structural deload — sets/volume never drop and no deload phase is defined. Reduce volume at recovery weeks (typically ~week 4 and ~week 8) via week_progressions with fewer sets, or add a deload phase.`,
+        meta: {
+          weeks,
+          hasDeloadPhase,
+          anyDeloadFlag,
+          anySetDrop,
+          phases: draft.phases?.map(p => p.name) ?? [],
+          exercisesWithWeekProgressions: allExercises(draft).filter(ex => (ex.week_progressions ?? []).length > 0).length,
+          totalExercises: allExercises(draft).length,
+        },
       })
     }
 
@@ -658,6 +687,7 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
   }
 
   // NO_FINAL_TAPER: a 12+ week program should end with reduced volume (peak/taper).
+  // Not a hard error — taper/peak applies to strength/sport programs, not all muscle-building blocks.
   if (weeks >= 12) {
     const hasTaperPhase = draft.phases?.some(p => /taper|peak|deload|recovery|unload/i.test(p.name + ' ' + (p.focus ?? ''))) ?? false
     const finalReduced = allExercises(draft).some(ex => {
@@ -665,13 +695,15 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
       if (wps.length < 2) return false
       const maxSets = Math.max(...wps.map(w => w.sets ?? ex.sets))
       const finalW = wps.reduce((a, b) => (b.week > a.week ? b : a))
+      // Explicit taper flag satisfies the requirement without requiring a set-count comparison
+      if (finalW.week >= weeks - 1 && finalW.taper === true) return true
       return finalW.week >= weeks - 1 && (finalW.sets ?? ex.sets) < maxSets
     })
     if (!hasTaperPhase && !finalReduced) {
       issues.push({
         severity: 'warning',
         code: 'NO_FINAL_TAPER',
-        message: `The final week of a ${weeks}-week program should reduce volume (taper/peak) so the block resolves rather than ending at peak fatigue. Add a reduced-volume final week in week_progressions or a taper phase.`,
+        message: `The final week of a ${weeks}-week program should reduce volume (taper/peak) so the block resolves rather than ending at peak fatigue. Add a reduced-volume final week in week_progressions (with taper:true or fewer sets) or a taper phase.`,
       })
     }
   }
@@ -732,6 +764,27 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
           message: `Day "${day.name}" declares session_type "${st}" but has ${reason}. The exercise selection doesn't match the declared session type.`,
         })
       }
+    }
+  }
+
+  // CONDITIONING_NO_AEROBIC_MODALITY: a day labeled "conditioning" has no actual
+  // aerobic/cardio exercise. Resistance-only circuits labeled conditioning are
+  // valid but the day should either include a real cardio modality or be relabeled.
+  for (const day of draft.days) {
+    const isConditioningDay =
+      day.session_type === 'conditioning' ||
+      /\bcondition|metcon|\bcardio\b|\baerob/i.test(day.name + ' ' + (day.focus ?? ''))
+    if (!isConditioningDay) continue
+
+    const hasAerobicExercise = day.exercises.some(ex =>
+      ex.intended_pattern === 'cardio' || ex.intended_pattern === 'carry'
+    )
+    if (!hasAerobicExercise && day.exercises.length > 0) {
+      issues.push({
+        severity: 'warning',
+        code: 'CONDITIONING_NO_AEROBIC_MODALITY',
+        message: `Day "${day.name}" is labeled as conditioning but contains no exercise with intended_pattern "cardio" or "carry". Add a real conditioning modality (treadmill run, rower, Airdyne, sled push, farmer carry, etc.) or rename the day to reflect its actual content.`,
+      })
     }
   }
 

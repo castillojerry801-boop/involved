@@ -478,3 +478,263 @@ describe('Scenario 12 — Same note text on nearly all exercises → IDENTICAL_W
     expect(issue?.severity).toBe('warning')
   })
 })
+
+// ─── Scenario 13 — deload:true flag satisfies NO_STRUCTURED_DELOAD ─────────────
+
+describe('Scenario 13 — deload:true on week_progressions satisfies NO_STRUCTURED_DELOAD', () => {
+  // 8-week program — uses deload:true flag without reducing sets
+  const draft: ProgramDraft = {
+    program_name: '8-Week Muscle Build',
+    description: 'Progressive muscle-building block with structured deload in week 4.',
+    weeks: 8,
+    phases: [
+      { name: 'Accumulation', weeks: '1-4', focus: 'volume' },
+      { name: 'Intensification', weeks: '5-8', focus: 'intensity' },
+    ],
+    progression_strategy: 'Add 5 lb/week weeks 1-3. Week 4 deload: reduce RIR to 4. Resume week 5.',
+    days: [
+      makeDay('Full Body', [
+        makeExercise('0662', 'horizontal_push', {
+          progression_model: 'linear',
+          progression_increment: 5,
+          week_progressions: [
+            { week: 1, sets: 4, reps_min: 5, reps_max: 5, load_note: '70% 1RM' },
+            { week: 2, sets: 4, reps_min: 5, reps_max: 5, load_note: '72.5% 1RM' },
+            { week: 3, sets: 4, reps_min: 5, reps_max: 5, load_note: '75% 1RM' },
+            { week: 4, sets: 4, reps_min: 5, reps_max: 5, load_note: '60% — deload', deload: true },
+            { week: 5, sets: 4, reps_min: 5, reps_max: 5, load_note: '77.5% 1RM' },
+          ],
+        }),
+        makeExercise('3561', 'hinge'),
+        makeExercise('3470', 'lunge'),
+      ]),
+    ],
+  }
+
+  it('does NOT fire NO_STRUCTURED_DELOAD when deload:true is present', () => {
+    const issues = validateProgramQuality(draft, { weeks: 8 })
+    expect(issues.find(i => i.code === 'NO_STRUCTURED_DELOAD')).toBeUndefined()
+  })
+
+  it('does NOT fire WEEK_PROGRESSIONS_UNIFORM when deload:true distinguishes a week', () => {
+    // Same sets/reps but week 4 has deload:true — should count as a structural change
+    const issues = validateProgramQuality(draft, { weeks: 8 })
+    expect(issues.find(i => i.code === 'WEEK_PROGRESSIONS_UNIFORM')).toBeUndefined()
+  })
+
+  it('DOES fire NO_STRUCTURED_DELOAD on 8-week program with no deload flag or volume drop', () => {
+    const noDeloadDraft: ProgramDraft = {
+      program_name: 'No Deload 8 Week',
+      weeks: 8,
+      phases: [
+        { name: 'Build', weeks: '1-8', focus: 'progressive overload' },
+      ],
+      progression_strategy: 'Add 5 lb each week on all main lifts.',
+      days: [makeDay('Day A', [
+        makeExercise('0662', 'horizontal_push', {
+          week_progressions: [
+            { week: 1, sets: 3, load_note: '70%' },
+            { week: 2, sets: 3, load_note: '72.5%' },
+            { week: 3, sets: 3, load_note: '75%' },
+            { week: 4, sets: 3, load_note: '77.5%' },  // no deload flag, no set reduction
+          ],
+        }),
+        makeExercise('3561', 'hinge'),
+      ])],
+    }
+    const issues = validateProgramQuality(noDeloadDraft, { weeks: 8 })
+    expect(issues.find(i => i.code === 'NO_STRUCTURED_DELOAD')?.severity).toBe('error')
+  })
+})
+
+// ─── Scenario 14 — taper:true flag satisfies NO_FINAL_TAPER ──────────────────
+
+describe('Scenario 14 — taper:true on final week_progressions entry satisfies NO_FINAL_TAPER', () => {
+  const draft: ProgramDraft = {
+    program_name: '12-Week Strength Block',
+    weeks: 12,
+    phases: [
+      { name: 'Base',   weeks: '1-4',  focus: 'volume at 65-70%' },
+      { name: 'Build',  weeks: '5-8',  focus: 'intensity at 75-80%' },
+      { name: 'Peak',   weeks: '9-11', focus: 'near-max work 85-90%' },
+      { name: 'Deload', weeks: '12',   focus: 'taper and recovery' },
+    ],
+    progression_strategy: 'Linear periodization. Deload week 4 and week 8. Taper week 12.',
+    days: [
+      makeDay('Strength Day', [
+        makeExercise('0662', 'horizontal_push', {
+          progression_model: 'percentage_rpe',
+          week_progressions: [
+            { week: 1,  sets: 4, load_note: '70% 1RM' },
+            { week: 4,  sets: 3, load_note: '60% — deload', deload: true },
+            { week: 8,  sets: 3, load_note: '65% — deload', deload: true },
+            { week: 11, sets: 5, load_note: '90% 1RM' },
+            { week: 12, sets: 2, load_note: '60% — taper', taper: true },
+          ],
+        }),
+        makeExercise('3561', 'hinge'),
+        makeExercise('3470', 'lunge'),
+      ]),
+    ],
+  }
+
+  it('does NOT fire NO_FINAL_TAPER when taper:true is on a final week entry', () => {
+    const issues = validateProgramQuality(draft, { weeks: 12 })
+    expect(issues.find(i => i.code === 'NO_FINAL_TAPER')).toBeUndefined()
+  })
+
+  it('does NOT fire NO_STRUCTURED_DELOAD when deload:true entries are present', () => {
+    const issues = validateProgramQuality(draft, { weeks: 12 })
+    expect(issues.find(i => i.code === 'NO_STRUCTURED_DELOAD')).toBeUndefined()
+  })
+})
+
+// ─── Scenario 15 — CONDITIONING_NO_AEROBIC_MODALITY warning ──────────────────
+
+describe('Scenario 15 — conditioning day with no cardio pattern → CONDITIONING_NO_AEROBIC_MODALITY', () => {
+  const makeResistanceDay = (name: string) =>
+    makeDay(name, [
+      makeExercise('0662', 'horizontal_push'),
+      makeExercise('3561', 'hinge'),
+      makeExercise('3470', 'lunge'),
+    ])
+
+  it('fires CONDITIONING_NO_AEROBIC_MODALITY when session_type=conditioning has no cardio exercise', () => {
+    const draft: ProgramDraft = {
+      program_name: 'Conditioning Mislabeled',
+      weeks: 6,
+      progression_strategy: 'Add reps each week',
+      days: [
+        {
+          name: 'Conditioning + Full Body',
+          session_type: 'conditioning',
+          estimated_duration_minutes: 45,
+          exercises: [
+            makeExercise('0662', 'horizontal_push'),
+            makeExercise('3561', 'hinge'),
+          ],
+        },
+        makeResistanceDay('Strength Day'),
+      ],
+    }
+    const issues = validateProgramQuality(draft, { weeks: 6 })
+    expect(issues.find(i => i.code === 'CONDITIONING_NO_AEROBIC_MODALITY')?.severity).toBe('warning')
+  })
+
+  it('does NOT fire when conditioning day has a cardio exercise', () => {
+    const draft: ProgramDraft = {
+      program_name: 'Proper Conditioning',
+      weeks: 6,
+      progression_strategy: 'Build cardio base each week',
+      days: [
+        {
+          name: 'Conditioning',
+          session_type: 'conditioning',
+          estimated_duration_minutes: 40,
+          // A real cardio exercise — ExerciseDB bodyPart='cardio' → intended_pattern='cardio'
+          exercises: [
+            makeExercise('0662', 'cardio'),  // set intended_pattern to cardio explicitly
+            makeExercise('3561', 'hinge'),
+          ],
+        },
+        makeResistanceDay('Strength Day'),
+      ],
+    }
+    const issues = validateProgramQuality(draft, { weeks: 6 })
+    expect(issues.find(i => i.code === 'CONDITIONING_NO_AEROBIC_MODALITY')).toBeUndefined()
+  })
+
+  it('fires when day name contains "conditioning" even without session_type set', () => {
+    const draft: ProgramDraft = {
+      program_name: 'Mixed Program',
+      weeks: 4,
+      progression_strategy: 'Progress each week',
+      days: [
+        makeDay('Conditioning + Full Body', [
+          makeExercise('0662', 'horizontal_push'),
+          makeExercise('3561', 'hinge'),
+        ]),
+        makeResistanceDay('Strength Day'),
+      ],
+    }
+    const issues = validateProgramQuality(draft, { weeks: 4 })
+    expect(issues.find(i => i.code === 'CONDITIONING_NO_AEROBIC_MODALITY')).toBeDefined()
+  })
+})
+
+// ─── Structured telemetry — errors carry diagnostic meta ───────────────────────
+
+describe('MISSING_REQUIRED_ROLE carries structured meta (exact day + roles)', () => {
+  // Beginner full_body day with ONLY a horizontal push — missing squat, hinge,
+  // vertical_pull (all required for beginner full_body).
+  const draft: ProgramDraft = {
+    program_name: 'Starter',
+    weeks: 4,
+    progression_strategy: 'Add load weekly',
+    days: [
+      makeDay('Full Body A', [makeExercise('0662', 'horizontal_push')], { session_type: 'full_body' }),
+    ],
+  }
+
+  it('reports the exact day name, session_type, missing roles, and selected exercises', () => {
+    const issues = validateProgramQuality(draft, { fitnessLevel: 'beginner', weeks: 4 })
+    const issue = issues.find(i => i.code === 'MISSING_REQUIRED_ROLE')
+    expect(issue).toBeDefined()
+    expect(issue!.meta).toBeDefined()
+    const meta = issue!.meta as Record<string, unknown>
+    expect(meta.dayIndex).toBe(0)
+    expect(meta.dayName).toBe('Full Body A')
+    expect(meta.sessionType).toBe('full_body')
+    expect(meta.experienceLevel).toBe('beginner')
+    expect(meta.missingRoles).toBeInstanceOf(Array)
+    expect((meta.missingRoles as string[]).join(' ')).toMatch(/squat|hinge|vertical_pull/)
+    expect(meta.presentPatterns).toEqual(['horizontal_push'])
+    expect(meta.exercises).toEqual([{ id: '0662', pattern: 'horizontal_push' }])
+  })
+})
+
+describe('NO_STRUCTURED_DELOAD carries meta and actionable feedback', () => {
+  // 12-week program, no deload phase, no deload:true, no set drop anywhere.
+  const draft: ProgramDraft = {
+    program_name: 'Linear 12',
+    weeks: 12,
+    phases: [{ name: 'Base', weeks: '1-6', focus: 'volume' }, { name: 'Build', weeks: '7-12', focus: 'intensity' }],
+    progression_strategy: 'Add 5 lb each week',
+    days: [
+      makeDay('Day A', [makeExercise('0662', 'horizontal_push', {
+        progression_model: 'linear',
+        week_progressions: [
+          { week: 1, sets: 3 }, { week: 6, sets: 3 }, { week: 12, sets: 3 },
+        ],
+      })]),
+    ],
+  }
+
+  it('fires with meta showing no deload phase / flag / set drop', () => {
+    const issues = validateProgramQuality(draft, { weeks: 12 })
+    const issue = issues.find(i => i.code === 'NO_STRUCTURED_DELOAD')
+    expect(issue).toBeDefined()
+    const meta = issue!.meta as Record<string, unknown>
+    expect(meta.hasDeloadPhase).toBe(false)
+    expect(meta.anyDeloadFlag).toBe(false)
+    expect(meta.anySetDrop).toBe(false)
+    expect(meta.phases).toEqual(['Base', 'Build'])
+    expect(issue!.message).toMatch(/deload/i)
+  })
+
+  it('does NOT fire once a deload:true flag is added (targeted correction clears it)', () => {
+    const fixed: ProgramDraft = {
+      ...draft,
+      days: [
+        makeDay('Day A', [makeExercise('0662', 'horizontal_push', {
+          progression_model: 'linear',
+          week_progressions: [
+            { week: 1, sets: 3 }, { week: 4, sets: 2, deload: true }, { week: 12, sets: 3 },
+          ],
+        })]),
+      ],
+    }
+    const issues = validateProgramQuality(fixed, { weeks: 12 })
+    expect(issues.find(i => i.code === 'NO_STRUCTURED_DELOAD')).toBeUndefined()
+  })
+})

@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { getUser } from '@/lib/supabase/server'
+import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { prisma } from '@/lib/prisma'
-
-const admin = createSupabaseAdmin(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
 
 export async function DELETE(
   _req: NextRequest,
@@ -27,7 +21,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  await admin.storage.from('progress-photos').remove([photo.storageKey])
+  await getSupabaseAdmin().storage.from('progress-photos').remove([photo.storageKey])
   await prisma.progressPhoto.delete({ where: { id } })
 
   return NextResponse.json({ success: true })

@@ -1,10 +1,11 @@
 'use client'
 
 import { X, Heart, Info } from 'lucide-react'
-import { type Exercise, getGifUrl } from '@/lib/exercises'
+import { type Exercise } from '@/lib/exercises'
 import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { type PreferenceState } from './exercise-browser'
 import { cn } from '@/lib/utils'
+import { ExerciseMedia } from './ExerciseMedia'
 
 interface Props {
   exercise: Exercise
@@ -20,13 +21,14 @@ export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleF
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full sm:max-w-lg bg-white dark:bg-zinc-900 rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
-        {/* GIF header */}
+        {/* Media header — ymove HD thumbnail/video with ExerciseDB GIF fallback */}
         <div className="relative bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center" style={{ minHeight: 220 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={getGifUrl(exercise.id)}
-            alt={exercise.name}
-            className="h-52 w-auto object-contain"
+          <ExerciseMedia
+            exerciseId={exercise.id}
+            exerciseName={exercise.name}
+            className="h-52 w-auto"
+            crop="default"
+            showVideo
           />
           <button
             onClick={onClose}

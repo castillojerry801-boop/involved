@@ -15,10 +15,20 @@ import type { ProgramDraft } from '@/lib/ai/tools/program'
 import { validateProgramQuality } from '@/lib/v/program-quality'
 import { extractEquipmentFromConversation, buildEquipmentCapabilitySummary } from '@/lib/v/equipment-normalize'
 import { parseProgramIntake, missingProgramContext, buildMissingContextPrompt } from '@/lib/v/program-intake'
-import { SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN } from './constants'
+import {
+  createCandidatePool, addCandidates, coveredCorePatterns, missingCorePatterns,
+  canHandoffToDraft, hasFullCoreCoverage, buildCandidatePoolSummary, compactCandidatePool,
+  buildDeterministicSearchPlan, filterCandidatesByEquipment, MAX_ORCHESTRATION_TOKENS,
+  type SearchPhase, type CandidatePool,
+} from '@/lib/v/search-orchestration'
+import type { QualityIssue } from '@/lib/v/program-quality'
+import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN } from './constants'
 import type OpenAI from 'openai'
 
-const QUALITY_RETRY_LIMIT = 2
+// One Luna draft + one targeted Luna correction, then escalate to Sol (which also
+// gets a draft + one correction). Kept at 1 so a correction round is cheap and the
+// token budget survives draft → correction → Sol escalation.
+const QUALITY_RETRY_LIMIT = 1
 
 function billingPeriod() {
   const d = new Date()
@@ -209,7 +219,10 @@ export async function POST(req: NextRequest) {
       ? '\n\n' + buildEquipmentCapabilitySummary(allowedEquipment)
       : '\n\nEQUIPMENT: Full gym access assumed — all movement patterns and equipment available.'
 
-    const chatMessages: ChatMessage[] = [
+    // Reassignable: on a quality-correction round it is REPLACED with a compact,
+    // delta-only context (see buildCorrectionMessages) instead of resending the full
+    // transcript + prior draft + pool, which is what blew the token budget.
+    let chatMessages: ChatMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT + contextSnippet + equipmentCapabilitySummary },
       ...body.messages.map(m => ({ role: m.role, content: m.content } as ChatMessage)),
     ]
@@ -293,10 +306,70 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Resolve the model for a tool round from the current state:
-    //   escalation (Sol) > program-generation (Luna) > chat/intake/search (mini).
-    const toolRoundModel = () =>
-      modelEscalated ? escalationModel : (programGenerationMode ? programModel : chatModel)
+    // ── Program-generation phase state ────────────────────────────────────────
+    // The SEARCH phase is deterministic and runs BEFORE the model loop (see below):
+    // the server calls search_exercises directly for each needed movement pattern,
+    // spending zero model turns. By the time the model loop runs for a program, the
+    // phase is already 'draft' (Luna) or escalates to 'escalation' (Sol) on quality
+    // failure. Plain chat / workout requests never set genPhase to anything but the
+    // initial 'draft' sentinel (unused — those run on the cheap chat model).
+    let genPhase: SearchPhase = 'draft'
+    const candidatePool = createCandidatePool()
+    // Set once the deterministic search + compaction complete; reused to build cheap
+    // correction contexts without re-deriving anything.
+    let compactedPool: CandidatePool = candidatePool
+    let candidateSummaryText = ''
+    let requestSummary = ''
+    // Raw JSON of the most recent draft + its hard errors — the only draft-specific
+    // payload a correction round needs (no transcript, no prior drafts, no tool log).
+    let lastDraftJson = ''
+    let correctionErrors: QualityIssue[] = []
+    let correctionPending = false
+
+    // Build a compact, delta-only message array for a quality-correction round. This
+    // REPLACES the full chatMessages so a correction never resends the system prompt,
+    // the conversation, prior drafts, or the tool-call history — only the current
+    // draft, the exact errors, the immutable request, and the candidate pool.
+    const buildCorrectionMessages = (draftJson: string, errors: QualityIssue[]): ChatMessage[] => [
+      {
+        role: 'system',
+        content:
+          CORRECTION_SYSTEM_PROMPT +
+          `\n\nREQUEST (immutable): ${requestSummary}` +
+          `\n\nCANDIDATE POOL (use ONLY these exercise IDs):\n${candidateSummaryText}`,
+      },
+      { role: 'user', content: `CURRENT DRAFT (JSON):\n${draftJson}` },
+      {
+        role: 'user',
+        content:
+          `This draft has these quality errors. Fix ONLY these, keep everything else, and call propose_program with the corrected draft:\n` +
+          errors.map(e => `[${e.code}] ${e.message}`).join('\n'),
+      },
+    ]
+
+    // Resolve the model for a tool round from the current phase/state:
+    //   escalation (Sol) > draft (Luna) > chat/intake (mini).
+    const toolRoundModel = () => {
+      if (!programGenerationMode) return chatModel
+      if (genPhase === 'escalation') return escalationModel
+      return programModel // 'draft' — the only loop phase for program generation
+    }
+
+    // Tools + tool_choice for the current round. For program generation the loop only
+    // ever runs the DRAFT/ESCALATION phase (search already happened deterministically),
+    // so we expose ONLY propose_program and FORCE it — the drafting model must produce
+    // a draft from the candidate pool and can never stall in a search loop. Plain chat
+    // keeps all tools on auto.
+    const roundToolShape = (): {
+      tools: typeof tools
+      tool_choice: OpenAI.Chat.ChatCompletionToolChoiceOption
+    } => {
+      if (!programGenerationMode) return { tools, tool_choice: 'auto' }
+      return {
+        tools: [PROPOSE_PROGRAM_TOOL],
+        tool_choice: { type: 'function', function: { name: 'propose_program' } },
+      }
+    }
 
     const callModel = async (
       messages: OpenAI.Chat.ChatCompletionMessageParam[],
@@ -307,12 +380,13 @@ export async function POST(req: NextRequest) {
       // Once tool calls begin, use the full 4000 for exercise lists and program drafts.
       const hasToolHistory = messages.some(m => m.role === 'tool')
       const maxTokens = useTools ? (hasToolHistory ? 4000 : 500) : 1500
+      const shape = roundToolShape()
       // Deterministic per-model request shape (next-gen gets max_completion_tokens
       // and reasoning_effort:'none' for tools; legacy gets max_tokens + temperature).
       const params = {
         model: selectedModel,
         messages,
-        ...(useTools ? { tools, tool_choice: 'auto' as const } : {}),
+        ...(useTools ? { tools: shape.tools, tool_choice: shape.tool_choice } : {}),
         ...buildModelParamShape(selectedModel, useTools, maxTokens),
       } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -341,15 +415,151 @@ export async function POST(req: NextRequest) {
       throw new Error('OpenAI retries exhausted')
     }
 
+    // ── DETERMINISTIC SEARCH PHASE (program generation only) ──────────────────
+    // Runs BEFORE the model loop and spends ZERO model turns. For each movement
+    // pattern the program needs, we call search_exercises directly, filter the
+    // results to the user's equipment profile (same exact-match the draft validator
+    // uses), and accumulate a deduped candidate pool. This replaces the model-driven
+    // search loop that could spin for 12 rounds and never search a required pattern
+    // (production: horizontal_pull was never searched). It cannot wander, cannot skip
+    // a pattern, and is bounded by a fixed plan.
+    if (programGenerationMode) {
+      const plan = buildDeterministicSearchPlan()
+      const RAW_LIMIT = 25
+      let searchTurn = 0
+      for (const step of plan) {
+        searchTurn++
+        const raw = executeExerciseSearch({ movementPattern: step.pattern, limit: RAW_LIMIT })
+        const filtered = filterCandidatesByEquipment(raw, allowedEquipment).slice(0, step.core ? 8 : 5)
+        const added = addCandidates(candidatePool, filtered)
+        console.log('[V-search-turn]', {
+          userId: user.id,
+          outerRound: 0,
+          searchTurn,
+          pattern: step.pattern,
+          core: step.core,
+          toolCallsThisTurn: 1,
+          resultCount: filtered.length,
+          newCandidateCount: added,
+          candidateCount: candidatePool.byId.size,
+          coveredPatterns: coveredCorePatterns(candidatePool),
+          missingPatterns: missingCorePatterns(candidatePool),
+          decision: hasFullCoreCoverage(candidatePool) ? 'core_complete' : 'continue',
+        })
+      }
+      hadSearchCalls = true
+
+      // ── Deterministic candidate compaction ──────────────────────────────────
+      // 14 searches can return ~80+ candidates; Luna does not need them all, and
+      // resending the full pool on every correction round is the main prompt-bloat
+      // source. Compact to a bounded, high-quality set (per-pattern caps, canonical
+      // ranking, equipment diversity) BEFORE anything is sent to the model. Coverage
+      // is preserved — every pattern that had a candidate keeps at least one.
+      const rawCandidateCount = candidatePool.byId.size
+      compactedPool = compactCandidatePool(candidatePool)
+      candidateSummaryText = buildCandidatePoolSummary(compactedPool)
+      console.log('[V-candidate-compaction]', {
+        userId: user.id,
+        before: rawCandidateCount,
+        after: compactedPool.byId.size,
+        coveredPatternsBefore: coveredCorePatterns(candidatePool),
+        coveredPatternsAfter: coveredCorePatterns(compactedPool),
+        equipmentTypes: [...new Set([...compactedPool.byId.values()].map(e => e.equipment))],
+      })
+
+      const transitioned = canHandoffToDraft(compactedPool)
+      console.log('[V-search-final]', {
+        userId: user.id,
+        searchModelTurns: 0, // deterministic — no model turns spent on search
+        searchToolCalls: plan.length,
+        uniqueSearches: plan.length,
+        totalCandidates: compactedPool.byId.size,
+        rawCandidates: rawCandidateCount,
+        coveredPatterns: coveredCorePatterns(compactedPool),
+        missingPatterns: missingCorePatterns(compactedPool),
+        terminationReason: hasFullCoreCoverage(compactedPool)
+          ? 'coverage_met'
+          : (transitioned ? 'viable_partial' : 'insufficient'),
+        transitionedToProposal: transitioned,
+      })
+
+      if (!transitioned) {
+        // Genuinely too thin a pool (empty or below the viable floor) — a targeted
+        // failure, not a wasted Luna call. Ask for the missing intake field if any,
+        // else stream the controlled generation-failed message.
+        console.error('[V-search-insufficient]', {
+          userId: user.id,
+          totalCandidates: compactedPool.byId.size,
+          coveredPatterns: coveredCorePatterns(compactedPool),
+          missingRequiredPatterns: missingCorePatterns(compactedPool),
+        })
+        const missingPrompt = buildMissingContextPrompt(missingContext)
+        let failMsg = missingPrompt ?? GENERATION_FAILED_MESSAGE
+        if (wouldRepeatLast(failMsg)) failMsg = missingPrompt ?? GENERATION_FAILED_ALT_MESSAGE
+        await streamText(failMsg)
+        logModelSummary(missingPrompt ? 'ask_missing_field' : 'generation_failed')
+        emitRaw({ type: 'done' })
+        await writer.close().catch(() => {})
+        return
+      }
+
+      // Immutable request constraints, reused verbatim in correction rounds so a
+      // cheap correction prompt still carries everything Luna must honour.
+      requestSummary =
+        `${intake.weeks ?? '?'}-week program, ${intake.trainingDaysPerWeek ?? '?'} days/week. ` +
+        `Goal: ${intake.primaryGoal ?? 'general fitness'}${intake.secondaryGoals.length ? ' + ' + intake.secondaryGoals.join(', ') : ''}. ` +
+        `Training background: ${intake.readinessState ?? 'unspecified'}. ` +
+        `Equipment: ${allowedEquipment?.length ? allowedEquipment.join(', ') : 'full gym'}.`
+
+      // Hand the compacted candidate pool to Luna and FORCE propose_program below.
+      genPhase = 'draft'
+      chatMessages.push({
+        role: 'system',
+        content:
+          `EXERCISE CANDIDATE POOL — ${compactedPool.byId.size} validated exercises for the user's equipment. ` +
+          `Build the full ${intake.weeks ?? 'requested'}-week program NOW by calling propose_program, using ONLY these exercise IDs:\n` +
+          candidateSummaryText +
+          `\n\nYou have sufficient candidates. Do NOT request more searches. If a minor accessory role lacks an ideal match, pick the closest appropriate candidate above.`,
+      })
+
+      // Context-size telemetry — reveals where the draft prompt budget goes.
+      const systemChars = typeof chatMessages[0]?.content === 'string' ? chatMessages[0].content.length : 0
+      const conversationChars = body.messages.reduce((n, m) => n + m.content.length, 0)
+      const candidateTextChars = candidateSummaryText.length
+      const totalChars = systemChars + conversationChars + candidateTextChars
+      console.log('[V-context-size]', {
+        userId: user.id,
+        candidateCount: compactedPool.byId.size,
+        candidateTextChars,
+        systemChars,
+        conversationChars,
+        estimatedPromptTokens: Math.round(totalChars / 4),
+      })
+    }
+
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
+        // Emergency cost guard — the deterministic search phase spends zero model
+        // tokens, so reaching this means the Luna draft / quality loop itself ran
+        // away. A valid program already breaks at the loop bottom, so none exists yet.
+        if (programGenerationMode && (promptTokens + completionTokens) >= MAX_ORCHESTRATION_TOKENS) {
+          console.error('[V-orchestration-budget-exhausted]', {
+            userId: user.id,
+            phase: genPhase,
+            totalTokens: promptTokens + completionTokens,
+            budget: MAX_ORCHESTRATION_TOKENS,
+            missingRequiredPatterns: missingCorePatterns(candidatePool),
+          })
+          break
+        }
+
         let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
-        const roundStage = modelEscalated
+        const roundStage = genPhase === 'escalation'
           ? 'quality_escalation'
-          : (programGenerationMode ? 'program_generation' : 'chat_intake')
+          : programGenerationMode ? 'program_generation' : 'chat_intake'
         try {
           const tRound = Date.now()
-          console.log('[V-model]', { userId: user.id, stage: roundStage, model: toolRoundModel(), round })
+          console.log('[V-model]', { userId: user.id, stage: roundStage, model: toolRoundModel(), round, phase: programGenerationMode ? genPhase : 'chat' })
           response = await callModel(chatMessages, true)
           console.log(`[V-perf] round=${round} llm=${Date.now() - tRound}ms`)
         } catch (err: unknown) {
@@ -404,6 +614,9 @@ export async function POST(req: NextRequest) {
           let result: string
 
           if (fn.name === 'search_exercises') {
+            // Only reachable in plain-chat / workout mode — program generation does
+            // its searching deterministically before the loop. tool_choice forces
+            // propose_program in the program draft phase, so this never fires there.
             hadSearchCalls = true
             const params = JSON.parse(fn.arguments) as Parameters<typeof executeExerciseSearch>[0]
             const normalizedParams = { ...params, limit: Math.min(params.limit ?? 15, 20) }
@@ -431,6 +644,7 @@ export async function POST(req: NextRequest) {
 
           } else if (fn.name === 'propose_program') {
             proposeProgramAttempted = true
+            lastDraftJson = fn.arguments // the only draft payload a correction round needs
             emitRaw({ type: 'status', message: qualityRetries > 0 ? 'Refining your program...' : 'Building your program...' })
             let draft: ProgramDraft
             try {
@@ -487,9 +701,24 @@ export async function POST(req: NextRequest) {
                   qualityErrors: hardErrors.map(i => i.code),
                   qualityRetry: qualityRetries,
                 })
+                console.log('[V-quality-summary]', {
+                  durationWeeks: draft.weeks ?? null,
+                  model: modelEscalated ? escalationModel : programModel,
+                  attempt: qualityRetries + (modelEscalated ? QUALITY_RETRY_LIMIT + 1 : 0),
+                  errors: hardErrors.map(e => e.code),
+                  warnings: qualityIssues.filter(i => i.severity === 'warning').map(i => i.code),
+                })
+                // Per-error structured detail — so a MISSING_REQUIRED_ROLE or
+                // NO_STRUCTURED_DELOAD is traceable to the exact day/role/draft state
+                // instead of a bare repeated code.
+                for (const e of hardErrors) {
+                  if (e.meta) console.log('[V-quality-detail]', { userId: user.id, code: e.code, ...e.meta })
+                }
 
                 if (hardErrors.length > 0 && qualityRetries < QUALITY_RETRY_LIMIT) {
                   qualityRetries++
+                  correctionErrors = hardErrors
+                  correctionPending = true
                   result = JSON.stringify({
                     status: 'quality_issues',
                     message: `Program passed structural validation but has ${hardErrors.length} quality error(s). Fix ALL listed errors and call propose_program again with a corrected draft. Do not respond to the user yet.`,
@@ -503,7 +732,10 @@ export async function POST(req: NextRequest) {
                   // errors persist after normal retries.
                   console.warn('[V-model]', { userId: user.id, stage: 'quality_escalation', model: escalationModel, from: programModel, codes: hardErrors.map(e => e.code) })
                   modelEscalated = true
+                  genPhase = 'escalation'
                   qualityRetries = 0
+                  correctionErrors = hardErrors
+                  correctionPending = true
                   emitRaw({ type: 'status', message: 'Refining your program...' })
                   result = JSON.stringify({
                     status: 'quality_issues',
@@ -535,6 +767,24 @@ export async function POST(req: NextRequest) {
         }
 
         if (pendingProgram?.valid || qualityExhausted) break
+
+        // On a quality correction (Luna retry or Sol escalation), REPLACE the growing
+        // transcript with a compact delta-only context. This is the fix for the token
+        // blowup: a correction no longer resends the system prompt, conversation, prior
+        // drafts, or tool history — only the current draft, the errors, and the pool.
+        if (correctionPending && lastDraftJson) {
+          chatMessages = buildCorrectionMessages(lastDraftJson, correctionErrors)
+          correctionPending = false
+          console.log('[V-correction-context]', {
+            userId: user.id,
+            phase: genPhase,
+            draftChars: lastDraftJson.length,
+            errorCount: correctionErrors.length,
+            estimatedPromptTokens: Math.round(
+              (chatMessages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 0), 0)) / 4,
+            ),
+          })
+        }
       }
 
       // ── Freeform guard ───────────────────────────────────────────────────────

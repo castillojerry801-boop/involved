@@ -33,28 +33,38 @@ describe('model routing defaults', () => {
   })
 })
 
-// Mirrors the route's toolRoundModel() selection so a change to the precedence
-// is caught here.
-function toolRoundModel(state: { modelEscalated: boolean; programGenerationMode: boolean }): string {
-  return state.modelEscalated
-    ? V_ESCALATION_MODEL
-    : (state.programGenerationMode ? V_PROGRAM_MODEL : V_CHAT_MODEL)
+// Mirrors the route's PHASE-AWARE toolRoundModel() selection. The SEARCH phase is now
+// DETERMINISTIC and server-driven (zero model turns), so it never selects a model. The
+// model loop runs only two program phases:
+//   draft       → Luna builds the ProgramDraft (propose_program forced)
+//   escalation  → Sol, quality recovery only.
+// Plain chat / intake runs on the cheap model.
+type GenPhase = 'draft' | 'escalation'
+function toolRoundModel(state: { programGenerationMode: boolean; genPhase: GenPhase }): string {
+  if (!state.programGenerationMode) return V_CHAT_MODEL
+  if (state.genPhase === 'escalation') return V_ESCALATION_MODEL
+  return V_PROGRAM_MODEL // 'draft' — the only loop phase for program generation
 }
 
-describe('toolRoundModel precedence', () => {
+describe('toolRoundModel precedence (phase-aware)', () => {
   it('plain chat / intake → cheap model', () => {
-    expect(toolRoundModel({ modelEscalated: false, programGenerationMode: false })).toBe('gpt-4o-mini')
+    expect(toolRoundModel({ programGenerationMode: false, genPhase: 'draft' })).toBe('gpt-4o-mini')
   })
-  it('program generation (context complete) → Luna', () => {
-    expect(toolRoundModel({ modelEscalated: false, programGenerationMode: true })).toBe('gpt-6-luna')
+
+  it('program-generation DRAFT phase → Luna', () => {
+    expect(toolRoundModel({ programGenerationMode: true, genPhase: 'draft' })).toBe('gpt-6-luna')
   })
-  it('escalation overrides everything → Sol', () => {
-    expect(toolRoundModel({ modelEscalated: true, programGenerationMode: true })).toBe('gpt-6-sol')
+
+  it('escalation phase overrides everything → Sol', () => {
+    expect(toolRoundModel({ programGenerationMode: true, genPhase: 'escalation' })).toBe('gpt-6-sol')
   })
-  it('Sol is NOT used for intake/chat (never reached without program generation)', () => {
-    // Escalation only flips true inside the program-generation quality loop; a
-    // chat/intake turn can never set it, so Sol is impossible there.
-    expect(toolRoundModel({ modelEscalated: false, programGenerationMode: false })).not.toBe('gpt-6-sol')
+
+  it('Luna is NOT used for intake/chat (the loop model is mini there)', () => {
+    expect(toolRoundModel({ programGenerationMode: false, genPhase: 'draft' })).not.toBe('gpt-6-luna')
+  })
+
+  it('Sol is NOT used for the draft phase (escalation only)', () => {
+    expect(toolRoundModel({ programGenerationMode: true, genPhase: 'draft' })).not.toBe('gpt-6-sol')
   })
 })
 

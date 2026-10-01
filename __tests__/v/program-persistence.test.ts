@@ -191,4 +191,23 @@ describe('canonical display names never expose raw provider strings', () => {
     expect(name).not.toBe('stationary bike run v. 3')
     expect(name).not.toMatch(/v\.\s*\d/)   // no "v. 3"
   })
+
+  // Scaffold fixes — these names were appearing verbatim from ExerciseDB in production
+  it('0977 Band Front Lateral Raise → Resistance Band Front Raise', () => {
+    const name = getInvolvedDisplayName('0977', 'band front lateral raise')
+    expect(name).toBe('Resistance Band Front Raise')
+    expect(name.startsWith('Band ')).toBe(false)
+  })
+
+  it('0988 Band Single-Arm Standing Low Row → Resistance Band Row (Single Arm)', () => {
+    const name = getInvolvedDisplayName('0988', 'band single-arm standing low row')
+    expect(name).toBe('Resistance Band Row (Single Arm)')
+    expect(name.startsWith('Band ')).toBe(false)
+  })
+
+  it('0998 Band Side Triceps Extension → Resistance Band Triceps Extension (Single Arm)', () => {
+    const name = getInvolvedDisplayName('0998', 'band side triceps extension')
+    expect(name).toBe('Resistance Band Triceps Extension (Single Arm)')
+    expect(name.startsWith('Band ')).toBe(false)
+  })
 })
