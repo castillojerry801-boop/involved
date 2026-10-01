@@ -12,6 +12,12 @@ export interface QualityIssue {
   severity: 'error' | 'warning'
   code: string
   message: string
+  /**
+   * Optional structured diagnostics for telemetry. Lets the route log the exact
+   * day/role/draft state behind an error instead of a bare repeated code. Never
+   * user-facing.
+   */
+  meta?: Record<string, unknown>
 }
 
 export interface QualityContext {
@@ -409,7 +415,7 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
   if (fitnessLevel) {
     const expLevel = toExperienceLevel(fitnessLevel)
     if (expLevel) {
-      for (const day of draft.days) {
+      for (const [dayIndex, day] of draft.days.entries()) {
         const sessionType = day.session_type ?? inferSessionType(day.name, day.focus)
         if (!sessionType) continue
 
@@ -428,6 +434,17 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
             severity: 'error',
             code: 'MISSING_REQUIRED_ROLE',
             message: `Day "${day.name}" (${sessionType}, ${expLevel}) is missing required movement-pattern roles: ${missingRoleNames.join(', ')}. Search for exercises with these movementPatterns and add them to this session.`,
+            meta: {
+              dayIndex,
+              dayName: day.name,
+              sessionType,
+              experienceLevel: expLevel,
+              inferredSessionType: !day.session_type,
+              requiredRoles: roles.filter(r => r.required).map(r => `${r.role}(${r.pattern})`),
+              missingRoles: missingRoleNames,
+              presentPatterns: [...dayPatterns],
+              exercises: day.exercises.map(ex => ({ id: ex.exercise_id, pattern: ex.intended_pattern })),
+            },
           })
         }
       }
@@ -613,21 +630,29 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
     // NO_STRUCTURED_DELOAD: a real ≥8-week plan reduces volume at least once
     // (deload), either via a labeled phase, a set-count drop, or the deload:true flag.
     const hasDeloadPhase = draft.phases?.some(p => /deload|recovery|taper|unload|back[\s-]?off/i.test(p.name + ' ' + (p.focus ?? ''))) ?? false
-    const hasVolumeDrop = allExercises(draft).some(ex => {
-      const wps = ex.week_progressions ?? []
-      // Explicit deload flag satisfies the requirement without requiring a set reduction
-      if (wps.some(wp => wp.deload === true)) return true
-      const sorted = wps.slice().sort((a, b) => a.week - b.week)
+    const anyDeloadFlag = allExercises(draft).some(ex => (ex.week_progressions ?? []).some(wp => wp.deload === true))
+    const anySetDrop = allExercises(draft).some(ex => {
+      const sorted = (ex.week_progressions ?? []).slice().sort((a, b) => a.week - b.week)
       for (let i = 1; i < sorted.length; i++) {
         if ((sorted[i].sets ?? ex.sets) < (sorted[i - 1].sets ?? ex.sets)) return true
       }
       return false
     })
+    const hasVolumeDrop = anyDeloadFlag || anySetDrop
     if (!hasDeloadPhase && !hasVolumeDrop) {
       issues.push({
         severity: 'error',
         code: 'NO_STRUCTURED_DELOAD',
         message: `${weeks}-week program has no structural deload — sets/volume never drop and no deload phase is defined. Reduce volume at recovery weeks (typically ~week 4 and ~week 8) via week_progressions with fewer sets, or add a deload phase.`,
+        meta: {
+          weeks,
+          hasDeloadPhase,
+          anyDeloadFlag,
+          anySetDrop,
+          phases: draft.phases?.map(p => p.name) ?? [],
+          exercisesWithWeekProgressions: allExercises(draft).filter(ex => (ex.week_progressions ?? []).length > 0).length,
+          totalExercises: allExercises(draft).length,
+        },
       })
     }
 

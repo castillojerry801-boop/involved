@@ -50,12 +50,13 @@ export const ENRICHMENT_PATTERNS = [
 export const MIN_VIABLE_CORE_PATTERNS = 4
 export const MIN_VIABLE_CANDIDATES = 8
 
-// Emergency orchestration cost ceiling. With deterministic search the search phase
-// spends ZERO model tokens, so in practice only the Luna draft (+ any quality retry)
-// consumes tokens. This ceiling is a last-resort guard against a pathological draft
-// loop — not the practical budget. The real cost control is: deterministic search
-// (0 tokens) + a single forced Luna draft.
-export const MAX_ORCHESTRATION_TOKENS = 45_000
+// Emergency orchestration cost ceiling (cumulative prompt + completion tokens).
+// Search spends ZERO model tokens; with a compacted candidate pool and delta-only
+// correction rounds, the realistic path is: Luna draft (~11k) + one Luna correction
+// (~12k) + Sol escalation (~12k) ≈ 35k. This ceiling leaves ~2x headroom so a
+// legitimate draft→correction→Sol sequence always completes, while still catching a
+// pathological loop (the original model-driven search bug exceeded 75k).
+export const MAX_ORCHESTRATION_TOKENS = 70_000
 
 export type SearchPhase = 'search' | 'draft' | 'escalation'
 
@@ -147,6 +148,73 @@ export function filterCandidatesByEquipment(
   if (!allowedEquipment || allowedEquipment.length === 0) return results
   const allowed = new Set([...allowedEquipment.map(e => e.toLowerCase()), 'body weight'])
   return results.filter(e => allowed.has(e.equipment.toLowerCase()))
+}
+
+// How many candidates to keep per pattern after compaction. Core compounds keep a
+// few more for programming choice; accessories need less.
+export const MAX_CORE_CANDIDATES = 5
+export const MAX_ACCESSORY_CANDIDATES = 3
+
+// Deterministic ranking signals (lower = better). Primary compounds first; high
+// classification confidence first; raw/provider name variants ("v. 2", "(male)",
+// lever/smith machine quirks) are deprioritized in favour of cleaner canonical names.
+const ROLE_RANK: Record<string, number> = {
+  primary_compound: 0, secondary_compound: 1, power: 2, accessory: 3,
+  isolation: 4, conditioning: 5, mobility: 6, unknown: 7,
+}
+const CONF_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 }
+const RAW_VARIANT_RE = /\bv\.?\s*\d|\((?:male|female)\)|\blever\b|version\s*\d/i
+
+function candidateScore(ex: ExerciseSummary): number {
+  const role = ROLE_RANK[ex.exerciseRole] ?? 7
+  const conf = CONF_RANK[ex.classificationConfidence] ?? 2
+  const rawPenalty = RAW_VARIANT_RE.test(ex.name) ? 10 : 0
+  return role * 3 + conf + rawPenalty
+}
+
+function groupByPattern(pool: CandidatePool): Map<string, ExerciseSummary[]> {
+  const byPattern = new Map<string, ExerciseSummary[]>()
+  for (const ex of pool.byId.values()) {
+    const key = ex.movementPattern || 'other'
+    const list = byPattern.get(key)
+    if (list) list.push(ex)
+    else byPattern.set(key, [ex])
+  }
+  return byPattern
+}
+
+/**
+ * Deterministically compact a large candidate pool down to a bounded, high-quality
+ * set before sending it to the drafting model. No AI ranking — purely:
+ *   - keep N per pattern (core more than accessory),
+ *   - rank by role → confidence → canonical-vs-raw-variant name,
+ *   - prefer equipment diversity (a first pass takes one per distinct equipment),
+ *   - stable tie-break by id so the result is reproducible.
+ * Every pattern that had a candidate keeps at least one, so coverage is preserved.
+ */
+export function compactCandidatePool(pool: CandidatePool): CandidatePool {
+  const out = createCandidatePool()
+  for (const [pattern, list] of groupByPattern(pool)) {
+    const isCore = (CORE_MOVEMENT_PATTERNS as readonly string[]).includes(pattern)
+    const cap = isCore ? MAX_CORE_CANDIDATES : MAX_ACCESSORY_CANDIDATES
+    const sorted = list.slice().sort((a, b) => candidateScore(a) - candidateScore(b) || a.id.localeCompare(b.id))
+
+    const picked: ExerciseSummary[] = []
+    const seenEquip = new Set<string>()
+    // Pass 1 — one per distinct equipment type, best first (equipment diversity).
+    for (const ex of sorted) {
+      if (picked.length >= cap) break
+      const eq = ex.equipment.toLowerCase()
+      if (!seenEquip.has(eq)) { picked.push(ex); seenEquip.add(eq) }
+    }
+    // Pass 2 — fill any remaining slots with the next best regardless of equipment.
+    for (const ex of sorted) {
+      if (picked.length >= cap) break
+      if (!picked.includes(ex)) picked.push(ex)
+    }
+    addCandidates(out, picked)
+  }
+  return out
 }
 
 /**

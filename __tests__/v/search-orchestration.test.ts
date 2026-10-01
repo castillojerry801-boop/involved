@@ -18,12 +18,16 @@ import {
   ENRICHMENT_PATTERNS,
   MIN_VIABLE_CORE_PATTERNS,
   MIN_VIABLE_CANDIDATES,
+  MAX_CORE_CANDIDATES,
+  MAX_ACCESSORY_CANDIDATES,
+  MAX_ORCHESTRATION_TOKENS,
   createCandidatePool,
   addCandidates,
   coveredCorePatterns,
   missingCorePatterns,
   hasFullCoreCoverage,
   canHandoffToDraft,
+  compactCandidatePool,
   buildDeterministicSearchPlan,
   filterCandidatesByEquipment,
   buildCandidatePoolSummary,
@@ -181,6 +185,92 @@ describe('production scenario — 5/6 core, horizontal_pull missing, 21 candidat
     // plan always does — so in production this pattern would be covered too.
     const planned = buildDeterministicSearchPlan().map(s => s.pattern)
     expect(planned).toContain('horizontal_pull')
+  })
+})
+
+// ─── Candidate compaction — bound the pool before Luna ─────────────────────────
+
+describe('compactCandidatePool', () => {
+  function bigPool() {
+    // 14 patterns × 6 candidates = 84 raw candidates (the production count).
+    const pool = createCandidatePool()
+    const allPatterns = [...CORE_MOVEMENT_PATTERNS, ...ENRICHMENT_PATTERNS]
+    const equipments = ['barbell', 'dumbbell', 'cable', 'machine', 'kettlebell', 'body weight']
+    for (const p of allPatterns) {
+      for (let i = 0; i < 6; i++) {
+        addCandidates(pool, [ex(p, { id: `${p}-${i}`, equipment: equipments[i % equipments.length] })])
+      }
+    }
+    return pool
+  }
+
+  it('compacts ~84 raw candidates to a bounded high-quality pool', () => {
+    const pool = bigPool()
+    expect(pool.byId.size).toBe(84)
+    const compact = compactCandidatePool(pool)
+    const maxExpected =
+      CORE_MOVEMENT_PATTERNS.length * MAX_CORE_CANDIDATES +
+      ENRICHMENT_PATTERNS.length * MAX_ACCESSORY_CANDIDATES
+    expect(compact.byId.size).toBeLessThanOrEqual(maxExpected)
+    expect(compact.byId.size).toBeLessThan(pool.byId.size)
+    expect(compact.byId.size).toBeGreaterThanOrEqual(30) // still enough choice
+  })
+
+  it('preserves every core pattern that had a candidate', () => {
+    const before = coveredCorePatterns(bigPool())
+    const after = coveredCorePatterns(compactCandidatePool(bigPool()))
+    expect(after.sort()).toEqual(before.sort())
+    expect(after).toHaveLength(CORE_MOVEMENT_PATTERNS.length)
+  })
+
+  it('does NOT collapse equipment diversity to a single type', () => {
+    // A pattern with many barbell + a few other-equipment candidates must keep variety.
+    const pool = createCandidatePool()
+    addCandidates(pool, [
+      ...Array.from({ length: 6 }, (_, i) => ex('squat', { id: `bb-${i}`, equipment: 'barbell' })),
+      ex('squat', { id: 'db-1', equipment: 'dumbbell' }),
+      ex('squat', { id: 'mc-1', equipment: 'machine' }),
+    ])
+    const compact = compactCandidatePool(pool)
+    const squatEquip = new Set(
+      [...compact.byId.values()].filter(e => e.movementPattern === 'squat').map(e => e.equipment),
+    )
+    expect(squatEquip.size).toBeGreaterThan(1) // not all barbell
+  })
+
+  it('ranks canonical/clean names above raw provider variants when over the cap', () => {
+    // 6 squat candidates, cap is MAX_CORE_CANDIDATES (5). The raw "v. 2" variant
+    // (duplicate equipment, lowest score) must be the one dropped.
+    const pool = createCandidatePool()
+    addCandidates(pool, [
+      ex('squat', { id: 'a', name: 'Barbell Back Squat', equipment: 'barbell' }),
+      ex('squat', { id: 'b', name: 'Goblet Squat', equipment: 'dumbbell' }),
+      ex('squat', { id: 'c', name: 'Hack Squat', equipment: 'machine' }),
+      ex('squat', { id: 'd', name: 'Kettlebell Squat', equipment: 'kettlebell' }),
+      ex('squat', { id: 'e', name: 'Cable Squat', equipment: 'cable' }),
+      ex('squat', { id: 'raw', name: 'Barbell Full Squat v. 2', equipment: 'barbell' }),
+    ])
+    const compact = compactCandidatePool(pool)
+    expect(compact.byId.has('raw')).toBe(false)       // raw variant dropped
+    expect(compact.byId.has('a')).toBe(true)          // clean canonical kept
+  })
+
+  it('preserves full candidate metadata (id, name, equipment, pattern)', () => {
+    const pool = createCandidatePool()
+    addCandidates(pool, [ex('squat', { id: '0026', name: 'Barbell Back Squat', equipment: 'barbell' })])
+    const kept = [...compactCandidatePool(pool).byId.values()][0]
+    expect(kept).toMatchObject({ id: '0026', name: 'Barbell Back Squat', equipment: 'barbell', movementPattern: 'squat' })
+  })
+})
+
+// ─── Budget allows draft + correction + Sol after optimization ─────────────────
+
+describe('orchestration budget', () => {
+  it('ceiling accommodates draft (~11k) + correction (~12k) + Sol (~12k) with headroom', () => {
+    // After compaction + delta correction the realistic path is ~35k cumulative.
+    expect(MAX_ORCHESTRATION_TOKENS).toBeGreaterThanOrEqual(35_000 + 10_000)
+    // ...but still catches the pathological pre-fix loop that exceeded 75k.
+    expect(MAX_ORCHESTRATION_TOKENS).toBeLessThan(75_000)
   })
 })
 
