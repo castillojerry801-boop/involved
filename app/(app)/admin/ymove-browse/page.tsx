@@ -1,10 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import {
-  Search, ChevronLeft, ChevronRight, X, RefreshCw,
-  CheckCircle, Play, EyeOff, Eye,
-} from 'lucide-react'
+import { Search, X, RefreshCw, CheckCircle, Play, EyeOff, Eye, Video, VideoOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -12,6 +9,11 @@ import { cn } from '@/lib/utils'
 interface YmoveItem {
   ymoveId: string
   name: string
+  category: string | null
+  muscleGroup: string | null
+  equipment: string | null
+  difficulty: string | null
+  hasVideo: boolean
   mappedTo: string | null
 }
 
@@ -29,13 +31,11 @@ interface ExerciseResult {
 
 function ExerciseSearch({
   ymoveId,
-  ymoveName,
   currentMappedTo,
   onMapped,
   onNoMatch,
 }: {
   ymoveId: string
-  ymoveName: string
   currentMappedTo: string | null
   onMapped: (displayName: string) => void
   onNoMatch: () => void
@@ -49,10 +49,7 @@ function ExerciseSearch({
   const timeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { inputRef.current?.focus() }, [])
-
-  useEffect(() => {
-    setSaved(currentMappedTo)
-  }, [currentMappedTo])
+  useEffect(() => { setSaved(currentMappedTo) }, [currentMappedTo])
 
   function handleInput(val: string) {
     setQuery(val)
@@ -88,10 +85,10 @@ function ExerciseSearch({
       })
       if (res.status === 409) {
         const data = await res.json() as { existingName?: string }
-        const confirm = window.confirm(
+        const ok = window.confirm(
           `"${ex.displayName}" already maps to a different ymove video.\n${data.existingName ? `Currently: ${data.existingName}` : ''}\n\nOverwrite?`
         )
-        if (confirm) await assign(ex, true)
+        if (ok) await assign(ex, true)
         return
       }
       if (res.ok) {
@@ -101,12 +98,6 @@ function ExerciseSearch({
     } finally {
       setSaving(null)
     }
-  }
-
-  async function markNoMatch() {
-    // No-match is stored on the exercise side (null ymoveExerciseId on our canonical).
-    // Here we just dismiss — the ymove video may match something else.
-    onNoMatch()
   }
 
   return (
@@ -124,9 +115,7 @@ function ExerciseSearch({
         </div>
       ) : (
         <>
-          <p className="mb-2 text-xs font-medium text-zinc-400">
-            Which ExerciseDB exercise is this?
-          </p>
+          <p className="mb-2 text-xs font-medium text-zinc-400">Which ExerciseDB exercise is this?</p>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500" />
             {searching && <RefreshCw className="absolute right-2.5 top-1/2 -translate-y-1/2 size-3.5 animate-spin text-zinc-500" />}
@@ -134,7 +123,7 @@ function ExerciseSearch({
               ref={inputRef}
               value={query}
               onChange={e => handleInput(e.target.value)}
-              placeholder="Search: bench press, squat, curl…"
+              placeholder="bench press, squat, curl…"
               className="w-full rounded-lg border border-zinc-700 bg-zinc-800 py-2 pl-8 pr-8 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
             />
           </div>
@@ -148,9 +137,7 @@ function ExerciseSearch({
                   disabled={saving === ex.exerciseDbId}
                   className={cn(
                     'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                    ex.alreadyMapped
-                      ? 'bg-zinc-800/40 hover:bg-zinc-700/60'
-                      : 'bg-zinc-800 hover:bg-zinc-700',
+                    'bg-zinc-800 hover:bg-zinc-700',
                     saving === ex.exerciseDbId && 'opacity-50',
                   )}
                 >
@@ -172,10 +159,7 @@ function ExerciseSearch({
             <p className="mt-2 text-xs text-zinc-500">No exercises found.</p>
           )}
 
-          <button
-            onClick={markNoMatch}
-            className="mt-3 text-xs text-zinc-600 hover:text-zinc-400"
-          >
+          <button onClick={onNoMatch} className="mt-3 text-xs text-zinc-600 hover:text-zinc-400">
             Skip — not a match for anything in our library
           </button>
         </>
@@ -210,7 +194,6 @@ export default function YmoveBrowsePage() {
     if (replace) setLoading(true)
     else setLoadingMore(true)
     setError(null)
-
     try {
       const params = new URLSearchParams({ page: String(p), pageSize: '48' })
       if (q) params.set('search', q)
@@ -232,7 +215,6 @@ export default function YmoveBrowsePage() {
     }
   }, [])
 
-  // Initial load + search changes reset to page 1
   useEffect(() => {
     setPage(1)
     void fetchPage(1, search, true)
@@ -255,12 +237,14 @@ export default function YmoveBrowsePage() {
     setActiveItem(item)
     setVideoUrl(null)
     setVideoError(false)
+    if (!item.hasVideo) return
     setVideoLoading(true)
     try {
       const res = await fetch(`/api/admin/ymove-browse?video=${encodeURIComponent(item.ymoveId)}`)
       if (res.ok) {
         const data = await res.json() as { videoUrl: string | null }
         setVideoUrl(data.videoUrl)
+        if (!data.videoUrl) setVideoError(true)
       } else {
         setVideoError(true)
       }
@@ -277,7 +261,6 @@ export default function YmoveBrowsePage() {
   }
 
   function handleMapped(ymoveId: string, displayName: string) {
-    // Update the item in place so the card shows the badge immediately
     setItems(prev =>
       prev.map(it => it.ymoveId === ymoveId ? { ...it, mappedTo: displayName } : it)
     )
@@ -291,13 +274,14 @@ export default function YmoveBrowsePage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 px-4 py-8">
-      <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-5xl">
 
         {/* Header */}
         <div className="mb-5">
           <h1 className="text-xl font-semibold text-zinc-100">ymove Browser</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Click a video, find the matching exercise in the search, tag it. Thumbnails are free — each video play uses 1 quota slot.
+            Click a row to watch the video, then search our exercise library to tag it.
+            Each video play uses 1 quota slot.
           </p>
         </div>
 
@@ -328,7 +312,7 @@ export default function YmoveBrowsePage() {
 
           {totalItems !== null && (
             <p className="text-sm text-zinc-500">
-              {totalItems.toLocaleString()} ymove exercises
+              {totalItems.toLocaleString()} exercises
               {mappedCount > 0 && <span className="ml-2 text-green-500">{mappedCount} tagged</span>}
             </p>
           )}
@@ -336,54 +320,59 @@ export default function YmoveBrowsePage() {
 
         {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
-        {/* Grid */}
+        {/* List */}
         {loading ? (
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-            {Array.from({ length: 48 }).map((_, i) => (
-              <div key={i} className="animate-pulse rounded-xl bg-zinc-800/50 aspect-square" />
+          <div className="space-y-1.5">
+            {Array.from({ length: 20 }).map((_, i) => (
+              <div key={i} className="animate-pulse h-14 rounded-xl bg-zinc-800/50" />
             ))}
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+            <div className="space-y-1.5">
               {displayed.map(item => (
                 <button
                   key={item.ymoveId}
                   onClick={() => void openLightbox(item)}
                   className={cn(
-                    'group relative flex flex-col overflow-hidden rounded-xl border text-left transition-all',
-                    'hover:border-zinc-500 hover:shadow-lg hover:shadow-black/40',
-                    item.mappedTo ? 'border-green-800/40' : 'border-zinc-800',
+                    'group flex w-full items-center gap-4 rounded-xl border px-4 py-3 text-left transition-all',
+                    'hover:border-zinc-500 hover:bg-zinc-800/70',
+                    item.mappedTo ? 'border-green-800/40 bg-zinc-900/60' : 'border-zinc-800 bg-zinc-900/30',
                   )}
                 >
-                  <div className="relative aspect-square w-full bg-zinc-800 overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/ymove/thumbnail/${item.ymoveId}?crop=square`}
-                      alt={item.name}
-                      className="size-full object-cover"
-                      loading="lazy"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/35 transition-colors">
-                      <Play className="size-6 text-white fill-white opacity-0 group-hover:opacity-90 transition-opacity drop-shadow" />
+                  {/* Play icon */}
+                  <div className={cn(
+                    'flex size-8 shrink-0 items-center justify-center rounded-lg',
+                    item.hasVideo ? 'bg-zinc-700 group-hover:bg-zinc-600' : 'bg-zinc-800',
+                  )}>
+                    {item.hasVideo
+                      ? <Play className="size-3.5 text-zinc-300 fill-zinc-300" />
+                      : <VideoOff className="size-3.5 text-zinc-600" />
+                    }
+                  </div>
+
+                  {/* Name + meta */}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-zinc-100">{item.name}</p>
+                    <p className="mt-0.5 text-xs text-zinc-500 truncate">
+                      {[item.muscleGroup, item.category, item.equipment, item.difficulty]
+                        .filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
+
+                  {/* Mapped badge */}
+                  {item.mappedTo ? (
+                    <div className="flex shrink-0 items-center gap-1.5 rounded-md bg-green-900/50 px-2.5 py-1">
+                      <CheckCircle className="size-3 text-green-400" />
+                      <span className="max-w-[140px] truncate text-xs text-green-300">{item.mappedTo}</span>
                     </div>
-                    {item.mappedTo && (
-                      <div className="absolute bottom-1 left-1 right-1">
-                        <div className="flex items-center gap-1 rounded-md bg-green-900/90 px-1.5 py-0.5">
-                          <CheckCircle className="size-2.5 text-green-400 shrink-0" />
-                          <span className="truncate text-[9px] text-green-300 font-medium">{item.mappedTo}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="px-1.5 py-1.5">
-                    <p className="text-[10px] text-zinc-400 leading-tight line-clamp-2">{item.name}</p>
-                  </div>
+                  ) : (
+                    <span className="shrink-0 text-xs text-zinc-600 group-hover:text-zinc-400">Tag →</span>
+                  )}
                 </button>
               ))}
             </div>
 
-            {/* Load more */}
             {hasMore && (
               <div className="mt-6 flex justify-center">
                 <button
@@ -425,15 +414,9 @@ export default function YmoveBrowsePage() {
                 </div>
               )}
               {videoError && !videoLoading && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                  {/* Still show thumbnail */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/ymove/thumbnail/${activeItem.ymoveId}?crop=portrait`}
-                    alt={activeItem.name}
-                    className="size-full object-cover opacity-60"
-                  />
-                  <p className="absolute text-xs text-zinc-400">No video available</p>
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-500">
+                  <VideoOff className="size-10" />
+                  <p className="text-sm">No video available</p>
                 </div>
               )}
               {videoUrl && (
@@ -446,26 +429,27 @@ export default function YmoveBrowsePage() {
                   className="size-full object-contain"
                 />
               )}
-              {!videoLoading && !videoUrl && !videoError && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={`/api/ymove/thumbnail/${activeItem.ymoveId}?crop=portrait`}
-                  alt={activeItem.name}
-                  className="size-full object-cover"
-                />
+              {!activeItem.hasVideo && !videoLoading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-600">
+                  <Video className="size-10" />
+                  <p className="text-sm">No video for this exercise</p>
+                </div>
               )}
             </div>
 
-            {/* Exercise name + UUID */}
+            {/* Name + UUID */}
             <div className="px-4 pt-3 pb-1">
               <p className="font-semibold text-zinc-100 leading-snug">{activeItem.name}</p>
-              <p className="mt-0.5 font-mono text-[10px] text-zinc-600 break-all select-all">{activeItem.ymoveId}</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                {[activeItem.muscleGroup, activeItem.category, activeItem.equipment]
+                  .filter(Boolean).join(' · ')}
+              </p>
+              <p className="mt-0.5 font-mono text-[10px] text-zinc-700 break-all select-all">{activeItem.ymoveId}</p>
             </div>
 
             {/* Assignment UI */}
             <ExerciseSearch
               ymoveId={activeItem.ymoveId}
-              ymoveName={activeItem.name}
               currentMappedTo={activeItem.mappedTo}
               onMapped={(displayName) => handleMapped(activeItem.ymoveId, displayName)}
               onNoMatch={closeLightbox}

@@ -126,6 +126,11 @@ export async function GET(req: NextRequest) {
     const items = list.map(item => ({
       ymoveId: item.id as string,
       name: (item.name ?? item.title ?? '') as string,
+      category: (item.category ?? null) as string | null,
+      muscleGroup: (item.muscleGroup ?? null) as string | null,
+      equipment: (item.equipment ?? null) as string | null,
+      difficulty: (item.difficulty ?? null) as string | null,
+      hasVideo: (item.hasVideo ?? false) as boolean,
       mappedTo: reverseMap[item.id as string] ?? null,
     }))
 
