@@ -1319,6 +1319,7 @@ enum HealthMetricType {
   hrv_ms
   stand_hours
   flights_climbed
+  water_ml
 }
 
 enum HealthSyncState {

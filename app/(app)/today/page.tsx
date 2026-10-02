@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { ActivityDetailSheet } from '@/components/today/ActivityDetailSheet'
+import { WaterWidget } from '@/components/today/WaterWidget'
 
 export const metadata: Metadata = { title: 'Today' }
 
@@ -201,7 +202,7 @@ export default async function TodayPage() {
     'America/New_York'
   const { dateStr, start: todayStart, end: todayEnd, greeting, displayDate } = getLocalDayInfo(tz)
 
-  const [nutrition, profile, todayWorkout, health] = await Promise.all([
+  const [nutrition, profile, todayWorkout, health, waterAgg] = await Promise.all([
     getTodayNutrition(user.id, dateStr),
     prisma.profile.findUnique({ where: { id: user.id }, select: { displayName: true, fitnessLevel: true } }).catch(() => null),
     prisma.workout.findFirst({
@@ -226,6 +227,10 @@ export default async function TodayPage() {
       include: { exercises: { select: { exerciseId: true }, take: 5 } },
     }).catch(() => null),
     getTodayHealth(user.id, todayStart, todayEnd),
+    prisma.healthMetric.aggregate({
+      where: { userId: user.id, metricType: 'water_ml', recordedAt: { gte: todayStart, lte: todayEnd } },
+      _sum: { value: true },
+    }),
   ])
 
   if (!profile?.fitnessLevel) redirect('/onboarding')
@@ -237,6 +242,7 @@ export default async function TodayPage() {
     'Athlete'
 
   const { totals, target, hasEntries } = nutrition
+  const totalWaterMl = waterAgg._sum.value != null ? Number(waterAgg._sum.value) : 0
   const calRemaining = target ? target.calories - totals.calories : 0
   const calorieStatus = target ? getCalorieStatus(totals.calories, target.calories) : 'under'
   const statusCfg = CALORIE_STATUS_CFG[calorieStatus]
@@ -337,6 +343,11 @@ export default async function TodayPage() {
             </div>
           </>
         )}
+      </Card>
+
+      {/* ── WATER ─────────────────────────────────────────────────────── */}
+      <Card className="mb-4">
+        <WaterWidget initialTotalMl={totalWaterMl} />
       </Card>
 
       {/* ── ACTIVITY ──────────────────────────────────────────────────── */}
