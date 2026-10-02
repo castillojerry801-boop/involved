@@ -24,24 +24,23 @@ export interface YmoveMedia {
   videoDurationSecs?: number
 }
 
-// In-memory slug → media cache. Thumbnails are permanent CDN URLs — safe to hold
-// for the lifetime of a deployment. Video URLs expire in 48 h and are never cached.
-const _thumbCache = new Map<string, YmoveMedia | null>()
-
-function toSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/['']/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
+export interface YmoveCandidate {
+  ymoveId: string
+  name: string
+  thumbnailUrl: string
 }
+
+// In-memory cache: ymove UUID → thumbnail data.
+// Thumbnails are permanent CDN URLs; safe to hold for the life of a deployment.
+// Video URLs expire in 48 h and are never cached here.
+const _uuidCache = new Map<string, YmoveMedia | null>()
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseMedia(data: Record<string, any>): YmoveMedia {
   const t = (data.thumbnails ?? {}) as Record<string, string>
   const base = (data.thumbnailUrl ?? '') as string
   return {
-    ymoveId: data.id as string,
+    ymoveId:   data.id as string,
     thumbnailUrl: base,
     thumbnails: {
       default:   t.default   ?? base,
@@ -49,14 +48,12 @@ function parseMedia(data: Record<string, any>): YmoveMedia {
       portrait:  t.portrait  ?? base,
       landscape: t.landscape ?? base,
     },
-    videoUrl:         data.videoUrl         as string | undefined,
-    videoHlsUrl:      data.videoHlsUrl      as string | undefined,
-    videoDurationSecs: data.videoDurationSecs as number | undefined,
+    videoUrl:          data.videoUrl          as string | undefined,
+    videoHlsUrl:       data.videoHlsUrl       as string | undefined,
+    videoDurationSecs: data.videoDurationSecs  as number | undefined,
   }
 }
 
-// thumbnails are ONLY returned when includeVideos=true — excludeVideos strips them too.
-// So we always fetch with includeVideos=true and cache the UUID/thumbnail data server-side.
 async function fetchByUuid(uuid: string): Promise<YmoveMedia | null> {
   const res = await fetch(
     `${YMOVE_BASE}/exercises/${encodeURIComponent(uuid)}?includeVideos=true`,
@@ -68,65 +65,65 @@ async function fetchByUuid(uuid: string): Promise<YmoveMedia | null> {
   return parseMedia(data)
 }
 
-async function fetchBySearch(name: string): Promise<YmoveMedia | null> {
-  // Search with includeVideos=true so the first result already has thumbnail data.
+/**
+ * Fetch ymove media by its exact exercise UUID.
+ *
+ * This is the only production-safe lookup path — no name matching,
+ * no fuzzy search. The UUID must come from a verified entry in
+ * data/ymove-exercise-mapping.json.
+ */
+export async function getYmoveById(
+  ymoveId: string,
+  includeVideo = false,
+): Promise<YmoveMedia | null> {
+  if (!includeVideo && _uuidCache.has(ymoveId)) {
+    return _uuidCache.get(ymoveId) ?? null
+  }
+
+  const media = await fetchByUuid(ymoveId)
+
+  if (!includeVideo) _uuidCache.set(ymoveId, media)
+  return media
+}
+
+// ─── DEV-ONLY HELPERS ────────────────────────────────────────────────────────
+// These functions exist to assist human admins in building the verified mapping.
+// They MUST NOT be called in production code paths.
+
+/**
+ * DEV-ONLY: Search ymove by display name and return the top N candidates.
+ *
+ * Use this to suggest possible ymove UUIDs for admin review — never to
+ * automatically determine what media a user sees.
+ *
+ * @throws if called in production (guard against accidental import)
+ */
+export async function searchYmoveCandidates(
+  query: string,
+  limit = 5,
+): Promise<YmoveCandidate[]> {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[ymove] searchYmoveCandidates must not be called in production')
+  }
+
   const res = await fetch(
-    `${YMOVE_BASE}/exercises?search=${encodeURIComponent(name)}&pageSize=1&includeVideos=true`,
+    `${YMOVE_BASE}/exercises?search=${encodeURIComponent(query)}&pageSize=${limit}&includeVideos=true`,
     { headers: { 'X-API-Key': apiKey() }, cache: 'no-store' },
   )
-  if (!res.ok) return null
+  if (!res.ok) return []
+
   const body = await res.json()
-  // API returns { data: [...] }
   const list: Record<string, unknown>[] =
     Array.isArray(body)             ? body
     : Array.isArray(body.exercises) ? body.exercises
     : Array.isArray(body.data)      ? body.data
     : []
-  const first = list[0]
-  if (!first?.id) return null
-  // Parse media directly from search result (already has thumbnails via includeVideos=true).
-  return parseMedia(first as Record<string, unknown>)
-}
 
-/**
- * Resolve ymove media for an exercise by its canonical display name.
- *
- * Strategy:
- *   1. Derive a URL slug from the display name and try a direct slug lookup (zero
- *      extra round-trip when the slug matches).
- *   2. If that returns 404, fall back to a name-search call.
- *   3. If `includeVideo` is true, re-fetch the matched exercise with video URLs.
- *
- * Thumbnail results are kept in an in-memory cache for the life of the deployment.
- * Video URLs are never cached — they expire in 48 hours.
- */
-/**
- * Resolve ymove media for an exercise by its canonical display name.
- *
- * Always fetches with includeVideos=true — the API does not return thumbnail
- * URLs without it. Results (UUID + thumbnail URL) are cached in memory so
- * subsequent calls for the same exercise are free. Video URLs from the cache
- * may be stale (48 h expiry); pass includeVideo=true to force a fresh fetch.
- */
-export async function getYmoveMedia(
-  displayName: string,
-  includeVideo = false,
-): Promise<YmoveMedia | null> {
-  const slug = toSlug(displayName)
-
-  // Serve cached result for thumbnail-only requests (video URLs may have expired).
-  if (!includeVideo && _thumbCache.has(slug)) {
-    return _thumbCache.get(slug) ?? null
-  }
-
-  // Search by display name — more reliable than slug derivation across providers.
-  let media = await fetchBySearch(displayName)
-
-  // If search missed, try the derived slug via UUID lookup as a fallback.
-  if (!media) {
-    media = await fetchByUuid(slug)
-  }
-
-  _thumbCache.set(slug, media)
-  return media
+  return list
+    .filter(item => item?.id)
+    .map(item => ({
+      ymoveId:      item.id as string,
+      name:         (item.name ?? item.title ?? '') as string,
+      thumbnailUrl: (item.thumbnailUrl ?? '') as string,
+    }))
 }

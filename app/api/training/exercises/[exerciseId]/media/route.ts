@@ -1,8 +1,8 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { getExerciseById, getGifUrl } from '@/lib/exercises'
-import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
-import { getYmoveMedia } from '@/lib/ymove/client'
+import { getYmoveExerciseId } from '@/lib/ymove/mapping'
+import { getYmoveById } from '@/lib/ymove/client'
 
 export async function GET(
   request: NextRequest,
@@ -16,30 +16,30 @@ export async function GET(
     return NextResponse.json({ error: 'Exercise not found' }, { status: 404 })
   }
 
-  const displayName = getInvolvedDisplayName(exerciseId, exercise.name)
   const fallbackGifUrl = getGifUrl(exerciseId)
 
-  try {
-    const ymove = await getYmoveMedia(displayName, includeVideo)
-    if (ymove) {
-      // Return ymoveId so the client can request thumbnails through our proxy
-      // (/api/ymove/thumbnail/[ymoveId]). Raw ymove thumbnail URLs require the
-      // API key header and cannot be used directly in <img src>.
-      return NextResponse.json({
-        source: 'ymove',
-        ymoveId: ymove.ymoveId,
-        ...(includeVideo && ymove.videoUrl
-          ? {
-              videoUrl: ymove.videoUrl,
-              videoHlsUrl: ymove.videoHlsUrl,
-              videoDurationSecs: ymove.videoDurationSecs,
-            }
-          : {}),
-        fallbackGifUrl,
-      })
+  // Only show ymove media when a verified mapping exists.
+  const ymoveId = getYmoveExerciseId(exerciseId)
+  if (ymoveId) {
+    try {
+      const ymove = await getYmoveById(ymoveId, includeVideo)
+      if (ymove) {
+        return NextResponse.json({
+          source: 'ymove',
+          ymoveId: ymove.ymoveId,
+          ...(includeVideo && ymove.videoUrl
+            ? {
+                videoUrl:          ymove.videoUrl,
+                videoHlsUrl:       ymove.videoHlsUrl,
+                videoDurationSecs: ymove.videoDurationSecs,
+              }
+            : {}),
+          fallbackGifUrl,
+        })
+      }
+    } catch (err) {
+      console.error('[ymove] fetch failed for', exerciseId, '(ymoveId:', ymoveId, ')', err)
     }
-  } catch (err) {
-    console.error('[ymove] media fetch failed for', exerciseId, err)
   }
 
   return NextResponse.json({ source: 'exercisedb', fallbackGifUrl })
