@@ -124,7 +124,9 @@ export interface HealthVSummary {
   latestWeightDate?: string
   // Today's stats (if data exists for today)
   today?: {
-    steps?:          number
-    activeEnergyKcal?: number
+    steps?:              number
+    activeEnergyKcal?:   number
+    restingEnergyKcal?:  number
+    totalBurnKcal?:      number
   }
 }

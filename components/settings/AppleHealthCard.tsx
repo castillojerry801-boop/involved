@@ -7,8 +7,8 @@ import { isHealthKitAvailable } from '@/lib/native/healthkit'
 import {
   connectHealthKit,
   disconnectHealthKit,
-  runHealthKitSync,
 } from '@/lib/native/healthkit-sync'
+import { forceSync } from '@/lib/native/healthkit-sync-manager'
 
 type ConnectionStatus = 'checking' | 'unavailable' | 'not_connected' | 'connected' | 'syncing'
 
@@ -76,13 +76,8 @@ export function AppleHealthCard() {
   async function handleSync() {
     setError(null)
     setStatus('syncing')
-    try {
-      await runHealthKitSync()
-      await fetchStatus()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sync failed')
-      setStatus('connected')
-    }
+    await forceSync('manual')
+    await fetchStatus()
   }
 
   async function handleDisconnect() {

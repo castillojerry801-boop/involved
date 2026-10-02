@@ -11,6 +11,7 @@ import { redirect } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { ActivityDetailSheet } from '@/components/today/ActivityDetailSheet'
 import { WaterWidget } from '@/components/today/WaterWidget'
+import { HealthSyncTrigger } from '@/components/today/HealthSyncTrigger'
 
 export const metadata: Metadata = { title: 'Today' }
 
@@ -251,6 +252,7 @@ export default async function TodayPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 md:py-8">
+      <HealthSyncTrigger />
 
       {/* Header */}
       <div className="mb-6">
@@ -260,7 +262,7 @@ export default async function TodayPage() {
 
       {/* ── NUTRITION ─────────────────────────────────────────────────── */}
       <Card className="mb-4">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Nutrition</p>
           <Link
             href="/nutrition"
@@ -283,7 +285,7 @@ export default async function TodayPage() {
         ) : (
           <>
             <div className="mb-1 flex items-baseline gap-2">
-              <span className="text-4xl font-black tracking-tight text-zinc-900 dark:text-white">
+              <span className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white">
                 {totals.calories.toLocaleString()}
               </span>
               <span className="text-sm text-zinc-400">
@@ -297,7 +299,7 @@ export default async function TodayPage() {
               </p>
             )}
 
-            <p className="mb-4 text-sm text-zinc-500">
+            <p className="mb-2 text-sm text-zinc-500">
               {calRemaining > 0
                 ? <><span className="font-semibold text-zinc-700 dark:text-zinc-300">{calRemaining.toLocaleString()}</span> calories remaining</>
                 : totals.calories === 0
@@ -307,7 +309,7 @@ export default async function TodayPage() {
             </p>
 
             {/* Calorie bar — color reflects status */}
-            <div className="mb-5 h-2.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+            <div className="mb-3 h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
               <div
                 className={cn('h-full rounded-full transition-all', statusCfg.bar)}
                 style={{ width: `${pct(totals.calories, target.calories)}%` }}
@@ -315,7 +317,7 @@ export default async function TodayPage() {
             </div>
 
             {/* Macro rows */}
-            <div className="mb-5 flex flex-col gap-3">
+            <div className="mb-3 flex flex-col gap-2">
               {[
                 { label: 'Protein', consumed: totals.proteinG,  target: target.proteinG, color: 'bg-sky-400' },
                 { label: 'Carbs',   consumed: totals.carbsG,    target: target.carbsG,   color: 'bg-amber-400' },
@@ -335,7 +337,7 @@ export default async function TodayPage() {
               ))}
             </div>
 
-            <div className="border-t border-zinc-100 pt-4 dark:border-zinc-800">
+            <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
               <Link href="/nutrition">
                 <Button variant="secondary" size="sm" className="w-full">
                   <Plus className="size-4" />

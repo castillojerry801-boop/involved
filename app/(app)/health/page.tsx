@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Smartphone, Apple, Loader2, Plus, Check } from 'lucide-react'
+import { Smartphone, Apple, Loader2, Plus, Check, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { HealthVSummary, HealthActivityType } from '@/lib/health/types'
-import { isHealthKitAvailable } from '@/lib/native/healthkit'
+import { isHealthKitAvailable, isNativeApp } from '@/lib/native/healthkit'
 import { connectHealthKit, disconnectHealthKit } from '@/lib/native/healthkit-sync'
+import { syncIfStale, forceSync } from '@/lib/native/healthkit-sync-manager'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +75,17 @@ const ACTIVITY_EMOJI: Record<HealthActivityType, string> = {
   elliptical:         '🔄',
   stair_climbing:     '🪜',
   cross_training:     '🤸',
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatSyncAge(iso: string): string {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (mins < 1)  return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)  return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
 }
 
 // ─── Step bar chart ───────────────────────────────────────────────────────────
@@ -422,13 +434,48 @@ export default function HealthPage() {
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [activitiesLoading, setActivitiesLoading] = useState(false)
   const [activitiesLoaded, setActivitiesLoaded] = useState(false)
+  const [syncing, setSyncing]               = useState(false)
+  const [lastFullSyncAt, setLastFullSyncAt] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetch('/api/health/summary?days=14')
+  const fetchSyncStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/healthkit/sync-status')
+      if (res.ok) {
+        const d = await res.json() as { lastFullSyncAt: string | null }
+        setLastFullSyncAt(d.lastFullSyncAt)
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  const refreshSummary = useCallback(async () => {
+    setSummaryLoading(true)
+    await fetch('/api/health/summary?days=14')
       .then(r => r.json())
       .then(d => setSummary((d as { summary: HealthVSummary | null }).summary ?? null))
       .finally(() => setSummaryLoading(false))
   }, [])
+
+  useEffect(() => {
+    void refreshSummary()
+    void fetchSyncStatus()
+  }, [refreshSummary, fetchSyncStatus])
+
+  useEffect(() => {
+    if (!isNativeApp()) return
+    void syncIfStale('health_focus').then(ran => {
+      if (ran) {
+        void Promise.all([refreshSummary(), fetchSyncStatus()])
+      }
+    })
+  }, [refreshSummary, fetchSyncStatus])
+
+  async function handleSyncNow() {
+    if (syncing) return
+    setSyncing(true)
+    await forceSync('manual')
+    await Promise.all([refreshSummary(), fetchSyncStatus()])
+    setSyncing(false)
+  }
 
   const loadActivities = useCallback(async (cursor?: string) => {
     setActivitiesLoading(true)
@@ -452,11 +499,7 @@ export default function HealthPage() {
   }, [tab, activitiesLoaded, loadActivities])
 
   function handleLogSaved() {
-    setSummaryLoading(true)
-    fetch('/api/health/summary?days=14')
-      .then(r => r.json())
-      .then(d => setSummary((d as { summary: HealthVSummary | null }).summary ?? null))
-      .finally(() => setSummaryLoading(false))
+    void refreshSummary()
     // Refresh activities list if it's been loaded
     if (activitiesLoaded) {
       setActivitiesLoaded(false)
@@ -489,9 +532,26 @@ export default function HealthPage() {
         </p>
       </div>
 
+      {/* Last sync row */}
+      {lastFullSyncAt && isNativeApp() && (
+        <div className="flex items-center justify-between mt-3 mb-1">
+          <p className="text-xs text-zinc-400">
+            Last sync {formatSyncAge(lastFullSyncAt)}
+          </p>
+          <button
+            onClick={() => void handleSyncNow()}
+            disabled={syncing}
+            className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 disabled:opacity-40 transition-colors"
+          >
+            <RefreshCw className={cn('size-3', syncing && 'animate-spin')} />
+            {syncing ? 'Syncing…' : 'Sync now'}
+          </button>
+        </div>
+      )}
+
       {/* Summary stats row */}
       {!summaryLoading && hasAnyData && (
-        <div className="grid grid-cols-3 gap-3 my-5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-5">
           {summary!.today?.steps !== undefined && (
             <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-center">
               <p className="text-xl font-black text-zinc-900 dark:text-white">
@@ -506,6 +566,14 @@ export default function HealthPage() {
                 {Math.round(summary!.today.activeEnergyKcal)}
               </p>
               <p className="text-xs text-zinc-500 mt-0.5">kcal active</p>
+            </div>
+          )}
+          {summary!.today?.totalBurnKcal !== undefined && (
+            <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-center">
+              <p className="text-xl font-black text-zinc-900 dark:text-white">
+                {Math.round(summary!.today.totalBurnKcal).toLocaleString()}
+              </p>
+              <p className="text-xs text-zinc-500 mt-0.5">kcal burned</p>
             </div>
           )}
           {summary!.latestWeightKg !== undefined && (

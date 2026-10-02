@@ -24,7 +24,7 @@ export async function buildHealthVSummary(
   const periodEnd   = now.toISOString().slice(0, 10)
   const today       = periodEnd
 
-  const [activities, stepMetrics, latestWeight, todayActiveEnergy] = await Promise.all([
+  const [activities, stepMetrics, latestWeight, todayActiveEnergy, todayRestingEnergy] = await Promise.all([
     prisma.healthActivity.findMany({
       where:   { userId, startedAt: { gte: start } },
       orderBy: { startedAt: 'desc' },
@@ -45,6 +45,15 @@ export async function buildHealthVSummary(
       where: {
         userId,
         metricType: 'active_energy_kcal',
+        recordedAt: { gte: new Date(today) },
+      },
+      orderBy: { recordedAt: 'desc' },
+    }),
+
+    prisma.healthMetric.findFirst({
+      where: {
+        userId,
+        metricType: 'resting_energy_kcal',
         recordedAt: { gte: new Date(today) },
       },
       orderBy: { recordedAt: 'desc' },
@@ -100,12 +109,19 @@ export async function buildHealthVSummary(
   }
 
   // Today's snapshot
-  const todaySteps = dailyStepsMap.get(today)
-  const todayEnergy = todayActiveEnergy ? Number(todayActiveEnergy.value) : undefined
-  if (todaySteps !== undefined || todayEnergy !== undefined) {
+  const todaySteps   = dailyStepsMap.get(today)
+  const todayEnergy  = todayActiveEnergy  ? Number(todayActiveEnergy.value)  : undefined
+  const todayResting = todayRestingEnergy ? Number(todayRestingEnergy.value) : undefined
+  const todayTotal   = todayEnergy !== undefined && todayResting !== undefined
+    ? todayEnergy + todayResting
+    : undefined
+
+  if (todaySteps !== undefined || todayEnergy !== undefined || todayResting !== undefined) {
     summary.today = {}
-    if (todaySteps  !== undefined) summary.today.steps           = todaySteps
-    if (todayEnergy !== undefined) summary.today.activeEnergyKcal = todayEnergy
+    if (todaySteps   !== undefined) summary.today.steps             = todaySteps
+    if (todayEnergy  !== undefined) summary.today.activeEnergyKcal  = todayEnergy
+    if (todayResting !== undefined) summary.today.restingEnergyKcal = todayResting
+    if (todayTotal   !== undefined) summary.today.totalBurnKcal     = todayTotal
   }
 
   return summary
@@ -123,8 +139,9 @@ export function healthSummaryToPrompt(summary: HealthVSummary): string {
   if (summary.today) {
     const t = summary.today
     const parts: string[] = []
-    if (t.steps           !== undefined) parts.push(`${t.steps.toLocaleString()} steps`)
-    if (t.activeEnergyKcal !== undefined) parts.push(`${Math.round(t.activeEnergyKcal)} kcal active energy`)
+    if (t.steps             !== undefined) parts.push(`${t.steps.toLocaleString()} steps`)
+    if (t.activeEnergyKcal  !== undefined) parts.push(`${Math.round(t.activeEnergyKcal)} kcal active energy`)
+    if (t.totalBurnKcal     !== undefined) parts.push(`${Math.round(t.totalBurnKcal)} kcal total burned`)
     if (parts.length > 0) lines.push(`  Today: ${parts.join(' · ')}`)
   }
 
