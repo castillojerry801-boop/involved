@@ -22,10 +22,12 @@ export async function GET(
   try {
     const ymove = await getYmoveMedia(displayName, includeVideo)
     if (ymove) {
+      // Return ymoveId so the client can request thumbnails through our proxy
+      // (/api/ymove/thumbnail/[ymoveId]). Raw ymove thumbnail URLs require the
+      // API key header and cannot be used directly in <img src>.
       return NextResponse.json({
         source: 'ymove',
-        thumbnailUrl: ymove.thumbnailUrl,
-        thumbnails: ymove.thumbnails,
+        ymoveId: ymove.ymoveId,
         ...(includeVideo && ymove.videoUrl
           ? {
               videoUrl: ymove.videoUrl,

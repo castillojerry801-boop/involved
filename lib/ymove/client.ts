@@ -55,17 +55,12 @@ function parseMedia(data: Record<string, any>): YmoveMedia {
   }
 }
 
-async function fetchBySlug(slug: string, includeVideo: boolean): Promise<YmoveMedia | null> {
-  const qs = includeVideo ? 'includeVideos=true' : 'excludeVideos=true'
+// thumbnails are ONLY returned when includeVideos=true — excludeVideos strips them too.
+// So we always fetch with includeVideos=true and cache the UUID/thumbnail data server-side.
+async function fetchByUuid(uuid: string): Promise<YmoveMedia | null> {
   const res = await fetch(
-    `${YMOVE_BASE}/exercises/${encodeURIComponent(slug)}?${qs}`,
-    {
-      headers: { 'X-API-Key': apiKey() },
-      // Thumbnail responses can be cached by Next.js data cache; video responses must not.
-      ...(includeVideo
-        ? { cache: 'no-store' }
-        : { next: { revalidate: 86400 } }),
-    },
+    `${YMOVE_BASE}/exercises/${encodeURIComponent(uuid)}?includeVideos=true`,
+    { headers: { 'X-API-Key': apiKey() }, cache: 'no-store' },
   )
   if (!res.ok) return null
   const data = await res.json()
@@ -74,21 +69,23 @@ async function fetchBySlug(slug: string, includeVideo: boolean): Promise<YmoveMe
 }
 
 async function fetchBySearch(name: string): Promise<YmoveMedia | null> {
+  // Search with includeVideos=true so the first result already has thumbnail data.
   const res = await fetch(
-    `${YMOVE_BASE}/exercises?search=${encodeURIComponent(name)}&pageSize=1&excludeVideos=true`,
-    { headers: { 'X-API-Key': apiKey() }, next: { revalidate: 86400 } },
+    `${YMOVE_BASE}/exercises?search=${encodeURIComponent(name)}&pageSize=1&includeVideos=true`,
+    { headers: { 'X-API-Key': apiKey() }, cache: 'no-store' },
   )
   if (!res.ok) return null
   const body = await res.json()
-  // API may return { exercises: [...] }, { data: [...] }, or a bare array
+  // API returns { data: [...] }
   const list: Record<string, unknown>[] =
     Array.isArray(body)             ? body
     : Array.isArray(body.exercises) ? body.exercises
     : Array.isArray(body.data)      ? body.data
     : []
   const first = list[0]
-  if (!first) return null
-  return fetchBySlug((first.slug ?? first.id) as string, false)
+  if (!first?.id) return null
+  // Parse media directly from search result (already has thumbnails via includeVideos=true).
+  return parseMedia(first as Record<string, unknown>)
 }
 
 /**
@@ -103,30 +100,33 @@ async function fetchBySearch(name: string): Promise<YmoveMedia | null> {
  * Thumbnail results are kept in an in-memory cache for the life of the deployment.
  * Video URLs are never cached — they expire in 48 hours.
  */
+/**
+ * Resolve ymove media for an exercise by its canonical display name.
+ *
+ * Always fetches with includeVideos=true — the API does not return thumbnail
+ * URLs without it. Results (UUID + thumbnail URL) are cached in memory so
+ * subsequent calls for the same exercise are free. Video URLs from the cache
+ * may be stale (48 h expiry); pass includeVideo=true to force a fresh fetch.
+ */
 export async function getYmoveMedia(
   displayName: string,
   includeVideo = false,
 ): Promise<YmoveMedia | null> {
   const slug = toSlug(displayName)
 
+  // Serve cached result for thumbnail-only requests (video URLs may have expired).
   if (!includeVideo && _thumbCache.has(slug)) {
     return _thumbCache.get(slug) ?? null
   }
 
-  let media = await fetchBySlug(slug, includeVideo)
+  // Search by display name — more reliable than slug derivation across providers.
+  let media = await fetchBySearch(displayName)
 
+  // If search missed, try the derived slug via UUID lookup as a fallback.
   if (!media) {
-    const found = await fetchBySearch(displayName)
-    if (found) {
-      media = includeVideo
-        ? (await fetchBySlug(found.ymoveId, true) ?? found)
-        : found
-    }
+    media = await fetchByUuid(slug)
   }
 
-  if (!includeVideo) {
-    _thumbCache.set(slug, media)
-  }
-
+  _thumbCache.set(slug, media)
   return media
 }

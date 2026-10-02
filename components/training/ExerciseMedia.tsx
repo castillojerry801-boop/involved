@@ -7,13 +7,7 @@ import { cn } from '@/lib/utils'
 
 interface MediaResponse {
   source: 'ymove' | 'exercisedb'
-  thumbnailUrl?: string
-  thumbnails?: {
-    default: string
-    square: string
-    portrait: string
-    landscape: string
-  }
+  ymoveId?: string
   videoUrl?: string
   videoHlsUrl?: string
   fallbackGifUrl: string
@@ -80,7 +74,10 @@ export function ExerciseMedia({
   }
 
   const gifSrc = getGifUrl(exerciseId)
-  const thumbSrc = media?.thumbnails?.[crop] ?? media?.thumbnailUrl ?? null
+  // Thumbnail served through our proxy — raw ymove URLs require the API key header.
+  const thumbSrc = media?.ymoveId
+    ? `/api/ymove/thumbnail/${media.ymoveId}?crop=${crop}`
+    : null
 
   if (playing && videoSrc) {
     return (
@@ -106,7 +103,7 @@ export function ExerciseMedia({
     )
   }
 
-  const hasYmove = media?.source === 'ymove'
+  const hasYmove = media?.source === 'ymove' && !!media.ymoveId
 
   return (
     <div className={cn('relative', className)}>
