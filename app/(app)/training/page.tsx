@@ -212,61 +212,26 @@ export default async function TrainingPage() {
       )}
 
       {/* Tools grid */}
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Link href="/training/equipment" className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
-            <Zap className="size-5 text-zinc-500 dark:text-zinc-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-sm text-zinc-900 dark:text-white">Equipment profiles</p>
-            <p className="text-xs text-zinc-400">Filter by your available gear</p>
-          </div>
-          <ChevronRight className="size-4 text-zinc-300 shrink-0" />
-        </Link>
-
-        <Link href="/training/volume" className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
-            <BarChart2 className="size-5 text-zinc-500 dark:text-zinc-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-sm text-zinc-900 dark:text-white">Muscle volume</p>
-            <p className="text-xs text-zinc-400">Weekly sets per muscle group</p>
-          </div>
-          <ChevronRight className="size-4 text-zinc-300 shrink-0" />
-        </Link>
-
-        <Link href="/training/plate-calculator" className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
-            <Calculator className="size-5 text-zinc-500 dark:text-zinc-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-sm text-zinc-900 dark:text-white">Plate calculator</p>
-            <p className="text-xs text-zinc-400">Target weight → plates per side</p>
-          </div>
-          <ChevronRight className="size-4 text-zinc-300 shrink-0" />
-        </Link>
-
-        <Link href="/training/weekly-targets" className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
-            <Target className="size-5 text-zinc-500 dark:text-zinc-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-sm text-zinc-900 dark:text-white">Weekly targets</p>
-            <p className="text-xs text-zinc-400">Set your weekly training goals</p>
-          </div>
-          <ChevronRight className="size-4 text-zinc-300 shrink-0" />
-        </Link>
-
-        <Link href="/training/exercises/custom" className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
-            <Plus className="size-5 text-zinc-500 dark:text-zinc-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-sm text-zinc-900 dark:text-white">Custom exercises</p>
-            <p className="text-xs text-zinc-400">Create exercises not in the library</p>
-          </div>
-          <ChevronRight className="size-4 text-zinc-300 shrink-0" />
-        </Link>
+      <div className="mb-6 grid grid-cols-2 gap-3">
+        {[
+          { href: '/training/programs/new', icon: ClipboardList, label: 'Build program',      sub: 'Structured multi-day training plan' },
+          { href: '/training/weekly-targets', icon: Target,        label: 'Weekly targets',    sub: 'Set your weekly training goals' },
+          { href: '/training/equipment',      icon: Zap,           label: 'Equipment profiles', sub: 'Filter by your available gear' },
+          { href: '/training/volume',         icon: BarChart2,     label: 'Muscle volume',     sub: 'Weekly sets per muscle group' },
+          { href: '/training/plate-calculator', icon: Calculator,  label: 'Plate calculator',  sub: 'Target weight → plates per side' },
+          { href: '/training/exercises/custom', icon: Plus,        label: 'Custom exercises',  sub: 'Create exercises not in the library' },
+        ].map(({ href, icon: Icon, label, sub }) => (
+          <Link key={href} href={href} className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
+              <Icon className="size-5 text-zinc-500 dark:text-zinc-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-sm text-zinc-900 dark:text-white">{label}</p>
+              <p className="text-xs text-zinc-400">{sub}</p>
+            </div>
+            <ChevronRight className="size-4 text-zinc-300 shrink-0" />
+          </Link>
+        ))}
       </div>
 
       <Link href="/training/exercises">
@@ -357,29 +322,15 @@ export default async function TrainingPage() {
         )}
       </section>
 
-      {/* Programs */}
-      <section className="mb-6">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-bold text-zinc-900 dark:text-white">Programs</h2>
-          <Link href="/training/programs" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-            View all
-          </Link>
-        </div>
-
-        {allPrograms.length === 0 ? (
-          <Link href="/training/programs/new">
-            <div className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-700 px-4 py-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
-                <ClipboardList className="size-4 text-zinc-400" />
-              </div>
-              <div>
-                <p className="font-semibold text-sm text-zinc-700 dark:text-zinc-300">Build a program</p>
-                <p className="text-xs text-zinc-400">Structured multi-day training plan</p>
-              </div>
-              <Plus className="size-4 text-zinc-300 ml-auto shrink-0" />
-            </div>
-          </Link>
-        ) : (
+      {/* Programs — only shown once at least one exists */}
+      {allPrograms.length > 0 && (
+        <section className="mb-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-bold text-zinc-900 dark:text-white">Programs</h2>
+            <Link href="/training/programs" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+              View all
+            </Link>
+          </div>
           <div className="flex flex-col gap-2">
             {allPrograms.map(program => {
               const isActive = program.isActive
@@ -419,8 +370,8 @@ export default async function TrainingPage() {
               )
             })}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {/* Trainer Programs — only for trainers */}
       {ent.isTrainer && (
