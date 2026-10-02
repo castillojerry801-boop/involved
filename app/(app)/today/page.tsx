@@ -204,7 +204,7 @@ export default async function TodayPage() {
 
   const [nutrition, profile, todayWorkout, health, waterAgg] = await Promise.all([
     getTodayNutrition(user.id, dateStr),
-    prisma.profile.findUnique({ where: { id: user.id }, select: { displayName: true, fitnessLevel: true } }).catch(() => null),
+    prisma.profile.findUnique({ where: { id: user.id }, select: { displayName: true, fitnessLevel: true, biologicalSex: true, waterTargetOz: true } }).catch(() => null),
     prisma.workout.findFirst({
       where: {
         userId: user.id,
@@ -243,6 +243,8 @@ export default async function TodayPage() {
 
   const { totals, target, hasEntries } = nutrition
   const totalWaterMl = waterAgg._sum.value != null ? Number(waterAgg._sum.value) : 0
+  const waterGoalOz = profile?.waterTargetOz
+    ?? (profile?.biologicalSex === 'female' ? 80 : 100)
   const calRemaining = target ? target.calories - totals.calories : 0
   const calorieStatus = target ? getCalorieStatus(totals.calories, target.calories) : 'under'
   const statusCfg = CALORIE_STATUS_CFG[calorieStatus]
@@ -347,7 +349,7 @@ export default async function TodayPage() {
 
       {/* ── WATER ─────────────────────────────────────────────────────── */}
       <Card className="mb-4">
-        <WaterWidget initialTotalMl={totalWaterMl} />
+        <WaterWidget initialTotalMl={totalWaterMl} goalOz={waterGoalOz} />
       </Card>
 
       {/* ── ACTIVITY ──────────────────────────────────────────────────── */}

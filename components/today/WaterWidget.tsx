@@ -1,11 +1,10 @@
 'use client'
 
-import { useState } from 'react'
-import { Droplets, RotateCcw } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Droplets, RotateCcw, Pencil, Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const ML_PER_OZ = 29.5735
-const GOAL_OZ = 64 // 8 × 8 fl oz glasses
 
 const QUICK_ADD: { label: string; oz: number }[] = [
   { label: '+4 oz', oz: 4 },
@@ -18,19 +17,26 @@ function mlToOz(ml: number) {
   return Math.round((ml / ML_PER_OZ) * 10) / 10
 }
 
-export function WaterWidget({ initialTotalMl }: { initialTotalMl: number }) {
+export function WaterWidget({ initialTotalMl, goalOz }: { initialTotalMl: number; goalOz: number }) {
   const [totalMl, setTotalMl] = useState(initialTotalMl)
+  const [goal, setGoal] = useState(goalOz)
   const [loading, setLoading] = useState(false)
+  const [editingGoal, setEditingGoal] = useState(false)
+  const [goalInput, setGoalInput] = useState(String(goalOz))
+  const goalInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editingGoal) goalInputRef.current?.focus()
+  }, [editingGoal])
 
   const totalOz = mlToOz(totalMl)
-  const pct = Math.min(Math.round((totalOz / GOAL_OZ) * 100), 100)
-  const remaining = Math.max(0, GOAL_OZ - totalOz)
-  const done = totalOz >= GOAL_OZ
+  const pct = Math.min(Math.round((totalOz / goal) * 100), 100)
+  const remaining = Math.max(0, goal - totalOz)
+  const done = totalOz >= goal
 
   async function add(oz: number) {
     if (loading) return
     setLoading(true)
-    // Optimistic
     const addMl = oz * ML_PER_OZ
     setTotalMl(prev => prev + addMl)
     try {
@@ -39,7 +45,7 @@ export function WaterWidget({ initialTotalMl }: { initialTotalMl: number }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ oz }),
       })
-      if (!res.ok) setTotalMl(prev => prev - addMl) // rollback
+      if (!res.ok) setTotalMl(prev => prev - addMl)
     } catch {
       setTotalMl(prev => prev - addMl)
     } finally {
@@ -55,7 +61,6 @@ export function WaterWidget({ initialTotalMl }: { initialTotalMl: number }) {
       if (res.ok) {
         const data = await res.json() as { removed: boolean }
         if (data.removed) {
-          // Refresh from server — simplest correctness path
           const fresh = await fetch('/api/health/water/today')
           if (fresh.ok) {
             const { totalMl: freshMl } = await fresh.json() as { totalMl: number }
@@ -68,9 +73,30 @@ export function WaterWidget({ initialTotalMl }: { initialTotalMl: number }) {
     }
   }
 
+  async function saveGoal() {
+    const parsed = parseInt(goalInput, 10)
+    if (isNaN(parsed) || parsed < 8 || parsed > 300) {
+      setGoalInput(String(goal))
+      setEditingGoal(false)
+      return
+    }
+    setGoal(parsed)
+    setEditingGoal(false)
+    await fetch('/api/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ waterTargetOz: parsed }),
+    })
+  }
+
+  function cancelGoalEdit() {
+    setGoalInput(String(goal))
+    setEditingGoal(false)
+  }
+
   return (
     <div>
-      {/* Header row */}
+      {/* Header */}
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Droplets className={cn('size-4', done ? 'text-sky-400' : 'text-zinc-400')} />
@@ -80,19 +106,44 @@ export function WaterWidget({ initialTotalMl }: { initialTotalMl: number }) {
           onClick={undo}
           disabled={loading || totalMl === 0}
           className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-30 transition-colors"
-          title="Undo last entry"
         >
           <RotateCcw className="size-3" />
           Undo
         </button>
       </div>
 
-      {/* Amount display */}
+      {/* Amount + goal */}
       <div className="mb-1 flex items-baseline gap-2">
         <span className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white">
           {totalOz % 1 === 0 ? totalOz : totalOz.toFixed(1)}
         </span>
-        <span className="text-sm text-zinc-400">/ {GOAL_OZ} oz</span>
+        <span className="text-sm text-zinc-400">/</span>
+
+        {/* Editable goal */}
+        {editingGoal ? (
+          <div className="flex items-center gap-1">
+            <input
+              ref={goalInputRef}
+              type="number"
+              value={goalInput}
+              onChange={e => setGoalInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') void saveGoal(); if (e.key === 'Escape') cancelGoalEdit() }}
+              className="w-16 rounded border border-sky-500 bg-zinc-800 px-1.5 py-0.5 text-sm font-semibold text-zinc-100 focus:outline-none"
+            />
+            <span className="text-sm text-zinc-400">oz</span>
+            <button onClick={() => void saveGoal()} className="text-sky-400 hover:text-sky-300"><Check className="size-3.5" /></button>
+            <button onClick={cancelGoalEdit} className="text-zinc-500 hover:text-zinc-300"><X className="size-3.5" /></button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { setGoalInput(String(goal)); setEditingGoal(true) }}
+            className="group flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200"
+          >
+            {goal} oz
+            <Pencil className="size-2.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+          </button>
+        )}
+
         {done && <span className="text-xs font-semibold text-sky-400">Goal met!</span>}
       </div>
 

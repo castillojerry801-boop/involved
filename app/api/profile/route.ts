@@ -2,9 +2,10 @@ import 'server-only'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
-import type { FitnessLevel } from '@prisma/client'
+import type { FitnessLevel, BiologicalSex } from '@prisma/client'
 
 const VALID_FITNESS_LEVELS = new Set<FitnessLevel>(['beginner', 'intermediate', 'advanced'])
+const VALID_BIOLOGICAL_SEX = new Set<BiologicalSex>(['male', 'female', 'prefer_not_to_say'])
 
 export async function GET() {
   const supabase = await createClient()
@@ -14,13 +15,14 @@ export async function GET() {
   const profile = await prisma.profile.findUnique({
     where: { id: user.id },
     select: {
-      displayName:  true,
-      username:     true,
-      bio:          true,
-      fitnessLevel: true,
-      heightCm:     true,
-      weightKg:     true,
-      avatarUrl:    true,
+      displayName:   true,
+      username:      true,
+      bio:           true,
+      fitnessLevel:  true,
+      biologicalSex: true,
+      heightCm:      true,
+      weightKg:      true,
+      avatarUrl:     true,
     },
   })
 
@@ -33,12 +35,14 @@ export async function PATCH(req: NextRequest) {
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json() as {
-    displayName?:  string
-    username?:     string
-    bio?:          string
-    fitnessLevel?: string
-    heightCm?:     number | null
-    weightKg?:     number | null
+    displayName?:   string
+    username?:      string
+    bio?:           string
+    fitnessLevel?:  string
+    biologicalSex?: string
+    waterTargetOz?: number | null
+    heightCm?:      number | null
+    weightKg?:      number | null
   }
 
   const data: Record<string, unknown> = {}
@@ -64,6 +68,20 @@ export async function PATCH(req: NextRequest) {
       return Response.json({ error: 'Invalid fitnessLevel' }, { status: 400 })
     }
     data.fitnessLevel = body.fitnessLevel
+  }
+
+  if (body.biologicalSex !== undefined) {
+    if (body.biologicalSex !== null && !VALID_BIOLOGICAL_SEX.has(body.biologicalSex as BiologicalSex)) {
+      return Response.json({ error: 'Invalid biologicalSex' }, { status: 400 })
+    }
+    data.biologicalSex = body.biologicalSex
+  }
+
+  if (body.waterTargetOz !== undefined) {
+    if (body.waterTargetOz !== null && (body.waterTargetOz < 8 || body.waterTargetOz > 300)) {
+      return Response.json({ error: 'waterTargetOz must be between 8 and 300' }, { status: 400 })
+    }
+    data.waterTargetOz = body.waterTargetOz
   }
 
   if (body.heightCm !== undefined) data.heightCm = body.heightCm

@@ -28,6 +28,8 @@ model Profile {
   heightCm         Decimal?         @map("height_cm") @db.Decimal(5, 1)
   weightKg         Decimal?         @map("weight_kg") @db.Decimal(5, 1)
   fitnessLevel     FitnessLevel?    @map("fitness_level")
+  biologicalSex    BiologicalSex?   @map("biological_sex")
+  waterTargetOz    Int?             @map("water_target_oz")
   subscriptionTier SubscriptionTier @default(free) @map("subscription_tier")
   coachingPresence CoachingPresence @default(weekly_checkin) @map("coaching_presence")
   createdAt        DateTime         @default(now()) @map("created_at")
@@ -1058,6 +1060,12 @@ enum FitnessLevel {
   beginner
   intermediate
   advanced
+}
+
+enum BiologicalSex {
+  male
+  female
+  prefer_not_to_say
 }
 
 enum SubscriptionTier {

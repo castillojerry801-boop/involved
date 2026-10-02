@@ -9,16 +9,24 @@ import { cn } from '@/lib/utils'
 import { BodyStatsInput } from '@/components/ui/body-stats-input'
 
 type FitnessLevel = 'beginner' | 'intermediate' | 'advanced'
+type BiologicalSex = 'male' | 'female' | 'prefer_not_to_say'
 
 interface ProfileData {
-  displayName:  string | null
-  username:     string | null
-  bio:          string | null
-  fitnessLevel: FitnessLevel | null
-  heightCm:     number | null
-  weightKg:     number | null
-  avatarUrl:    string | null
+  displayName:   string | null
+  username:      string | null
+  bio:           string | null
+  fitnessLevel:  FitnessLevel | null
+  biologicalSex: BiologicalSex | null
+  heightCm:      number | null
+  weightKg:      number | null
+  avatarUrl:     string | null
 }
+
+const BIOLOGICAL_SEX_OPTIONS: { id: BiologicalSex; label: string }[] = [
+  { id: 'male',              label: 'Male' },
+  { id: 'female',            label: 'Female' },
+  { id: 'prefer_not_to_say', label: 'Prefer not to say' },
+]
 
 const FITNESS_LEVELS: { id: FitnessLevel; label: string }[] = [
   { id: 'beginner',     label: 'Beginner' },
@@ -37,12 +45,13 @@ export default function ProfileEditPage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
   const [form, setForm] = useState({
-    displayName:  '',
-    username:     '',
-    bio:          '',
-    fitnessLevel: null as FitnessLevel | null,
-    heightCm:     null as number | null,
-    weightKg:     null as number | null,
+    displayName:   '',
+    username:      '',
+    bio:           '',
+    fitnessLevel:  null as FitnessLevel | null,
+    biologicalSex: null as BiologicalSex | null,
+    heightCm:      null as number | null,
+    weightKg:      null as number | null,
   })
 
   useEffect(() => {
@@ -51,12 +60,13 @@ export default function ProfileEditPage() {
       .then(({ profile }) => {
         setAvatarUrl(profile.avatarUrl)
         setForm({
-          displayName:  profile.displayName  ?? '',
-          username:     profile.username     ?? '',
-          bio:          profile.bio          ?? '',
-          fitnessLevel: profile.fitnessLevel ?? null,
-          heightCm:     profile.heightCm != null ? Number(profile.heightCm) : null,
-          weightKg:     profile.weightKg != null ? Number(profile.weightKg) : null,
+          displayName:   profile.displayName  ?? '',
+          username:      profile.username     ?? '',
+          bio:           profile.bio          ?? '',
+          fitnessLevel:  profile.fitnessLevel ?? null,
+          biologicalSex: profile.biologicalSex ?? null,
+          heightCm:      profile.heightCm != null ? Number(profile.heightCm) : null,
+          weightKg:      profile.weightKg != null ? Number(profile.weightKg) : null,
         })
       })
       .finally(() => setLoading(false))
@@ -83,12 +93,13 @@ export default function ProfileEditPage() {
       method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        displayName:  form.displayName,
-        username:     form.username,
-        bio:          form.bio,
-        fitnessLevel: form.fitnessLevel,
-        heightCm:     form.heightCm,
-        weightKg:     form.weightKg,
+        displayName:   form.displayName,
+        username:      form.username,
+        bio:           form.bio,
+        fitnessLevel:  form.fitnessLevel,
+        biologicalSex: form.biologicalSex,
+        heightCm:      form.heightCm,
+        weightKg:      form.weightKg,
       }),
     })
 
@@ -210,6 +221,30 @@ export default function ProfileEditPage() {
                 )}
               >
                 {level.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Biological sex */}
+        <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-3">
+          <div>
+            <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Biological sex</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Used to set your default daily water goal.</p>
+          </div>
+          <div className="flex gap-2">
+            {BIOLOGICAL_SEX_OPTIONS.map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setForm(f => ({ ...f, biologicalSex: opt.id }))}
+                className={cn(
+                  'flex-1 rounded-xl border py-2.5 text-xs font-medium transition-all',
+                  form.biologicalSex === opt.id
+                    ? 'border-sky-500 bg-sky-50 dark:bg-sky-900/10 text-sky-700 dark:text-sky-400'
+                    : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-600'
+                )}
+              >
+                {opt.label}
               </button>
             ))}
           </div>
