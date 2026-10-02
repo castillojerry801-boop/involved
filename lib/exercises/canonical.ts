@@ -169,6 +169,20 @@ function buildDisplayNameMap(): Map<string, string> {
 }
 const _displayNameMap = buildDisplayNameMap()
 
+// Reverse map: ExerciseDB ID → canonical exercise
+const _exerciseDbToCanonical = new Map<string, CanonicalExercise>()
+for (const ce of canonicalExercises) {
+  for (const impl of ce.implementations) {
+    const eid = impl.source?.exerciseId
+    if (eid && !_exerciseDbToCanonical.has(eid)) _exerciseDbToCanonical.set(eid, ce)
+  }
+}
+
+/** Returns the canonical exercise that contains a given ExerciseDB exercise, or undefined. */
+export function getCanonicalByExerciseDbId(exerciseDbId: string): CanonicalExercise | undefined {
+  return _exerciseDbToCanonical.get(exerciseDbId)
+}
+
 /**
  * Applies light normalization to a raw ExerciseDB name for exercises that
  * are not yet mapped to a canonical implementation.
