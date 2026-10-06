@@ -134,14 +134,14 @@ function StepChart({ data }: { data: Array<{ date: string; steps: number }> }) {
             <div key={d.date} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full">
               <span className={cn(
                 'text-[8px] leading-none',
-                isToday ? 'font-semibold text-emerald-500' : 'text-zinc-500 dark:text-zinc-500'
+                isToday ? 'font-semibold text-emerald-500' : 'text-zinc-500 dark:text-zinc-200'
               )}>
                 {fmtSteps(d.steps)}
               </span>
               <div
                 className={cn(
                   'w-full rounded-t-sm transition-all',
-                  isToday ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'
+                  isToday ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-white/80'
                 )}
                 style={{ height: `${barH}px` }}
               />
@@ -157,7 +157,7 @@ function StepChart({ data }: { data: Array<{ date: string; steps: number }> }) {
             <div key={d.date} className="flex-1 text-center">
               <span className={cn(
                 'text-[8px]',
-                isToday ? 'text-emerald-500' : 'text-zinc-500 dark:text-zinc-600'
+                isToday ? 'text-emerald-500' : 'text-zinc-500 dark:text-zinc-400'
               )}>
                 {isToday ? 'Today' : d.date.slice(8)}
               </span>
@@ -686,7 +686,7 @@ export default function HealthPage() {
               <CardHeader>
                 <CardTitle>Daily Steps</CardTitle>
               </CardHeader>
-              <StepChart data={summary.dailySteps.slice(-14)} />
+              <StepChart data={summary.dailySteps.slice(-7)} />
             </Card>
           )}
 
