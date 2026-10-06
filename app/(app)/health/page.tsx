@@ -3,7 +3,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Smartphone, Apple, Loader2, Plus, Check, RefreshCw } from 'lucide-react'
+import {
+  Smartphone, Apple, Loader2, Plus, Check, RefreshCw,
+  Dumbbell, Activity, Waves, PersonStanding, Zap, Footprints, HeartPulse, Bike,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { HealthVSummary, HealthActivityType } from '@/lib/health/types'
 import { isHealthKitAvailable, isNativeApp } from '@/lib/native/healthkit'
@@ -60,21 +63,38 @@ const ACTIVITY_LABELS: Record<HealthActivityType, string> = {
   cross_training:     'Cross Training',
 }
 
-const ACTIVITY_EMOJI: Record<HealthActivityType, string> = {
-  strength_training:  '🏋️',
-  running:            '🏃',
-  cycling:            '🚴',
-  walking:            '🚶',
-  swimming:           '🏊',
-  hiking:             '🥾',
-  yoga:               '🧘',
-  hiit:               '⚡',
-  rowing:             '🚣',
-  other:              '💪',
-  functional_strength: '🏋️',
-  elliptical:         '🔄',
-  stair_climbing:     '🪜',
-  cross_training:     '🤸',
+const ACTIVITY_ICONS: Record<HealthActivityType, React.ElementType> = {
+  strength_training:   Dumbbell,
+  functional_strength: Dumbbell,
+  running:             Activity,
+  cycling:             Bike,
+  walking:             Footprints,
+  swimming:            Waves,
+  hiking:              Activity,
+  yoga:                PersonStanding,
+  hiit:                Zap,
+  rowing:              Activity,
+  elliptical:          Activity,
+  stair_climbing:      Activity,
+  cross_training:      HeartPulse,
+  other:               Activity,
+}
+
+const ACTIVITY_COLORS: Record<HealthActivityType, { bg: string; icon: string }> = {
+  strength_training:   { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
+  functional_strength: { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
+  running:             { bg: 'bg-orange-500/10',                icon: 'text-orange-400' },
+  cycling:             { bg: 'bg-sky-500/10',                   icon: 'text-sky-400' },
+  walking:             { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
+  swimming:            { bg: 'bg-sky-500/10',                   icon: 'text-sky-400' },
+  hiking:              { bg: 'bg-emerald-500/10',               icon: 'text-emerald-400' },
+  yoga:                { bg: 'bg-violet-500/10',                icon: 'text-violet-400' },
+  hiit:                { bg: 'bg-amber-500/10',                 icon: 'text-amber-400' },
+  rowing:              { bg: 'bg-sky-500/10',                   icon: 'text-sky-400' },
+  elliptical:          { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
+  stair_climbing:      { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
+  cross_training:      { bg: 'bg-emerald-500/10',               icon: 'text-emerald-400' },
+  other:               { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -130,9 +150,14 @@ function ActivityRow({ a }: { a: HealthActivity }) {
   const mins = a.durationSeconds ? Math.round(a.durationSeconds / 60) : null
   const date = new Date(a.startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
+  const Icon   = ACTIVITY_ICONS[type]  ?? Activity
+  const colors = ACTIVITY_COLORS[type] ?? ACTIVITY_COLORS.other
+
   return (
     <div className="flex items-start gap-3 py-3 border-b border-zinc-50 dark:border-zinc-800 last:border-0">
-      <span className="text-xl mt-0.5 shrink-0">{ACTIVITY_EMOJI[type] ?? '💪'}</span>
+      <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-xl mt-0.5', colors.bg)}>
+        <Icon className={cn('size-4', colors.icon)} />
+      </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">
@@ -222,7 +247,7 @@ function LogActivityForm({ onSaved }: { onSaved: () => void }) {
             className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2.5 text-sm text-zinc-900 dark:text-white focus:outline-none"
           >
             {ACTIVITY_TYPES.map(t => (
-              <option key={t} value={t}>{ACTIVITY_EMOJI[t]} {ACTIVITY_LABELS[t]}</option>
+              <option key={t} value={t}>{ACTIVITY_LABELS[t]}</option>
             ))}
           </select>
         </div>
@@ -653,11 +678,15 @@ export default function HealthPage() {
                 </div>
               </CardHeader>
               <div>
-                {summary.recentActivities.slice(0, 5).map((a, i) => (
+                {summary.recentActivities.slice(0, 5).map((a, i) => {
+                  const aType   = a.activityType as HealthActivityType
+                  const AIcon   = ACTIVITY_ICONS[aType]  ?? Activity
+                  const aColors = ACTIVITY_COLORS[aType] ?? ACTIVITY_COLORS.other
+                  return (
                   <div key={i} className="flex items-start gap-3 py-2.5 border-b border-zinc-50 dark:border-zinc-800 last:border-0">
-                    <span className="text-lg shrink-0">
-                      {ACTIVITY_EMOJI[a.activityType as HealthActivityType] ?? '💪'}
-                    </span>
+                    <div className={cn('flex size-8 shrink-0 items-center justify-center rounded-xl mt-0.5', aColors.bg)}>
+                      <AIcon className={cn('size-4', aColors.icon)} />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">
@@ -673,7 +702,8 @@ export default function HealthPage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </Card>
           )}
