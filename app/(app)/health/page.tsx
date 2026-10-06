@@ -118,15 +118,26 @@ function fmtSteps(n: number): string {
   return String(n)
 }
 
-function StepChart({ data }: { data: Array<{ date: string; steps: number }> }) {
+function StepChart({ data, avg }: { data: Array<{ date: string; steps: number }>; avg: number }) {
   if (data.length === 0) return null
-  const max   = Math.max(...data.map(d => d.steps), 1)
-  const today = new Date().toISOString().slice(0, 10)
+  const max      = Math.max(...data.map(d => d.steps), 1)
+  const today    = new Date().toISOString().slice(0, 10)
+  const avgLineH = avg > 0 ? Math.round((avg / max) * 76) : 0
 
   return (
     <div className="mt-3">
       {/* Bar + count columns */}
-      <div className="flex items-end gap-1" style={{ height: '7rem' }}>
+      <div className="relative flex items-end gap-1" style={{ height: '7rem' }}>
+        {/* Average dashed line */}
+        {avgLineH > 0 && (
+          <div
+            className="absolute left-0 right-0 flex items-center gap-1 pointer-events-none z-10"
+            style={{ bottom: `${avgLineH}px` }}
+          >
+            <span className="text-[8px] text-emerald-500/70 shrink-0 leading-none">avg</span>
+            <div className="flex-1 border-t border-dashed border-emerald-500/50" />
+          </div>
+        )}
         {data.map(d => {
           const isToday  = d.date === today
           const barH     = Math.max(Math.round((d.steps / max) * 76), 4)
@@ -487,6 +498,9 @@ export default function HealthPage() {
   const [activitiesLoaded, setActivitiesLoaded] = useState(false)
   const [syncing, setSyncing]               = useState(false)
   const [lastFullSyncAt, setLastFullSyncAt] = useState<string | null>(null)
+  const [stepLog, setStepLog]               = useState<Array<{ date: string; steps: number }>>([])
+  const [stepLogOpen, setStepLogOpen]       = useState(false)
+  const [stepLogLoading, setStepLogLoading] = useState(false)
 
   const fetchSyncStatus = useCallback(async () => {
     try {
@@ -497,6 +511,27 @@ export default function HealthPage() {
       }
     } catch { /* ignore */ }
   }, [])
+
+  const loadStepLog = useCallback(async () => {
+    if (stepLogLoading) return
+    setStepLogLoading(true)
+    try {
+      const res = await fetch('/api/health/metrics?type=steps&limit=90')
+      if (res.ok) {
+        const { metrics } = await res.json() as { metrics: Array<{ recordedAt: string; value: number }> }
+        const byDate = new Map<string, number>()
+        for (const row of metrics) {
+          const d = row.recordedAt.slice(0, 10)
+          byDate.set(d, (byDate.get(d) ?? 0) + row.value)
+        }
+        const sorted = Array.from(byDate.entries())
+          .map(([date, steps]) => ({ date, steps: Math.round(steps) }))
+          .sort((a, b) => b.date.localeCompare(a.date))
+        setStepLog(sorted)
+      }
+    } catch { /* ignore */ }
+    setStepLogLoading(false)
+  }, [stepLogLoading])
 
   const refreshSummary = useCallback(async () => {
     setSummaryLoading(true)
@@ -681,14 +716,65 @@ export default function HealthPage() {
             </div>
           )}
 
-          {!summaryLoading && summary && summary.dailySteps.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Daily Steps</CardTitle>
-              </CardHeader>
-              <StepChart data={summary.dailySteps.slice(-7)} />
-            </Card>
-          )}
+          {!summaryLoading && summary && summary.dailySteps.length > 0 && (() => {
+            const chartData = summary.dailySteps.slice(-7)
+            const avgSteps  = chartData.length > 0
+              ? Math.round(chartData.reduce((s, d) => s + d.steps, 0) / chartData.length)
+              : 0
+            return (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between w-full">
+                    <CardTitle>Daily Steps</CardTitle>
+                    <button
+                      onClick={() => {
+                        setStepLogOpen(v => !v)
+                        if (!stepLogOpen && stepLog.length === 0) loadStepLog()
+                      }}
+                      className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                    >
+                      {stepLogOpen ? 'Hide log ↑' : 'View all →'}
+                    </button>
+                  </div>
+                </CardHeader>
+
+                {/* Average call-out */}
+                <div className="px-4 pb-1">
+                  <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 tabular-nums">
+                    {avgSteps.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    7-day daily average
+                  </p>
+                </div>
+
+                <StepChart data={chartData} avg={avgSteps} />
+
+                {/* Step log */}
+                {stepLogOpen && (
+                  <div className="mt-3 border-t border-zinc-100 dark:border-zinc-800 max-h-64 overflow-y-auto">
+                    {stepLogLoading ? (
+                      <p className="px-4 py-3 text-xs text-zinc-400">Loading…</p>
+                    ) : stepLog.length === 0 ? (
+                      <p className="px-4 py-3 text-xs text-zinc-400">No step data found.</p>
+                    ) : stepLog.map(row => (
+                      <div
+                        key={row.date}
+                        className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-50 dark:border-zinc-800/60 last:border-0"
+                      >
+                        <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                          {new Date(row.date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                        </span>
+                        <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">
+                          {row.steps.toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )
+          })()}
 
           {!summaryLoading && summary && summary.recentActivities.length > 0 && (
             <Card>
