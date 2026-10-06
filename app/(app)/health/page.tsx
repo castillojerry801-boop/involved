@@ -133,8 +133,8 @@ function StepChart({ data }: { data: Array<{ date: string; steps: number }> }) {
           return (
             <div key={d.date} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full">
               <span className={cn(
-                'text-[8px] leading-none',
-                isToday ? 'font-semibold text-emerald-500' : 'text-zinc-500 dark:text-zinc-200'
+                'text-[11px] leading-none font-medium',
+                isToday ? 'text-emerald-500' : 'text-zinc-500 dark:text-zinc-200'
               )}>
                 {fmtSteps(d.steps)}
               </span>
