@@ -80,21 +80,23 @@ const ACTIVITY_ICONS: Record<HealthActivityType, React.ElementType> = {
   other:               Activity,
 }
 
+const ACTIVITY_COLOR = { bg: 'bg-zinc-100 dark:bg-zinc-800', icon: 'text-zinc-500 dark:text-zinc-400' }
+
 const ACTIVITY_COLORS: Record<HealthActivityType, { bg: string; icon: string }> = {
-  strength_training:   { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
-  functional_strength: { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
-  running:             { bg: 'bg-orange-500/10',                icon: 'text-orange-400' },
-  cycling:             { bg: 'bg-sky-500/10',                   icon: 'text-sky-400' },
-  walking:             { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
-  swimming:            { bg: 'bg-sky-500/10',                   icon: 'text-sky-400' },
-  hiking:              { bg: 'bg-emerald-500/10',               icon: 'text-emerald-400' },
-  yoga:                { bg: 'bg-violet-500/10',                icon: 'text-violet-400' },
-  hiit:                { bg: 'bg-amber-500/10',                 icon: 'text-amber-400' },
-  rowing:              { bg: 'bg-sky-500/10',                   icon: 'text-sky-400' },
-  elliptical:          { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
-  stair_climbing:      { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
-  cross_training:      { bg: 'bg-emerald-500/10',               icon: 'text-emerald-400' },
-  other:               { bg: 'bg-zinc-100 dark:bg-zinc-800',   icon: 'text-zinc-500 dark:text-zinc-400' },
+  strength_training:   ACTIVITY_COLOR,
+  functional_strength: ACTIVITY_COLOR,
+  running:             ACTIVITY_COLOR,
+  cycling:             ACTIVITY_COLOR,
+  walking:             ACTIVITY_COLOR,
+  swimming:            ACTIVITY_COLOR,
+  hiking:              ACTIVITY_COLOR,
+  yoga:                ACTIVITY_COLOR,
+  hiit:                ACTIVITY_COLOR,
+  rowing:              ACTIVITY_COLOR,
+  elliptical:          ACTIVITY_COLOR,
+  stair_climbing:      ACTIVITY_COLOR,
+  cross_training:      ACTIVITY_COLOR,
+  other:               ACTIVITY_COLOR,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -110,35 +112,59 @@ function formatSyncAge(iso: string): string {
 
 // ─── Step bar chart ───────────────────────────────────────────────────────────
 
+function fmtSteps(n: number): string {
+  if (n >= 10000) return `${Math.round(n / 1000)}k`
+  if (n >= 1000)  return `${(n / 1000).toFixed(1)}k`
+  return String(n)
+}
+
 function StepChart({ data }: { data: Array<{ date: string; steps: number }> }) {
   if (data.length === 0) return null
-  const max = Math.max(...data.map(d => d.steps), 1)
+  const max   = Math.max(...data.map(d => d.steps), 1)
+  const today = new Date().toISOString().slice(0, 10)
 
   return (
-    <div className="flex items-end gap-1 h-24 mt-2">
-      {data.map(d => {
-        const pct = d.steps / max
-        const isToday = d.date === new Date().toISOString().slice(0, 10)
-        return (
-          <div key={d.date} className="flex-1 flex flex-col items-center gap-1 group">
-            <div className="relative w-full flex items-end justify-center h-20">
+    <div className="mt-3">
+      {/* Bar + count columns */}
+      <div className="flex items-end gap-1" style={{ height: '7rem' }}>
+        {data.map(d => {
+          const isToday  = d.date === today
+          const barH     = Math.max(Math.round((d.steps / max) * 76), 4)
+          return (
+            <div key={d.date} className="flex-1 flex flex-col items-center justify-end gap-0.5 h-full">
+              <span className={cn(
+                'text-[8px] leading-none',
+                isToday ? 'font-semibold text-emerald-500' : 'text-zinc-500 dark:text-zinc-500'
+              )}>
+                {fmtSteps(d.steps)}
+              </span>
               <div
                 className={cn(
                   'w-full rounded-t-sm transition-all',
-                  isToday
-                    ? 'bg-emerald-500'
-                    : 'bg-zinc-200 dark:bg-zinc-700 group-hover:bg-zinc-300 dark:group-hover:bg-zinc-600'
+                  isToday ? 'bg-emerald-500' : 'bg-zinc-200 dark:bg-zinc-700'
                 )}
-                style={{ height: `${Math.max(pct * 100, 4)}%` }}
-                title={`${d.date}: ${d.steps.toLocaleString()} steps`}
+                style={{ height: `${barH}px` }}
               />
             </div>
-            <span className="text-[9px] text-zinc-400 hidden sm:block">
-              {d.date.slice(5).replace('-', '/')}
-            </span>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
+      {/* Day labels */}
+      <div className="flex gap-1 mt-1">
+        {data.map(d => {
+          const isToday = d.date === today
+          return (
+            <div key={d.date} className="flex-1 text-center">
+              <span className={cn(
+                'text-[8px]',
+                isToday ? 'text-emerald-500' : 'text-zinc-500 dark:text-zinc-600'
+              )}>
+                {isToday ? 'Today' : d.date.slice(8)}
+              </span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
