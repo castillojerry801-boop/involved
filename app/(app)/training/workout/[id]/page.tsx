@@ -7,7 +7,8 @@ import {
   ArrowLeft, CheckCircle2, Circle, Loader2, Trophy, ChevronDown, ChevronUp,
   Plus, Dumbbell, MessageSquare, Trash2, Timer, X, Scissors, Shuffle,
 } from 'lucide-react'
-import { getGifUrl, isCustomExerciseId } from '@/lib/exercises'
+import { isCustomExerciseId } from '@/lib/exercises'
+import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { cn } from '@/lib/utils'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 import { VoiceMic } from '@/components/v/VoiceMic'
@@ -468,8 +469,7 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove, onRefresh }: {
         <button onClick={() => setCollapsed(c => !c)} className="flex items-center gap-3 flex-1 text-left min-w-0">
           <div className="size-12 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
             {ex.exercise && !isCustomExerciseId(ex.exerciseId) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={getGifUrl(ex.exerciseId)} alt={ex.exercise.name} className="h-full w-auto object-contain" />
+              <ExerciseMedia exerciseId={ex.exerciseId} exerciseName={ex.exercise.name} className="h-full w-full" showVideo />
             ) : (
               <Dumbbell className="size-5 text-zinc-300" />
             )}

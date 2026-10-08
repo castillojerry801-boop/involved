@@ -7,7 +7,8 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
-import { searchExercises, getGifUrl } from '@/lib/exercises'
+import { searchExercises } from '@/lib/exercises'
+import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { jsToWeekday, resolveScheduledDay, upcomingSchedule, WEEKDAY_FULL } from '@/lib/training/program-scheduling'
 
@@ -251,8 +252,7 @@ export default async function TrainingPage() {
           <div className="flex gap-2">
             {featured.map(ex => (
               <div key={ex.id} className="flex-1 rounded-xl bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center overflow-hidden h-16">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={getGifUrl(ex.id)} alt={ex.name} className="h-full w-auto object-contain" />
+                <ExerciseMedia exerciseId={ex.id} exerciseName={ex.name} className="h-full w-full" />
               </div>
             ))}
           </div>

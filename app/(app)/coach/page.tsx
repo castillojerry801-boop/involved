@@ -6,7 +6,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { Send, Lock, Loader2, User, Dumbbell, Sparkles, CalendarDays } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { getGifUrl } from '@/lib/exercises'
+import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { cn } from '@/lib/utils'
 import { GenerateProgramModal } from '@/components/v/GenerateProgramModal'
@@ -198,8 +198,7 @@ function WorkoutCard({ data }: { data: WorkoutMessage['data'] }) {
         {data.exercises.map((ex, i) => (
           <div key={i} className="flex items-center gap-3 px-4 py-3">
             <div className="size-12 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={getGifUrl(ex.exercise_id)} alt={getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)} className="h-full w-auto object-contain" />
+              <ExerciseMedia exerciseId={ex.exercise_id} exerciseName={getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)} className="h-full w-full" showVideo />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)}</p>
@@ -287,8 +286,7 @@ function ProgramCard({ data }: { data: ProgramMessage['data'] }) {
               {day.exercises.map((ex, ei) => (
                 <div key={ei} className="flex items-center gap-2.5">
                   <div className="size-8 shrink-0 rounded-lg bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={getGifUrl(ex.exercise_id)} alt={getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)} className="h-full w-auto object-contain" />
+                    <ExerciseMedia exerciseId={ex.exercise_id} exerciseName={getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)} className="h-full w-full" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-zinc-900 dark:text-white truncate">{getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)}</p>

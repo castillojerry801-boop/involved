@@ -4,7 +4,8 @@ import { redirect } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Clock, Dumbbell } from 'lucide-react'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
-import { getExerciseById, getGifUrl } from '@/lib/exercises'
+import { getExerciseById } from '@/lib/exercises'
+import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { getWeightUnit, kgToUnit } from '@/lib/weight-unit.server'
 
 export const metadata: Metadata = { title: 'Workout' }
@@ -105,8 +106,7 @@ export default async function WorkoutHistoryPage({ params }: { params: Promise<{
               <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-50 dark:border-zinc-800">
                 <div className="size-10 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
                   {meta && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={getGifUrl(ex.exerciseId)} alt={meta.name} className="h-full w-auto object-contain" />
+                    <ExerciseMedia exerciseId={ex.exerciseId} exerciseName={meta.name} className="h-full w-full" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">

@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Search, Plus, X, Loader2, Calendar, Dumbbell, Sparkles } from 'lucide-react'
-import { getGifUrl } from '@/lib/exercises'
+import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { GenerateWorkoutModal } from '@/components/v/GenerateWorkoutModal'
 
 interface Exercise {
@@ -165,8 +165,7 @@ function LogWorkoutForm() {
             <div key={ex.exerciseId} className="rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3">
               <div className="flex items-center gap-3">
                 <div className="size-10 shrink-0 rounded-lg bg-zinc-50 dark:bg-zinc-800 overflow-hidden">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={getGifUrl(ex.exerciseId)} alt={ex.name} className="h-full w-auto object-contain" />
+                  <ExerciseMedia exerciseId={ex.exerciseId} exerciseName={ex.name} className="h-full w-full" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{ex.name}</p>
@@ -244,8 +243,7 @@ function LogWorkoutForm() {
                 className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-left"
               >
                 <div className="size-8 shrink-0 rounded-lg bg-zinc-50 dark:bg-zinc-800 overflow-hidden">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={getGifUrl(ex.id)} alt={ex.name} className="h-full w-auto object-contain" />
+                  <ExerciseMedia exerciseId={ex.id} exerciseName={ex.name} className="h-full w-full" />
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-zinc-900 dark:text-white truncate">{ex.name}</p>
