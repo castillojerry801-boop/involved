@@ -1335,3 +1335,11 @@ enum HealthSyncState {
   synced
   failed
 }
+
+model YmoveMapping {
+  exerciseDbId String   @id
+  ymoveId      String?
+  updatedAt    DateTime @updatedAt
+
+  @@map("ymove_mapping")
+}

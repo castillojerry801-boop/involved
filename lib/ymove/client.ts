@@ -91,21 +91,14 @@ export async function getYmoveById(
 // They MUST NOT be called in production code paths.
 
 /**
- * DEV-ONLY: Search ymove by display name and return the top N candidates.
+ * Search ymove by display name and return the top N candidates.
  *
- * Use this to suggest possible ymove UUIDs for admin review — never to
- * automatically determine what media a user sees.
- *
- * @throws if called in production (guard against accidental import)
+ * Used by admin mapping tools only — never called from user-facing code paths.
  */
 export async function searchYmoveCandidates(
   query: string,
   limit = 5,
 ): Promise<YmoveCandidate[]> {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('[ymove] searchYmoveCandidates must not be called in production')
-  }
-
   const res = await fetch(
     `${YMOVE_BASE}/exercises?search=${encodeURIComponent(query)}&pageSize=${limit}&includeVideos=true`,
     { headers: { 'X-API-Key': apiKey() }, cache: 'no-store' },

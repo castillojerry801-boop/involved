@@ -9,11 +9,12 @@ const _mockMapping: Record<string, string | null> = {}
 
 vi.mock('@/lib/ymove/mapping', () => ({
   getYmoveExerciseId: (id: string) => {
-    if (!(id in _mockMapping)) return undefined
-    return _mockMapping[id]
+    if (!(id in _mockMapping)) return Promise.resolve(undefined)
+    return Promise.resolve(_mockMapping[id])
   },
-  getAllMappings: () => ({ ..._mockMapping }),
-  writeMapping: vi.fn(),
+  getAllMappings: () => Promise.resolve({ ..._mockMapping }),
+  upsertMapping: vi.fn().mockResolvedValue(undefined),
+  deleteMapping: vi.fn().mockResolvedValue(undefined),
 }))
 
 const mockGetYmoveById = vi.fn()
@@ -80,7 +81,7 @@ describe('ymove verified mapping architecture', () => {
   // 1. Mapped exercise returns ymove source with ymoveId
   it('returns the ymove UUID when exercise has a verified mapping', async () => {
     setMockMapping({ '0026': YMOVE_UUID })
-    const ymoveId = getYmoveExerciseId('0026')
+    const ymoveId = await getYmoveExerciseId('0026')
     expect(ymoveId).toBe(YMOVE_UUID)
 
     const media = await getYmoveById(ymoveId!, false)
@@ -89,21 +90,21 @@ describe('ymove verified mapping architecture', () => {
   })
 
   // 2. Unmapped exercise returns undefined
-  it('returns undefined for an exercise not yet in the mapping', () => {
+  it('returns undefined for an exercise not yet in the mapping', async () => {
     setMockMapping({})
-    expect(getYmoveExerciseId('0999')).toBeUndefined()
+    expect(await getYmoveExerciseId('0999')).toBeUndefined()
   })
 
   // 3. Explicit no-match entry returns null, not undefined
-  it('returns null for an exercise explicitly marked as no ymove match', () => {
+  it('returns null for an exercise explicitly marked as no ymove match', async () => {
     setMockMapping({ '0999': null })
-    expect(getYmoveExerciseId('0999')).toBeNull()
+    expect(await getYmoveExerciseId('0999')).toBeNull()
   })
 
   // 4. No mapping → getYmoveById must never be called
-  it('never calls getYmoveById for unmapped exercises', () => {
+  it('never calls getYmoveById for unmapped exercises', async () => {
     setMockMapping({})
-    const ymoveId = getYmoveExerciseId('0999')
+    const ymoveId = await getYmoveExerciseId('0999')
     // Simulate what the media route does
     if (ymoveId) void getYmoveById(ymoveId, false)
     expect(mockGetYmoveById).not.toHaveBeenCalled()
@@ -158,11 +159,11 @@ describe('ymove verified mapping architecture', () => {
   })
 
   // 10. Mapping is keyed by ExerciseDB ID — unaffected by display name changes
-  it('mapping lookup uses ExerciseDB ID, not exercise name', () => {
+  it('mapping lookup uses ExerciseDB ID, not exercise name', async () => {
     setMockMapping({ '0026': YMOVE_UUID })
-    expect(getYmoveExerciseId('0026')).toBe(YMOVE_UUID)
+    expect(await getYmoveExerciseId('0026')).toBe(YMOVE_UUID)
     // A different ID (even if the exercise name were identical) has no mapping
-    expect(getYmoveExerciseId('0027')).toBeUndefined()
+    expect(await getYmoveExerciseId('0027')).toBeUndefined()
   })
 
   // 11. No API key in client-facing media response shape
@@ -187,22 +188,22 @@ describe('lib/ymove/mapping unit', () => {
   beforeEach(() => setMockMapping({}))
   afterEach(() => setMockMapping({}))
 
-  it('getYmoveExerciseId returns undefined for keys absent from mapping', () => {
+  it('getYmoveExerciseId returns undefined for keys absent from mapping', async () => {
     setMockMapping({ '0026': YMOVE_UUID })
-    expect(getYmoveExerciseId('9999')).toBeUndefined()
+    expect(await getYmoveExerciseId('9999')).toBeUndefined()
   })
 
-  it('getAllMappings returns a snapshot of the current mapping', () => {
+  it('getAllMappings returns a snapshot of the current mapping', async () => {
     setMockMapping({ '0026': YMOVE_UUID, '0999': null })
-    const m = getAllMappings()
+    const m = await getAllMappings()
     expect(m['0026']).toBe(YMOVE_UUID)
     expect(m['0999']).toBeNull()
     expect(Object.keys(m)).toHaveLength(2)
   })
 
-  it('null and undefined are semantically distinct in the mapping', () => {
+  it('null and undefined are semantically distinct in the mapping', async () => {
     setMockMapping({ '0026': null })
-    expect(getYmoveExerciseId('0026')).toBeNull()      // explicit no-match
-    expect(getYmoveExerciseId('0999')).toBeUndefined() // not yet checked
+    expect(await getYmoveExerciseId('0026')).toBeNull()      // explicit no-match
+    expect(await getYmoveExerciseId('0999')).toBeUndefined() // not yet checked
   })
 })

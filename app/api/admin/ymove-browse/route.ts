@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
   // ── Our exercise search (for the mapping assignment UI) ────────────────────
   if (sp.has('exerciseSearch')) {
     const q = sp.get('exerciseSearch')!.toLowerCase().trim()
-    const mapping = getAllMappings()
+    const mapping = await getAllMappings()
     const mapped = new Set(Object.keys(mapping))
 
     const results = dbExercises
@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
       : []
 
     // Build reverse map: ymoveId → our display name
-    const mapping = getAllMappings()
+    const mapping = await getAllMappings()
     const reverseMap: Record<string, string> = {}
     for (const [dbId, ymoveId] of Object.entries(mapping)) {
       if (ymoveId) {

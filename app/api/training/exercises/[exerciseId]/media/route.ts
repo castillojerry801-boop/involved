@@ -19,7 +19,7 @@ export async function GET(
   const fallbackGifUrl = getGifUrl(exerciseId)
 
   // Only show ymove media when a verified mapping exists.
-  const ymoveId = getYmoveExerciseId(exerciseId)
+  const ymoveId = await getYmoveExerciseId(exerciseId)
   if (ymoveId) {
     try {
       const ymove = await getYmoveById(ymoveId, includeVideo)

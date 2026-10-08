@@ -1,20 +1,29 @@
 import 'server-only'
 import { readFileSync } from 'fs'
 import { join } from 'path'
+import { prisma } from '@/lib/prisma'
 
 type Mapping = Record<string, string | null>
 
-// Production: cache on first load (mapping is baked in at deploy time).
-// Development: re-read on every call so admin tool writes are visible immediately.
-let _prodCache: Mapping | null = null
-
-function loadMapping(): Mapping {
-  if (process.env.NODE_ENV === 'production') {
-    if (_prodCache) return _prodCache
-    _prodCache = JSON.parse(readFileSync(join(process.cwd(), 'data/ymove-exercise-mapping.json'), 'utf8')) as Mapping
-    return _prodCache
+function loadJsonBaseline(): Mapping {
+  try {
+    return JSON.parse(readFileSync(join(process.cwd(), 'data/ymove-exercise-mapping.json'), 'utf8')) as Mapping
+  } catch {
+    return {}
   }
-  return JSON.parse(readFileSync(join(process.cwd(), 'data/ymove-exercise-mapping.json'), 'utf8')) as Mapping
+}
+
+// Merge JSON baseline with DB overrides (DB wins).
+async function loadMapping(): Promise<Mapping> {
+  const [json, rows] = await Promise.all([
+    Promise.resolve(loadJsonBaseline()),
+    prisma.ymoveMapping.findMany(),
+  ])
+  const merged: Mapping = { ...json }
+  for (const row of rows) {
+    merged[row.exerciseDbId] = row.ymoveId ?? null
+  }
+  return merged
 }
 
 /**
@@ -24,32 +33,39 @@ function loadMapping(): Mapping {
  * A null value means "explicitly checked — no ymove match for this exercise."
  * undefined means "not yet checked."
  */
-export function getYmoveExerciseId(exerciseDbId: string): string | null | undefined {
-  const m = loadMapping()
-  if (!(exerciseDbId in m)) return undefined
-  return m[exerciseDbId]
+export async function getYmoveExerciseId(exerciseDbId: string): Promise<string | null | undefined> {
+  // Fast path: check DB row directly (avoids loading all JSON).
+  const row = await prisma.ymoveMapping.findUnique({ where: { exerciseDbId } })
+  if (row !== null) return row.ymoveId ?? null
+
+  // Fall back to JSON baseline.
+  const json = loadJsonBaseline()
+  if (!(exerciseDbId in json)) return undefined
+  return json[exerciseDbId]
 }
 
 /**
- * Read the full mapping (DEV-ONLY — for admin tooling).
- * Returns every entry, including null (no-match) entries.
+ * Returns all mappings (JSON baseline merged with DB).
  */
-export function getAllMappings(): Mapping {
+export async function getAllMappings(): Promise<Mapping> {
   return loadMapping()
 }
 
 /**
- * Atomically write the full mapping back to disk (DEV-ONLY).
- * Throws in production — the filesystem is read-only on Vercel.
+ * Upsert a single mapping entry to the database.
+ * null = explicitly no ymove match. Works in production.
  */
-export function writeMapping(mapping: Mapping): void {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('writeMapping must not be called in production')
-  }
-  const { writeFileSync } = require('fs') as typeof import('fs')
-  writeFileSync(
-    join(process.cwd(), 'data/ymove-exercise-mapping.json'),
-    JSON.stringify(mapping, null, 2) + '\n',
-    'utf8',
-  )
+export async function upsertMapping(exerciseDbId: string, ymoveId: string | null): Promise<void> {
+  await prisma.ymoveMapping.upsert({
+    where:  { exerciseDbId },
+    create: { exerciseDbId, ymoveId },
+    update: { ymoveId },
+  })
+}
+
+/**
+ * Remove a mapping entry from the database (back to "not yet checked").
+ */
+export async function deleteMapping(exerciseDbId: string): Promise<void> {
+  await prisma.ymoveMapping.deleteMany({ where: { exerciseDbId } })
 }
