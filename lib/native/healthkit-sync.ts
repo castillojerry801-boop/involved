@@ -1,5 +1,6 @@
 import {
   isHealthKitAvailable,
+  isHealthConnectAvailable,
   requestHealthKitPermissions,
   queryWorkouts,
   queryBodyMass,
@@ -135,4 +136,26 @@ export async function connectHealthKit(): Promise<{ success: boolean; error?: st
 
 export async function disconnectHealthKit(): Promise<void> {
   await fetch('/api/healthkit/status', { method: 'DELETE' })
+}
+
+export async function connectHealthConnect(): Promise<{ success: boolean; error?: string }> {
+  const available = await isHealthConnectAvailable()
+  if (!available) {
+    return { success: false, error: 'Health Connect not available on this device' }
+  }
+  const granted = await requestHealthKitPermissions()
+  if (!granted) {
+    return { success: false, error: 'Permission denied' }
+  }
+  try {
+    await fetch('/api/health-connect/status', { method: 'POST' })
+    await runHealthKitSync()
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Sync failed' }
+  }
+}
+
+export async function disconnectHealthConnect(): Promise<void> {
+  await fetch('/api/health-connect/status', { method: 'DELETE' })
 }

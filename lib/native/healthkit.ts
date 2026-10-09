@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import { isNativeIOS, isNativeAndroid } from './platform'
 
 interface HealthKitPlugin {
   isAvailable(): Promise<{ available: boolean }>
@@ -59,7 +60,17 @@ export function isNativeApp(): boolean {
 }
 
 export async function isHealthKitAvailable(): Promise<boolean> {
-  if (!isNativeApp()) return false
+  if (!isNativeIOS()) return false
+  try {
+    const { available } = await HealthKit.isAvailable()
+    return available
+  } catch {
+    return false
+  }
+}
+
+export async function isHealthConnectAvailable(): Promise<boolean> {
+  if (!isNativeAndroid()) return false
   try {
     const { available } = await HealthKit.isAvailable()
     return available
