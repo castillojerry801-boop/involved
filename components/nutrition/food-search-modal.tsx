@@ -367,29 +367,33 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
           </div>
         )}
 
+        {/* Search input — pinned above the scroll area so it never scrolls away */}
+        {!loggedFood && tab === 'search' && (
+          <div className="shrink-0 px-4 pt-3 pb-2 border-b border-zinc-100 dark:border-zinc-800">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={query}
+                  onChange={e => handleQueryChange(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleNaturalSearch()}
+                  placeholder='e.g. "chicken breast" or "greek yogurt"'
+                  className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 pl-9 pr-4 py-2.5 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <Button size="sm" onClick={handleNaturalSearch} disabled={searching}>
+                {searching ? <Loader2 className="size-4 animate-spin" /> : 'Go'}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Content */}
         <div className={loggedFood ? 'hidden' : 'flex-1 overflow-y-auto'}>
           {tab === 'search' && (
             <div className="p-4">
-              {/* Search input */}
-              <div className="flex gap-2 mb-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
-                  <input
-                    autoFocus
-                    type="text"
-                    value={query}
-                    onChange={e => handleQueryChange(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleNaturalSearch()}
-                    placeholder='e.g. "chicken breast" or "greek yogurt"'
-                    className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 pl-9 pr-4 py-2.5 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <Button size="sm" onClick={handleNaturalSearch} disabled={searching}>
-                  {searching ? <Loader2 className="size-4 animate-spin" /> : 'Go'}
-                </Button>
-              </div>
-
               {searching && (
                 <div className="flex justify-center py-8">
                   <Loader2 className="size-5 animate-spin text-zinc-400" />
