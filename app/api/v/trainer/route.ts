@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { buildVTrainerContext, trainerContextToPrompt } from '@/lib/v/trainer-context'
 import { prisma } from '@/lib/prisma'
-import Anthropic from '@anthropic-ai/sdk'
+import { getOpenAI } from '@/lib/ai/client'
+import { MODELS } from '@/lib/ai/models'
 
 /**
  * POST /api/v/trainer
@@ -18,7 +19,6 @@ import Anthropic from '@anthropic-ai/sdk'
  * trainer approval. V never silently modifies client data.
  */
 export async function POST(req: NextRequest) {
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -54,14 +54,18 @@ CRITICAL RULES:
 - For read-only summaries and analysis, no draft block is needed.
 - Never invent data you don't have — acknowledge when information is missing.`
 
-    const response = await anthropic.messages.create({
-      model:      process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      system,
-      messages:   [{ role: 'user', content: body.message }],
+    const openai = getOpenAI()
+    const response = await openai.chat.completions.create({
+      model:       MODELS.coach.plus,
+      max_tokens:  1024,
+      temperature: 0.7,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user',   content: body.message },
+      ],
     })
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : ''
+    const text = response.choices[0]?.message?.content ?? ''
 
     // Extract and save draft if V produced one
     let draftId: string | null = null

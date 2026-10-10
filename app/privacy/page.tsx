@@ -214,22 +214,17 @@ export default function PrivacyPage() {
 
           <H3>Artificial Intelligence</H3>
           <P>
-            <strong className="text-zinc-800 dark:text-zinc-200">OpenAI</strong> — powers all AI features
-            available to standard users, including:
+            <strong className="text-zinc-800 dark:text-zinc-200">OpenAI</strong> — powers all AI
+            features in Involved, including:
           </P>
           <UL items={[
             'V, the AI Coach — your messages and relevant training context are processed to generate responses',
             'Workout and training program generation',
+            'Trainer-mode client analysis and draft program adjustments (trainer subscription only)',
             'Nutrition meal photo analysis — food photos are transmitted to OpenAI for visual analysis and are not stored by Involved after analysis is complete',
             'Voice workout logging — audio recordings are transmitted to OpenAI Whisper for transcription only; the audio is not stored by Involved after the transcript is returned',
             'Voice intent extraction — the resulting transcript (text only) is processed to identify workout actions',
           ]} />
-          <P>
-            <strong className="text-zinc-800 dark:text-zinc-200">Anthropic</strong> — used exclusively
-            for the V Trainer feature, which is available only to users with a Trainer subscription.
-            Trainer messages and authorized client context are processed by Anthropic Claude to assist
-            trainers in analyzing client data and drafting program adjustments.
-          </P>
 
           <H3>Nutrition Data</H3>
           <P>
