@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: 'How Involved collects, uses, and protects your information.',
 }
 
-const UPDATED = 'September 25, 2026'
+const UPDATED = 'October 9, 2026'
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
@@ -97,24 +97,27 @@ export default function PrivacyPage() {
             'AI-generated calorie and macro estimates based on photos or descriptions',
           ]} />
 
-          <H3>Apple Health / HealthKit Data</H3>
+          <H3>Apple Health &amp; Android Health Connect</H3>
           <P>
-            If you connect Apple Health, Involved may access, with your explicit permission, the following
-            HealthKit data types:
+            If you connect Apple Health (iOS) or Android Health Connect (Android), Involved may access,
+            with your explicit permission, the following data types:
           </P>
           <UL items={[
-            'Workouts and activity data',
+            'Workouts and exercise sessions',
             'Daily step count',
             'Active energy burned (all-day)',
             'Resting / basal energy burned',
             'Heart rate (from workouts)',
             'Resting heart rate',
             'Body mass / body weight',
-            'Other fitness metrics you explicitly authorize through iOS Settings',
           ]} />
           <P>
-            HealthKit data is accessed only when you grant permission through the iOS Health permission dialog.
-            You can revoke these permissions at any time via the iOS Health app or iPhone Settings.
+            On iOS, permissions are granted through the iOS Health permission dialog and can be revoked at
+            any time via iOS Settings → Privacy &amp; Security → Health → Involved.
+          </P>
+          <P>
+            On Android, permissions are granted through the Android Health Connect permission screen and
+            can be revoked at any time via the Health Connect app or Android Settings.
           </P>
 
           <H3>Progress Photos</H3>
@@ -133,17 +136,28 @@ export default function PrivacyPage() {
             'Messages and questions you send to V, the Involved AI Coach',
             'Workout and program generation requests',
             'Nutrition and meal analysis requests',
+            'Voice recordings you submit for workout logging (transcribed and immediately discarded — not stored by Involved)',
             'Context about your training history and goals used to personalize AI responses',
+          ]} />
+
+          <H3>Subscription Status</H3>
+          <UL items={[
+            'Your subscription tier (Free, Trial, or Involved+) and its current status',
+            'Subscription identifiers received from Apple, Google Play, or Stripe used to verify and manage your access',
+            'No payment card numbers or financial account details are collected or stored by Involved',
           ]} />
 
           <H3>Device &amp; Technical Information</H3>
           <UL items={[
             'App version and device type',
             'Operating system version',
-            'IP address and approximate location (derived from IP for timezone purposes)',
             'Session and authentication logs',
-            'Error and diagnostic information used to improve the Service',
           ]} />
+          <P>
+            IP addresses are read only to enforce rate limits on the support contact form (maximum 3
+            submissions per 10 minutes). They are held in server memory only for that window and are
+            never written to a database or used for location purposes.
+          </P>
         </Section>
 
         {/* 2. How We Use Your Information */}
@@ -152,7 +166,7 @@ export default function PrivacyPage() {
           <UL items={[
             'Provide, operate, and maintain the Involved Service',
             'Personalize training programs, nutrition guidance, and AI Coach responses to you',
-            'Sync and display Apple Health data within the app',
+            'Sync and display Apple Health and Android Health Connect data within the app',
             'Analyze your nutrition from food logs, barcodes, or meal photos',
             'Generate AI-powered workout and program recommendations',
             'Send transactional communications (e.g., trainer invitations)',
@@ -163,8 +177,9 @@ export default function PrivacyPage() {
           ]} />
         </Section>
 
-        {/* 3. HealthKit-Specific Disclosures */}
-        <Section id="healthkit" title="3. HealthKit — Specific Disclosures">
+        {/* 3. Health Platform Disclosures */}
+        <Section id="healthkit" title="3. Health Platform Disclosures">
+          <H3>Apple HealthKit (iOS)</H3>
           <P>The following commitments apply specifically to data obtained through Apple HealthKit:</P>
           <UL items={[
             'Involved does not sell HealthKit data.',
@@ -172,6 +187,16 @@ export default function PrivacyPage() {
             'Involved does not share HealthKit data with third parties except as strictly necessary to provide the Service (e.g., storing data in our secure database on your behalf).',
             'HealthKit data is used only to provide fitness tracking, activity display, personalized coaching, and related app features.',
             'You can revoke Health permissions at any time via iOS Settings → Privacy & Security → Health → Involved.',
+          ]} />
+
+          <H3>Android Health Connect</H3>
+          <P>The following commitments apply specifically to data obtained through Android Health Connect:</P>
+          <UL items={[
+            'Involved does not sell Health Connect data.',
+            'Involved does not use Health Connect data for advertising or marketing purposes.',
+            'Involved does not share Health Connect data with third parties except as strictly necessary to provide the Service (e.g., storing data in our secure database on your behalf).',
+            'Health Connect data is used only to provide fitness tracking, activity display, personalized coaching, and related app features.',
+            'You can revoke Health Connect permissions at any time via the Health Connect app or Android Settings → Apps → Involved → Permissions.',
           ]} />
         </Section>
 
@@ -188,22 +213,41 @@ export default function PrivacyPage() {
           ]} />
 
           <H3>Artificial Intelligence</H3>
+          <P>
+            <strong className="text-zinc-800 dark:text-zinc-200">OpenAI</strong> — powers all AI features
+            available to standard users, including:
+          </P>
           <UL items={[
-            'OpenAI — powers V, the AI Coach; workout and program generation; and nutrition analysis. Messages you send to V and related context may be processed by OpenAI to generate responses.',
+            'V, the AI Coach — your messages and relevant training context are processed to generate responses',
+            'Workout and training program generation',
+            'Nutrition meal photo analysis — food photos are transmitted to OpenAI for visual analysis and are not stored by Involved after analysis is complete',
+            'Voice workout logging — audio recordings are transmitted to OpenAI Whisper for transcription only; the audio is not stored by Involved after the transcript is returned',
+            'Voice intent extraction — the resulting transcript (text only) is processed to identify workout actions',
           ]} />
+          <P>
+            <strong className="text-zinc-800 dark:text-zinc-200">Anthropic</strong> — used exclusively
+            for the V Trainer feature, which is available only to users with a Trainer subscription.
+            Trainer messages and authorized client context are processed by Anthropic Claude to assist
+            trainers in analyzing client data and drafting program adjustments.
+          </P>
 
           <H3>Nutrition Data</H3>
           <P>
             Involved uses the following food databases to power nutrition search and barcode lookups.
-            Search queries may be sent to these services:
+            The food name you search for is transmitted to these services as a query; search queries
+            are not stored by Involved:
           </P>
           <UL items={[
-            'FatSecret — food search and barcode lookups',
-            'Nutritionix — food search and restaurant data',
-            'USDA FoodData Central — food composition data',
-            'Open Food Facts — packaged food database',
-            'NIH Dietary Supplement Label Database (DSLD) — supplement data',
+            'FatSecret — primary food search and barcode lookups',
+            'USDA FoodData Central — authoritative whole food composition data',
+            'Open Food Facts — packaged food barcode fallback',
+            'NIH Dietary Supplement Label Database (DSLD) — supplement-specific data',
           ]} />
+          <P>
+            When you log a food item, it is cached in a shared food library accessible to all Involved
+            users to improve search speed and coverage. Your identity is not attached to cached food
+            items.
+          </P>
 
           <H3>Email</H3>
           <UL items={[
@@ -224,8 +268,17 @@ export default function PrivacyPage() {
             deletion process, subject to any legal obligations to retain certain records.
           </P>
           <P>
-            Health and fitness data synced from Apple Health is stored in our database until you disconnect
-            Apple Health or delete your account.
+            Health and fitness data synced from Apple Health or Android Health Connect is stored in our
+            database until you disconnect the integration or delete your account.
+          </P>
+          <P>
+            Voice recordings submitted for workout logging are not stored by Involved. They are
+            transmitted to OpenAI for transcription and discarded immediately after the transcript
+            is returned.
+          </P>
+          <P>
+            Meal photos submitted for nutrition analysis are transmitted to OpenAI for visual processing
+            and are not stored by Involved after analysis is complete.
           </P>
         </Section>
 
@@ -253,10 +306,14 @@ export default function PrivacyPage() {
             Edit Profile.
           </P>
 
-          <H3>Apple Health Permissions</H3>
+          <H3>Health Platform Permissions</H3>
           <P>
-            You can manage or revoke HealthKit permissions at any time via iOS Settings → Privacy &amp;
-            Security → Health → Involved.
+            On iOS, you can manage or revoke Apple Health permissions at any time via iOS Settings →
+            Privacy &amp; Security → Health → Involved.
+          </P>
+          <P>
+            On Android, you can manage or revoke Health Connect permissions at any time via the Health
+            Connect app or Android Settings → Apps → Involved → Permissions.
           </P>
 
           <H3>Account Deletion</H3>
@@ -274,7 +331,7 @@ export default function PrivacyPage() {
             'All training programs and templates',
             'All nutrition logs, targets, food favorites, and saved meals',
             'All progress photos (including files in storage)',
-            'All Apple Health / HealthKit synced data',
+            'All Apple Health / HealthKit and Android Health Connect synced data',
             'AI Coach usage history',
             'Trainer/client relationships, notes, and targets',
             'Equipment profiles, goals, and preferences',
@@ -346,8 +403,7 @@ export default function PrivacyPage() {
         <hr className="mb-8 border-zinc-200 dark:border-zinc-800" />
 
         <p className="text-xs text-zinc-400 dark:text-zinc-600">
-          This is product-ready draft language. Final Terms and Privacy Policy should be reviewed by
-          qualified legal counsel before full public launch.
+          This Privacy Policy should be reviewed by qualified legal counsel before full public launch.
         </p>
 
         <div className="mt-8 flex flex-wrap gap-4 text-sm text-zinc-400">
