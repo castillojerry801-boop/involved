@@ -19,7 +19,7 @@ const SEARCH_FIELDS = [
   'nutriments', 'nutrition_grades',
 ].join(',')
 
-const USER_AGENT = 'InvolvedApp/1.0 (https://getinvolved.app; castillojerry801@gmail.com)'
+const USER_AGENT = 'InvolvedApp/1.0 (https://involvedfit.com; support@involvedfit.com)'
 
 function num(val: unknown): number | null {
   if (val == null) return null

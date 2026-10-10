@@ -225,6 +225,7 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
   const [results, setResults] = useState<FoodResult[]>([])
   const [recentFoods, setRecentFoods] = useState<FoodResult[]>([])
   const [searching, setSearching] = useState(false)
+  const [searchWarning, setSearchWarning] = useState<string | null>(null)
   const [logging, setLogging] = useState<string | null>(null)
   const [loggedFood, setLoggedFood] = useState<{ name: string; cal: number; multiplier: number } | null>(null)
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -237,12 +238,14 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
   }, [])
 
   const search = useCallback(async (q: string) => {
-    if (q.trim().length < 2) { setResults([]); return }
+    if (q.trim().length < 2) { setResults([]); setSearchWarning(null); return }
     setSearching(true)
+    setSearchWarning(null)
     try {
       const res = await fetch(`/api/nutrition/search?q=${encodeURIComponent(q)}`)
-      const data = await res.json() as { results: FoodResult[] }
+      const data = await res.json() as { results: FoodResult[]; warning?: string }
       setResults(data.results ?? [])
+      setSearchWarning(data.warning ?? null)
     } finally {
       setSearching(false)
     }
@@ -257,14 +260,16 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
   const handleNaturalSearch = async () => {
     if (!query.trim()) return
     setSearching(true)
+    setSearchWarning(null)
     try {
       const res = await fetch('/api/nutrition/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
       })
-      const data = await res.json() as { results: FoodResult[] }
+      const data = await res.json() as { results: FoodResult[]; warning?: string }
       setResults(data.results ?? [])
+      setSearchWarning(data.warning ?? null)
     } finally {
       setSearching(false)
     }
@@ -420,8 +425,14 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
 
               {!searching && query.length >= 2 && results.length === 0 && (
                 <div className="py-8 text-center">
-                  <p className="text-sm text-zinc-400 mb-1">No results found.</p>
-                  <p className="text-xs text-zinc-300">Try a different spelling or scan the barcode instead.</p>
+                  {searchWarning ? (
+                    <p className="text-sm text-zinc-400">{searchWarning}</p>
+                  ) : (
+                    <>
+                      <p className="text-sm text-zinc-400 mb-1">No results found.</p>
+                      <p className="text-xs text-zinc-300">Try a different spelling or scan the barcode instead.</p>
+                    </>
+                  )}
                 </div>
               )}
 

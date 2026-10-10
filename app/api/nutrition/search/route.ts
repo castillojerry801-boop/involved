@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { FOOD_PROVIDERS } from '@/lib/nutrition/providers'
 import { prisma } from '@/lib/prisma'
 import type { ExternalFoodResult } from '@/lib/nutrition/providers/types'
+import { isSensitiveQuery, PRIVACY_REJECTION_MESSAGE } from '@/lib/nutrition/privacy-guard'
 
 // ── Supplement gate ───────────────────────────────────────────────────────────
 
@@ -158,6 +159,10 @@ export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get('q')?.trim()
   if (!query || query.length < 2) return NextResponse.json({ results: [] })
 
+  if (isSensitiveQuery(query)) {
+    return NextResponse.json({ results: [], warning: PRIVACY_REJECTION_MESSAGE })
+  }
+
   const isSupplement = isSupplementQuery(query)
 
   const terms = query.split(/\s+/).filter(t => t.length >= 2)
@@ -283,6 +288,11 @@ export async function POST(req: NextRequest) {
 
   const { query } = await req.json() as { query: string }
   if (!query?.trim()) return NextResponse.json({ results: [] })
+
+  if (isSensitiveQuery(query)) {
+    return NextResponse.json({ results: [], warning: PRIVACY_REJECTION_MESSAGE })
+  }
+
   const results = await FOOD_PROVIDERS[0].search(query, { limit: 20 })
   return NextResponse.json({ results })
 }
