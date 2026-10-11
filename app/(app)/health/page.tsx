@@ -910,7 +910,16 @@ export default function HealthPage() {
           )}
 
           {!summaryLoading && summary && summary.dailySteps.length > 0 && (() => {
-            const chartData = summary.dailySteps.slice(-7)
+            // Anchor to the last 7 local calendar dates so the avg matches V's computation.
+            // slice(-7) from a 14-day array can include days 8-14 ago when recent days have
+            // gaps, pulling the average down with stale data from before the rolling-sync fix.
+            const todayStr = new Date().toISOString().slice(0, 10)
+            const last7Dates = new Set(Array.from({ length: 7 }, (_, i) => {
+              const d = new Date(todayStr)
+              d.setUTCDate(d.getUTCDate() - (6 - i))
+              return d.toISOString().slice(0, 10)
+            }))
+            const chartData = summary.dailySteps.filter(d => last7Dates.has(d.date))
             const avgSteps  = chartData.length > 0
               ? Math.round(chartData.reduce((s, d) => s + d.steps, 0) / chartData.length)
               : 0

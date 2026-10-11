@@ -269,14 +269,20 @@ export function contextToSystemSnippet(ctx: CoachContext): string {
   if (nutrition.targetsSet && nutrition.targets && nutrition.today) {
     const t = nutrition.targets
     const d = nutrition.today
-    lines.push('NUTRITION TODAY:')
-    lines.push(`  Targets:   ${t.calories} cal | ${t.protein}g protein | ${t.carbs}g carbs | ${t.fat}g fat`)
-    lines.push(`  Consumed:  ${d.calories} cal | ${d.protein}g protein | ${d.carbs}g carbs | ${d.fat}g fat`)
-    lines.push(`  Remaining: ${d.remaining} cal | Meals logged: ${d.mealsLogged}`)
-    if (Object.keys(d.byMeal).length > 0) {
-      lines.push('  By meal:')
-      for (const [meal, v] of Object.entries(d.byMeal)) {
-        lines.push(`    ${meal}: ${v.calories} cal | ${v.protein}g P | ${v.carbs}g C | ${v.fat}g F`)
+    if (d.mealsLogged === 0) {
+      // Nothing logged yet — do not emit zero-calorie consumed/remaining values, which
+      // V would otherwise read as an actual intake signal (e.g. at midnight after reset).
+      lines.push('NUTRITION: Targets set, nothing logged today yet.')
+    } else {
+      lines.push('NUTRITION TODAY:')
+      lines.push(`  Targets:   ${t.calories} cal | ${t.protein}g protein | ${t.carbs}g carbs | ${t.fat}g fat`)
+      lines.push(`  Consumed:  ${d.calories} cal | ${d.protein}g protein | ${d.carbs}g carbs | ${d.fat}g fat`)
+      lines.push(`  Remaining: ${d.remaining} cal | Meals logged: ${d.mealsLogged}`)
+      if (Object.keys(d.byMeal).length > 0) {
+        lines.push('  By meal:')
+        for (const [meal, v] of Object.entries(d.byMeal)) {
+          lines.push(`    ${meal}: ${v.calories} cal | ${v.protein}g P | ${v.carbs}g C | ${v.fat}g F`)
+        }
       }
     }
   } else if (nutrition.today && nutrition.today.mealsLogged > 0) {

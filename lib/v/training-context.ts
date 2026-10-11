@@ -2,6 +2,7 @@ import 'server-only'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
 import { getExperienceDialogue } from './experience-dialogue'
+import { jsToWeekday, WEEKDAY_SHORT } from '@/lib/training/program-scheduling'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -214,7 +215,7 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
       select: {
         name: true,
         days: {
-          select: { name: true, focus: true, weekday: true },
+          select: { id: true, name: true, focus: true, weekday: true },
           orderBy: { sortOrder: 'asc' },
         },
       },
@@ -288,10 +289,9 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
     }
   })
 
-  const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
   const scheduledFromWorkouts = plannedWorkouts.map(w => ({
     title:         w.programDay?.name ?? w.title,
-    scheduledDate: w.scheduledDate ? DAY_ABBR[new Date(w.scheduledDate).getDay()] : 'TBD',
+    scheduledDate: w.scheduledDate ? WEEKDAY_SHORT[jsToWeekday(new Date(w.scheduledDate).getDay())] : 'TBD',
     focus:         w.programDay?.focus ?? undefined,
     source:        'scheduled' as const,
   }))
@@ -300,10 +300,22 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
   // When no status='planned' Workout rows exist for this week, synthesize the schedule
   // from the active program's weekday assignments.
   const REST_DAY_PATTERN = /\b(rest|recovery|off(\s+day)?|deload)\b/i
-  const todayDow = new Date().getDay()
+  const todayDow = jsToWeekday(new Date().getDay())
+
+  // ProgramDay IDs that already have a completed workout this week.
+  // Prevents recurring template days from re-appearing as upcoming immediately after
+  // the user finishes them — especially visible on Sunday (dow=0) where weekday >= 0
+  // matches every template day, including the one just completed.
+  const completedProgramDayIdsThisWeek = new Set<string>(
+    recentWorkouts
+      .filter(w => w.programDayId != null && w.completedAt != null && w.completedAt >= weekStart)
+      .map(w => w.programDayId!)
+  )
+
   const programTemplateDays = (activeProgram?.days ?? [])
     .filter((d): d is typeof d & { weekday: number } => d.weekday != null)
     .filter(d => !REST_DAY_PATTERN.test(d.name))
+    .filter(d => !completedProgramDayIdsThisWeek.has(d.id))
   const upcomingTemplateDays = programTemplateDays.filter(d => d.weekday >= todayDow)
   const templateDays = upcomingTemplateDays.length > 0 ? upcomingTemplateDays : programTemplateDays
 
@@ -311,7 +323,7 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
     ? scheduledFromWorkouts
     : templateDays.map(d => ({
         title:         d.name,
-        scheduledDate: DAY_ABBR[d.weekday],
+        scheduledDate: WEEKDAY_SHORT[d.weekday],
         focus:         d.focus ?? undefined,
         source:        'program_template' as const,
       }))
@@ -526,6 +538,8 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
         })
       } else if (t.totalSets > 0) {
         lines.push(`    (${t.totalSets} sets performed — no barbell/dumbbell weight recorded; likely bodyweight or cardio)`)
+      } else {
+        lines.push(`    (no sets individually tracked in-app — per-set logging was not used for this session)`)
       }
     })
   } else {
