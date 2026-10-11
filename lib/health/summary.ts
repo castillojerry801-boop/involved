@@ -83,13 +83,15 @@ export async function buildHealthVSummary(
     return item
   })
 
-  // Aggregate daily steps
+  // Aggregate daily steps — take the highest value per calendar day.
+  // Daily HealthKit step totals are running totals, not additive measurements.
+  // Use periodStart when set (canonical UTC midnight for the day); fall back to
+  // recordedAt so old records without periodStart are still bucketed correctly.
   const dailyStepsMap = new Map<string, number>()
   for (const m of stepMetrics) {
-    const date = m.recordedAt.toISOString().slice(0, 10)
+    const date = (m.periodStart ?? m.recordedAt).toISOString().slice(0, 10)
     const existing = dailyStepsMap.get(date) ?? 0
-    // Sum multiple readings per day (e.g. partial syncs)
-    dailyStepsMap.set(date, existing + Number(m.value))
+    dailyStepsMap.set(date, Math.max(existing, Number(m.value)))
   }
   const dailySteps = [...dailyStepsMap.entries()]
     .map(([date, steps]) => ({ date, steps: Math.round(steps) }))

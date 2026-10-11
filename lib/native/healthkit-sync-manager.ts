@@ -2,8 +2,11 @@ import { runHealthKitSync } from './healthkit-sync'
 import { isHealthKitAvailable } from './healthkit'
 
 export const FRESHNESS_THRESHOLD_MS = 15 * 60 * 1000
-const LOOKBACK_OVERLAP_MS = 24 * 60 * 60 * 1000
-const INITIAL_SYNC_DAYS = 30
+const LOOKBACK_OVERLAP_MS  = 24 * 60 * 60 * 1000
+const INITIAL_SYNC_DAYS    = 30
+// Every incremental sync covers at least the last 7 days so gaps from partial
+// historical syncs are automatically repaired without user intervention.
+const ROLLING_LOOKBACK_MS  = 7 * 24 * 60 * 60 * 1000
 
 let syncInProgress = false
 
@@ -46,11 +49,21 @@ async function executeSync(trigger: SyncTrigger, lastSyncAt: string | null): Pro
   const t0 = Date.now()
 
   let sinceDate: Date
-  if (lastSyncAt) {
-    sinceDate = new Date(new Date(lastSyncAt).getTime() - LOOKBACK_OVERLAP_MS)
-  } else {
+  if (!lastSyncAt) {
+    // First ever sync — pull full history
     sinceDate = new Date()
     sinceDate.setDate(sinceDate.getDate() - INITIAL_SYNC_DAYS)
+  } else {
+    // Always cover the last 7 days so any gap from a prior partial sync is healed.
+    // For old syncs the lastSyncAt-24h term goes even further back and wins naturally.
+    // Floor to UTC midnight: the Swift predicate uses startDate for sample filtering;
+    // a mid-day cutoff would exclude steps recorded before that hour on the oldest day,
+    // corrupting a previously correct full-day total. UTC midnight is before local
+    // midnight for UTC- users (Americas), so all 7 target calendar days are fully covered.
+    const recentSince      = new Date(lastSyncAt).getTime() - LOOKBACK_OVERLAP_MS
+    const rollingFloorDate = new Date(Date.now() - ROLLING_LOOKBACK_MS)
+    rollingFloorDate.setUTCHours(0, 0, 0, 0)
+    sinceDate = new Date(Math.min(recentSince, rollingFloorDate.getTime()))
   }
 
   console.log('[HealthSync]', JSON.stringify({

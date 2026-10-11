@@ -164,6 +164,9 @@ export interface NormalizedMetric {
   value: number
   unit: string
   recordedAt: string
+  // For daily aggregates (steps, energy): UTC midnight to end-of-day for the calendar date
+  periodStart?: string
+  periodEnd?: string
 }
 
 export function normalizeBodyMass(raw: RawBodyMassSample): NormalizedMetric {
@@ -200,6 +203,10 @@ export function normalizeStepDay(raw: RawStepDay): NormalizedMetric {
     value: raw.steps,
     unit: 'count',
     recordedAt: raw.date,
+    // Canonical calendar-day period in UTC — makes dedup by date robust across
+    // re-syncs even if the native plugin's midnight timestamp varies slightly.
+    periodStart: `${dateSlug}T00:00:00.000Z`,
+    periodEnd:   `${dateSlug}T23:59:59.999Z`,
   }
 }
 
@@ -213,6 +220,8 @@ export function normalizeDailyActiveEnergy(raw: RawDailyEnergy): NormalizedMetri
     value: raw.activeEnergyKcal,
     unit: 'kcal',
     recordedAt: raw.date,
+    periodStart: `${dateSlug}T00:00:00.000Z`,
+    periodEnd:   `${dateSlug}T23:59:59.999Z`,
   }
 }
 
@@ -226,5 +235,7 @@ export function normalizeDailyBasalEnergy(raw: RawDailyEnergy): NormalizedMetric
     value: raw.basalEnergyKcal,
     unit: 'kcal',
     recordedAt: raw.date,
+    periodStart: `${dateSlug}T00:00:00.000Z`,
+    periodEnd:   `${dateSlug}T23:59:59.999Z`,
   }
 }

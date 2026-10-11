@@ -20,6 +20,8 @@ interface IncomingMetric {
   value: number
   unit: string
   recordedAt: string
+  periodStart?: string
+  periodEnd?:   string
 }
 
 export async function POST(req: NextRequest) {
@@ -59,11 +61,15 @@ export async function POST(req: NextRequest) {
           value: metric.value,
           unit: metric.unit,
           recordedAt: new Date(metric.recordedAt),
+          ...(metric.periodStart ? { periodStart: new Date(metric.periodStart) } : {}),
+          ...(metric.periodEnd   ? { periodEnd:   new Date(metric.periodEnd)   } : {}),
           syncState: 'synced',
         },
         update: {
           value: metric.value,
-          unit: metric.unit,
+          unit:  metric.unit,
+          ...(metric.periodStart ? { periodStart: new Date(metric.periodStart) } : {}),
+          ...(metric.periodEnd   ? { periodEnd:   new Date(metric.periodEnd)   } : {}),
           syncedAt: new Date(),
         },
       })

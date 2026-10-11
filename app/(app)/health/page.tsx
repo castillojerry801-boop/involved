@@ -711,11 +711,11 @@ export default function HealthPage() {
     try {
       const res = await fetch('/api/health/metrics?type=steps&limit=90')
       if (res.ok) {
-        const { metrics } = await res.json() as { metrics: Array<{ recordedAt: string; value: number }> }
+        const { metrics } = await res.json() as { metrics: Array<{ recordedAt: string; value: number; periodStart?: string | null }> }
         const byDate = new Map<string, number>()
         for (const row of metrics) {
-          const d = row.recordedAt.slice(0, 10)
-          byDate.set(d, (byDate.get(d) ?? 0) + row.value)
+          const d = (row.periodStart ?? row.recordedAt).slice(0, 10)
+          byDate.set(d, Math.max(byDate.get(d) ?? 0, Number(row.value)))
         }
         const sorted = Array.from(byDate.entries())
           .map(([date, steps]) => ({ date, steps: Math.round(steps) }))

@@ -147,17 +147,67 @@ describe('in-flight guard', () => {
 
 // ─── D. Incremental query strategy ───────────────────────────────────────────
 
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+const ONE_DAY_MS    = 24 * 60 * 60 * 1000
+
 describe('incremental query', () => {
-  it('uses lastSyncAt minus 24h as sinceDate when last sync exists', async () => {
+  it('uses rolling 7-day floor when last sync was recent (repairs historical gaps)', async () => {
+    // Even with a very recent lastSyncAt, sinceDate must cover the full 7-day window.
+    // The floor is snapped to UTC midnight, so sinceDate can be up to 24h earlier than
+    // exactly now-7days — both bounds are relaxed accordingly.
+    const lastSyncAt = new Date(Date.now() - 20 * 60 * 1000)  // 20 min ago
+    vi.stubGlobal('fetch', buildFetchMock({ connected: true, lastFullSyncAt: lastSyncAt.toISOString() }))
+
+    const before = Date.now()
+    await syncIfStale('launch')
+    const after  = Date.now()
+
+    const [sinceDate] = mockRunSync.mock.calls[0] as [Date]
+    // sinceDate = UTC midnight(now - 7 days): between 8 and 7 days ago
+    expect(sinceDate.getTime()).toBeGreaterThanOrEqual(before - 8 * ONE_DAY_MS - 5000)
+    expect(sinceDate.getTime()).toBeLessThanOrEqual(after  - SEVEN_DAYS_MS + 5000)
+  })
+
+  it('rolling floor is aligned to UTC midnight — prevents partial-day step counts', async () => {
+    // The Swift quantitySamplePredicate uses startDate directly; a mid-day sinceDate
+    // would exclude steps before that hour on the oldest day. UTC midnight is always
+    // <= local midnight for UTC- users, so all 7 target calendar days get full sums.
     const lastSyncAt = new Date(Date.now() - 20 * 60 * 1000)
     vi.stubGlobal('fetch', buildFetchMock({ connected: true, lastFullSyncAt: lastSyncAt.toISOString() }))
 
     await syncIfStale('launch')
 
     const [sinceDate] = mockRunSync.mock.calls[0] as [Date]
-    const expectedSince = new Date(lastSyncAt.getTime() - 24 * 60 * 60 * 1000)
-    // Allow 5s tolerance
+    expect(sinceDate.getUTCHours()).toBe(0)
+    expect(sinceDate.getUTCMinutes()).toBe(0)
+    expect(sinceDate.getUTCSeconds()).toBe(0)
+    expect(sinceDate.getUTCMilliseconds()).toBe(0)
+  })
+
+  it('uses lastSyncAt minus 24h when that is older than 7 days (overlap wins)', async () => {
+    // lastSyncAt = 10 days ago → lastSyncAt - 24h = 11 days ago, which is earlier than 7 days ago
+    const lastSyncAt = new Date(Date.now() - 10 * ONE_DAY_MS)
+    vi.stubGlobal('fetch', buildFetchMock({ connected: true, lastFullSyncAt: lastSyncAt.toISOString() }))
+
+    await syncIfStale('launch')
+
+    const [sinceDate] = mockRunSync.mock.calls[0] as [Date]
+    const expectedSince = new Date(lastSyncAt.getTime() - ONE_DAY_MS)
     expect(Math.abs(sinceDate.getTime() - expectedSince.getTime())).toBeLessThan(5000)
+  })
+
+  it('consecutive syncs always cover 7 days — gaps from partial initial sync are healed', async () => {
+    // lastSyncAt = 1 day ago (normal incremental scenario after a partial first sync)
+    const lastSyncAt = new Date(Date.now() - ONE_DAY_MS)
+    vi.stubGlobal('fetch', buildFetchMock({ connected: true, lastFullSyncAt: lastSyncAt.toISOString() }))
+
+    const before = Date.now()
+    await syncIfStale('launch')
+    const after  = Date.now()
+
+    const [sinceDate] = mockRunSync.mock.calls[0] as [Date]
+    // sinceDate must be at or before 7 days ago
+    expect(sinceDate.getTime()).toBeLessThanOrEqual(before - SEVEN_DAYS_MS + 5000)
   })
 
   it('uses 30-day bounded history for first sync (null lastSyncAt)', async () => {
@@ -168,9 +218,9 @@ describe('incremental query', () => {
     const after = new Date()
 
     const [sinceDate] = mockRunSync.mock.calls[0] as [Date]
-    const expectedDaysAgo = before.getTime() - 30 * 24 * 60 * 60 * 1000
+    const expectedDaysAgo = before.getTime() - 30 * ONE_DAY_MS
     expect(sinceDate.getTime()).toBeGreaterThanOrEqual(expectedDaysAgo - 5000)
-    expect(sinceDate.getTime()).toBeLessThanOrEqual(after.getTime() - 29 * 24 * 60 * 60 * 1000 + 5000)
+    expect(sinceDate.getTime()).toBeLessThanOrEqual(after.getTime() - 29 * ONE_DAY_MS + 5000)
   })
 })
 

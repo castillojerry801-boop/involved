@@ -235,4 +235,89 @@ describe('normalizeStepDay', () => {
     const resync: RawStepDay = { date: '2026-09-25T04:00:00Z', steps: 9100 }
     expect(normalizeStepDay(resync).externalId).toBe(normalizeStepDay(raw).externalId)
   })
+
+  it('sets periodStart to UTC midnight of the date slug', () => {
+    const result = normalizeStepDay(raw)
+    expect(result.periodStart).toBe('2026-09-25T00:00:00.000Z')
+  })
+
+  it('sets periodEnd to UTC end-of-day of the date slug', () => {
+    const result = normalizeStepDay(raw)
+    expect(result.periodEnd).toBe('2026-09-25T23:59:59.999Z')
+  })
+
+  it('periodStart date slug matches externalId date slug', () => {
+    const result = normalizeStepDay(raw)
+    const slugFromExternalId = result.externalId.replace('steps:', '')
+    const slugFromPeriodStart = result.periodStart!.slice(0, 10)
+    expect(slugFromExternalId).toBe(slugFromPeriodStart)
+  })
+
+  it('partial-day update: re-syncing same day with higher count produces same externalId', () => {
+    // Morning: 2200 steps. Evening: 11796 steps. Same upsert key → update, not insert.
+    const morning = normalizeStepDay({ date: '2026-10-10T07:00:00Z', steps: 2200 })
+    const evening = normalizeStepDay({ date: '2026-10-10T07:00:00Z', steps: 11796 })
+    expect(morning.externalId).toBe(evening.externalId)
+    expect(morning.recordedAt).toBe(evening.recordedAt)
+    expect(evening.value).toBe(11796)
+  })
+})
+
+// ─── J. Daily step aggregation logic ─────────────────────────────────────────
+// Tests the MAX-per-day aggregation used in buildHealthVSummary and the health
+// dashboard step log — ensures repeated syncs and partial-day snapshots aggregate
+// correctly without double-counting.
+
+describe('daily step MAX aggregation', () => {
+  function aggregateByMax(rows: Array<{ recordedAt: string; value: number; periodStart?: string | null }>): Map<string, number> {
+    const map = new Map<string, number>()
+    for (const row of rows) {
+      const d = (row.periodStart ?? row.recordedAt).slice(0, 10)
+      map.set(d, Math.max(map.get(d) ?? 0, Number(row.value)))
+    }
+    return map
+  }
+
+  it('takes the higher value when two records share the same periodStart date', () => {
+    const rows = [
+      { recordedAt: '2026-10-10T07:00:00Z', value: 2200,  periodStart: '2026-10-10T00:00:00.000Z' },
+      { recordedAt: '2026-10-10T07:00:00Z', value: 11796, periodStart: '2026-10-10T00:00:00.000Z' },
+    ]
+    const result = aggregateByMax(rows)
+    expect(result.get('2026-10-10')).toBe(11796)
+  })
+
+  it('does not double-count re-synced records for the same day', () => {
+    const rows = [
+      { recordedAt: '2026-10-08T07:00:00Z', value: 9000,  periodStart: '2026-10-08T00:00:00.000Z' },
+      { recordedAt: '2026-10-08T07:00:00Z', value: 9000,  periodStart: '2026-10-08T00:00:00.000Z' },
+      { recordedAt: '2026-10-09T07:00:00Z', value: 7500,  periodStart: '2026-10-09T00:00:00.000Z' },
+    ]
+    const result = aggregateByMax(rows)
+    expect(result.get('2026-10-08')).toBe(9000)
+    expect(result.get('2026-10-09')).toBe(7500)
+    expect(result.size).toBe(2)
+  })
+
+  it('handles missing days without treating them as zero in average', () => {
+    // Only 3 of 7 days have data — average should divide by 3, not 7
+    const rows = [
+      { recordedAt: '2026-10-05T07:00:00Z', value: 8000, periodStart: '2026-10-05T00:00:00.000Z' },
+      { recordedAt: '2026-10-07T07:00:00Z', value: 9000, periodStart: '2026-10-07T00:00:00.000Z' },
+      { recordedAt: '2026-10-10T07:00:00Z', value: 7000, periodStart: '2026-10-10T00:00:00.000Z' },
+    ]
+    const map = aggregateByMax(rows)
+    const values = [...map.values()]
+    const avg = Math.round(values.reduce((s, v) => s + v, 0) / values.length)
+    expect(map.size).toBe(3)
+    expect(avg).toBe(8000)  // (8000+9000+7000)/3
+  })
+
+  it('falls back to recordedAt for date bucketing when periodStart is null', () => {
+    const rows = [
+      { recordedAt: '2026-10-10T07:00:00Z', value: 5000, periodStart: null },
+    ]
+    const result = aggregateByMax(rows)
+    expect(result.get('2026-10-10')).toBe(5000)
+  })
 })

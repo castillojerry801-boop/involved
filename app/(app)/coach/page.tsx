@@ -11,6 +11,7 @@ import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { cn } from '@/lib/utils'
 import { GenerateProgramModal } from '@/components/v/GenerateProgramModal'
 import { VoiceMicInput } from '@/components/v/VoiceMicInput'
+import { HealthSyncTrigger } from '@/components/today/HealthSyncTrigger'
 
 interface TextMessage { role: 'user' | 'assistant'; content: string; type: 'text' }
 interface WorkoutMessage {
@@ -489,6 +490,7 @@ export default function CoachPage() {
 
   return (
     <>
+    <HealthSyncTrigger />
     <GenerateProgramModal open={programModalOpen} onOpenChange={setProgramModalOpen} />
     <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen max-w-2xl mx-auto px-4 md:px-8">
 
