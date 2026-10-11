@@ -12,4 +12,4 @@ export const resend: Resend = new Proxy({} as Resend, {
 })
 
 export const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? 'Involved <noreply@involvedfit.com>'
-export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://involvedfit.com'
+export const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.involvedfit.com'

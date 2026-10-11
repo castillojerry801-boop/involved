@@ -72,6 +72,7 @@ model Profile {
   healthMetrics    HealthMetric[]
   healthSyncCursors HealthSyncCursor[]
   healthPermissions HealthPermission[]
+  stravaToken      StravaToken?
 
   // Photos
   progressPhotos   ProgressPhoto[]
@@ -932,6 +933,23 @@ model HealthPermission {
   @@map("health_permissions")
 }
 
+model StravaToken {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @unique @map("user_id") @db.Uuid
+  athleteId    Int      @map("athlete_id")
+  accessToken  String   @map("access_token") @db.Text
+  refreshToken String   @map("refresh_token") @db.Text
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(3)
+  scope        String   @default("activity:read_all") @db.VarChar(500)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([athleteId])
+  @@map("strava_tokens")
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // EXERCISE PREFERENCES
 // ═════════════════════════════════════════════════════════════════════
@@ -1116,6 +1134,7 @@ enum WorkoutSource {
   manual
   coach_generated
   trainer_assigned
+  strava
 }
 
 enum PRMetric {

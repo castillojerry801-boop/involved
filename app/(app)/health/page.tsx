@@ -382,6 +382,14 @@ function ConnectSection() {
   const [hcError, setHCError] = useState<string | null>(null)
   const [hcDisconnecting, setHCDisconnecting] = useState(false)
 
+  // Strava state — always visible, OAuth-based
+  type StravaStatus = 'checking' | 'not_connected' | 'connected'
+  const [stravaStatus,        setStravaStatus]        = useState<StravaStatus>('checking')
+  const [stravaLastSyncAt,    setStravaLastSyncAt]    = useState<string | null>(null)
+  const [stravaDisconnecting, setStravaDisconnecting] = useState(false)
+  const [stravaSyncing,       setStravaSyncing]       = useState(false)
+  const [stravaError,         setStravaError]         = useState<string | null>(null)
+
   useEffect(() => {
     if (platform !== 'ios') return
     isHealthKitAvailable().then((available) => {
@@ -440,6 +448,47 @@ function ConnectSection() {
     await disconnectHealthConnect()
     setHCStatus('not_connected')
     setHCDisconnecting(false)
+  }
+
+  useEffect(() => {
+    fetch('/api/strava/status')
+      .then(r => r.ok ? r.json() : { connected: false })
+      .then((data: { connected: boolean; lastSyncedAt: string | null }) => {
+        setStravaStatus(data.connected ? 'connected' : 'not_connected')
+        setStravaLastSyncAt(data.lastSyncedAt)
+      })
+      .catch(() => setStravaStatus('not_connected'))
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const stravaParam = params.get('strava')
+    if (stravaParam === 'connected') {
+      setStravaStatus('connected')
+    } else if (stravaParam === 'conflict') {
+      setStravaStatus('not_connected')
+      setStravaError('This Strava account is already connected to another Involved account.')
+    }
+    if (stravaParam) {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('strava')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [])
+
+  async function handleStravaDisconnect() {
+    setStravaDisconnecting(true)
+    await fetch('/api/strava/disconnect', { method: 'DELETE' })
+    setStravaStatus('not_connected')
+    setStravaLastSyncAt(null)
+    setStravaDisconnecting(false)
+  }
+
+  async function handleStravaSync() {
+    setStravaSyncing(true)
+    const res = await fetch('/api/strava/sync', { method: 'POST' })
+    if (res.ok) setStravaLastSyncAt(new Date().toISOString())
+    setStravaSyncing(false)
   }
 
   const nativeActive = platform !== 'web'
@@ -554,6 +603,64 @@ function ConnectSection() {
           )}
         </div>
 
+
+        {/* ── Strava card ── */}
+        <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="size-5 text-orange-500" />
+            <span className="font-semibold text-sm">Strava</span>
+          </div>
+          <p className="text-xs text-zinc-500 mb-2">
+            Import your Strava activities — runs, rides, swims, and more.
+          </p>
+          {stravaStatus === 'checking' && (
+            <div className="h-5 w-28 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+          )}
+          {stravaStatus === 'not_connected' && (
+            <>
+              <a
+                href="/api/strava/connect"
+                className="inline-block rounded-xl bg-[#FC4C02] text-white px-4 py-2 text-xs font-semibold hover:bg-orange-600 transition-colors"
+              >
+                Connect Strava
+              </a>
+              {stravaError && (
+                <p className="mt-1.5 text-xs text-red-500">{stravaError}</p>
+              )}
+            </>
+          )}
+          {stravaStatus === 'connected' && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Check className="size-3.5 text-emerald-500" />
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Connected</span>
+                </div>
+                <button
+                  onClick={handleStravaDisconnect}
+                  disabled={stravaDisconnecting}
+                  className="text-xs text-zinc-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                >
+                  {stravaDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                {stravaLastSyncAt && (
+                  <span className="text-xs text-zinc-400">Synced {formatSyncAge(stravaLastSyncAt)}</span>
+                )}
+                <button
+                  onClick={handleStravaSync}
+                  disabled={stravaSyncing}
+                  className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors disabled:opacity-50"
+                >
+                  {stravaSyncing ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+                  {stravaSyncing ? 'Syncing…' : 'Sync now'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
       </div>
       <div className="rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-4">
         <p className="text-xs font-semibold text-zinc-500 mb-2 uppercase tracking-wide">Privacy</p>
@@ -562,6 +669,7 @@ function ConnectSection() {
           <li>• Minimum necessary data — Involved only requests what it displays</li>
           <li>• Revocable at any time through iOS Settings or Android Health Connect</li>
           <li>• Your health history is never shared with trainers without your explicit permission</li>
+          <li>• Strava activities sync server-side — your Strava credentials are never shared with trainers</li>
         </ul>
       </div>
     </div>
