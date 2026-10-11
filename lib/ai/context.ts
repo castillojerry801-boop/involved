@@ -6,13 +6,33 @@ import type { VTrainingContext } from '@/lib/v/training-context'
 // Compact structured context sent to the Coach.
 // AI receives summaries — not raw database records.
 
+export interface NutritionDayTotal {
+  date:     string
+  calories: number
+  protein:  number
+  carbs:    number
+  fat:      number
+  meals:    number
+}
+
 export interface NutritionContext {
   targetsSet: boolean
   targets?: { calories: number; protein: number; carbs: number; fat: number }
   today?: {
     calories: number; protein: number; carbs: number; fat: number
     remaining?: number; mealsLogged: number
+    byMeal: Record<string, { calories: number; protein: number; carbs: number; fat: number; count: number }>
   }
+  // Last 7 days including today — oldest first, today last
+  history: NutritionDayTotal[]
+}
+
+export interface HealthMetricsSummary {
+  stepsToday?:         number
+  stepsAvg7d?:         number
+  sleepLastNightHours?: number
+  bodyWeightKg?:       number
+  bodyWeightDate?:     string
 }
 
 export interface GoalSummary {
@@ -23,43 +43,66 @@ export interface GoalSummary {
 }
 
 export interface CoachContext {
-  user: { name: string; tier: 'free' | 'plus' }
-  goals: GoalSummary[]
-  nutrition: NutritionContext
+  user:            { name: string; tier: 'free' | 'plus' }
+  goals:           GoalSummary[]
+  nutrition:       NutritionContext
+  healthMetrics:   HealthMetricsSummary
   trainingSnippet: string
-  trainingCtx: VTrainingContext | null
+  trainingCtx:     VTrainingContext | null
 }
 
 export async function buildCoachContext(userId: string, userEmail?: string): Promise<CoachContext> {
-  const today = new Date().toISOString().slice(0, 10)
+  const today     = new Date().toISOString().slice(0, 10)
+  const todayDate = new Date(today)
 
-  const [profile, goals, target, entries, trainingCtx] = await Promise.all([
+  // 7-day window: 6 days ago through today
+  const sevenDaysAgo = new Date(todayDate)
+  sevenDaysAgo.setDate(todayDate.getDate() - 6)
+  sevenDaysAgo.setHours(0, 0, 0, 0)
+
+  const [profile, goals, target, entries7d, healthMetricRows, trainingCtx] = await Promise.all([
     prisma.profile.findUnique({
-      where: { id: userId },
+      where:  { id: userId },
       select: { displayName: true, subscriptionTier: true },
     }).catch(() => null),
 
     prisma.goal.findMany({
-      where: { userId, status: 'active' },
-      select: { type: true, title: true, description: true, targetDate: true },
+      where:   { userId, status: 'active' },
+      select:  { type: true, title: true, description: true, targetDate: true },
       orderBy: { createdAt: 'desc' },
-      take: 8,
+      take:    8,
     }).catch(() => []),
 
     prisma.nutritionTarget.findFirst({
-      where: { userId },
+      where:   { userId },
       orderBy: { effectiveDate: 'desc' },
     }).catch(() => null),
 
     prisma.foodLogEntry.findMany({
-      where: { userId, logDate: new Date(today) },
-      select: {
-        servingMultiplier: true,
-        snapshotCaloriesPerServing: true,
-        snapshotProteinGPerServing: true,
-        snapshotCarbohydrateGPerServing: true,
-        snapshotFatGPerServing: true,
+      where: {
+        userId,
+        logDate: { gte: sevenDaysAgo, lte: new Date(today) },
       },
+      select: {
+        logDate:                        true,
+        mealType:                       true,
+        servingMultiplier:              true,
+        snapshotCaloriesPerServing:     true,
+        snapshotProteinGPerServing:     true,
+        snapshotCarbohydrateGPerServing: true,
+        snapshotFatGPerServing:         true,
+      },
+      orderBy: { logDate: 'asc' },
+    }).catch(() => []),
+
+    prisma.healthMetric.findMany({
+      where: {
+        userId,
+        metricType: { in: ['steps', 'sleep_duration_s', 'body_weight_kg'] },
+        recordedAt: { gte: sevenDaysAgo },
+      },
+      select:  { metricType: true, value: true, recordedAt: true, periodStart: true },
+      orderBy: { recordedAt: 'desc' },
     }).catch(() => []),
 
     buildVTrainingContext(userId).catch(() => null),
@@ -69,66 +112,148 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
   const tier = (profile?.subscriptionTier ?? 'free') as 'free' | 'plus'
 
   const goalSummaries: GoalSummary[] = goals.map(g => ({
-    type: g.type,
-    title: g.title,
-    detail: g.description ?? undefined,
+    type:       g.type,
+    title:      g.title,
+    detail:     g.description ?? undefined,
     targetDate: g.targetDate
       ? new Date(g.targetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
       : undefined,
   }))
 
+  // ── Nutrition: group entries by date and mealType ──────────────────────────
   // Math done here — never by AI
-  const todayTotals = entries.reduce(
-    (acc, e) => {
-      const m = Number(e.servingMultiplier)
-      return {
-        calories: acc.calories + Math.round(Number(e.snapshotCaloriesPerServing) * m),
-        protein:  acc.protein  + Math.round(Number(e.snapshotProteinGPerServing)  * m * 10) / 10,
-        carbs:    acc.carbs    + Math.round(Number(e.snapshotCarbohydrateGPerServing) * m * 10) / 10,
-        fat:      acc.fat      + Math.round(Number(e.snapshotFatGPerServing)       * m * 10) / 10,
-        count:    acc.count    + 1,
-      }
-    },
-    { calories: 0, protein: 0, carbs: 0, fat: 0, count: 0 },
-  )
 
-  const nutrition: NutritionContext = target
-    ? {
-        targetsSet: true,
-        targets: {
-          calories: Number(target.calories),
-          protein:  Number(target.proteinG),
-          carbs:    Number(target.carbohydrateG),
-          fat:      Number(target.fatG),
-        },
-        today: {
-          calories:    todayTotals.calories,
-          protein:     todayTotals.protein,
-          carbs:       todayTotals.carbs,
-          fat:         todayTotals.fat,
-          remaining:   Number(target.calories) - todayTotals.calories,
-          mealsLogged: todayTotals.count,
-        },
-      }
-    : { targetsSet: false }
+  type MacroAcc = { calories: number; protein: number; carbs: number; fat: number; count: number }
+  const zeroMacro = (): MacroAcc => ({ calories: 0, protein: 0, carbs: 0, fat: 0, count: 0 })
+
+  const byDate  = new Map<string, MacroAcc>()
+  const byMeal  = new Map<string, MacroAcc>()
+
+  for (const e of entries7d) {
+    const dateKey = (e.logDate instanceof Date ? e.logDate : new Date(e.logDate))
+      .toISOString().slice(0, 10)
+    const m       = Number(e.servingMultiplier)
+    const cal     = Math.round(Number(e.snapshotCaloriesPerServing) * m)
+    const pro     = Math.round(Number(e.snapshotProteinGPerServing)        * m * 10) / 10
+    const carb    = Math.round(Number(e.snapshotCarbohydrateGPerServing)   * m * 10) / 10
+    const fat     = Math.round(Number(e.snapshotFatGPerServing)            * m * 10) / 10
+
+    const d = byDate.get(dateKey) ?? zeroMacro()
+    d.calories += cal; d.protein += pro; d.carbs += carb; d.fat += fat; d.count++
+    byDate.set(dateKey, d)
+
+    if (dateKey === today) {
+      const meal = String(e.mealType)
+      const mv = byMeal.get(meal) ?? zeroMacro()
+      mv.calories += cal; mv.protein += pro; mv.carbs += carb; mv.fat += fat; mv.count++
+      byMeal.set(meal, mv)
+    }
+  }
+
+  // Build 7-day history array, oldest → newest
+  const history: NutritionDayTotal[] = []
+  for (let i = 6; i >= 0; i--) {
+    const d    = new Date(todayDate)
+    d.setDate(todayDate.getDate() - i)
+    const key  = d.toISOString().slice(0, 10)
+    const day  = byDate.get(key) ?? zeroMacro()
+    history.push({ date: key, calories: day.calories, protein: day.protein, carbs: day.carbs, fat: day.fat, meals: day.count })
+  }
+
+  const todayMacros = byDate.get(today) ?? zeroMacro()
+  const byMealRecord: Record<string, { calories: number; protein: number; carbs: number; fat: number; count: number }> = {}
+  for (const [meal, v] of byMeal) {
+    byMealRecord[meal] = v
+  }
+
+  const nutrition: NutritionContext = {
+    targetsSet: !!target,
+    history,
+    ...(target
+      ? {
+          targets: {
+            calories: Number(target.calories),
+            protein:  Number(target.proteinG),
+            carbs:    Number(target.carbohydrateG),
+            fat:      Number(target.fatG),
+          },
+          today: {
+            calories:    todayMacros.calories,
+            protein:     todayMacros.protein,
+            carbs:       todayMacros.carbs,
+            fat:         todayMacros.fat,
+            remaining:   Number(target.calories) - todayMacros.calories,
+            mealsLogged: todayMacros.count,
+            byMeal:      byMealRecord,
+          },
+        }
+      : {
+          today: {
+            calories:    todayMacros.calories,
+            protein:     todayMacros.protein,
+            carbs:       todayMacros.carbs,
+            fat:         todayMacros.fat,
+            mealsLogged: todayMacros.count,
+            byMeal:      byMealRecord,
+          },
+        }),
+  }
+
+  // ── Health metrics summary ─────────────────────────────────────────────────
+  const healthMetrics: HealthMetricsSummary = {}
+
+  const stepsRows = healthMetricRows.filter(r => r.metricType === 'steps')
+  if (stepsRows.length > 0) {
+    // Today's steps = row with periodStart on today, else most recent
+    const todaySteps = stepsRows.find(r =>
+      r.periodStart?.toISOString().slice(0, 10) === today ||
+      r.recordedAt.toISOString().slice(0, 10) === today
+    )
+    if (todaySteps) healthMetrics.stepsToday = Math.round(Number(todaySteps.value))
+
+    // 7-day average (one row per calendar day, take the most recent per day)
+    const seenDays = new Map<string, number>()
+    for (const r of stepsRows) {
+      const dk = (r.periodStart ?? r.recordedAt).toISOString().slice(0, 10)
+      if (!seenDays.has(dk)) seenDays.set(dk, Number(r.value))
+    }
+    if (seenDays.size > 0) {
+      const total = [...seenDays.values()].reduce((s, v) => s + v, 0)
+      healthMetrics.stepsAvg7d = Math.round(total / seenDays.size)
+    }
+  }
+
+  // Sleep: most recent night's duration
+  const sleepRows = healthMetricRows.filter(r => r.metricType === 'sleep_duration_s')
+  if (sleepRows.length > 0) {
+    healthMetrics.sleepLastNightHours = Math.round(Number(sleepRows[0].value) / 3600 * 10) / 10
+  }
+
+  // Body weight: most recent reading
+  const weightRows = healthMetricRows.filter(r => r.metricType === 'body_weight_kg')
+  if (weightRows.length > 0) {
+    healthMetrics.bodyWeightKg   = Math.round(Number(weightRows[0].value) * 10) / 10
+    healthMetrics.bodyWeightDate = weightRows[0].recordedAt.toISOString().slice(0, 10)
+  }
 
   return {
     user: { name, tier },
     goals: goalSummaries,
     nutrition,
+    healthMetrics,
     trainingSnippet: trainingCtx ? trainingContextToPrompt(trainingCtx) : 'TRAINING: No data available.',
     trainingCtx,
   }
 }
 
 export function contextToSystemSnippet(ctx: CoachContext): string {
-  const { goals, nutrition, trainingSnippet } = ctx
+  const { goals, nutrition, healthMetrics, trainingSnippet } = ctx
   const lines: string[] = []
 
   if (goals.length > 0) {
     lines.push('USER GOALS:')
     goals.forEach(g => {
-      const date = g.targetDate ? ` (target: ${g.targetDate})` : ''
+      const date   = g.targetDate ? ` (target: ${g.targetDate})` : ''
       const detail = g.detail ? ` — ${g.detail}` : ''
       lines.push(`  • [${g.type}] ${g.title}${detail}${date}`)
     })
@@ -137,17 +262,55 @@ export function contextToSystemSnippet(ctx: CoachContext): string {
   }
 
   lines.push('')
+
+  // Nutrition today
   if (nutrition.targetsSet && nutrition.targets && nutrition.today) {
     const t = nutrition.targets
     const d = nutrition.today
     lines.push('NUTRITION TODAY:')
-    lines.push(`  Targets: ${t.calories} cal | ${t.protein}g protein | ${t.carbs}g carbs | ${t.fat}g fat`)
-    lines.push(`  Consumed: ${d.calories} cal | ${d.protein}g protein | ${d.carbs}g carbs | ${d.fat}g fat`)
+    lines.push(`  Targets:   ${t.calories} cal | ${t.protein}g protein | ${t.carbs}g carbs | ${t.fat}g fat`)
+    lines.push(`  Consumed:  ${d.calories} cal | ${d.protein}g protein | ${d.carbs}g carbs | ${d.fat}g fat`)
     lines.push(`  Remaining: ${d.remaining} cal | Meals logged: ${d.mealsLogged}`)
+    if (Object.keys(d.byMeal).length > 0) {
+      lines.push('  By meal:')
+      for (const [meal, v] of Object.entries(d.byMeal)) {
+        lines.push(`    ${meal}: ${v.calories} cal | ${v.protein}g P | ${v.carbs}g C | ${v.fat}g F`)
+      }
+    }
+  } else if (nutrition.today && nutrition.today.mealsLogged > 0) {
+    const d = nutrition.today
+    lines.push(`NUTRITION TODAY (no targets set): ${d.calories} cal | ${d.protein}g protein | ${d.carbs}g carbs | ${d.fat}g fat | ${d.mealsLogged} meals`)
   } else if (nutrition.targetsSet) {
     lines.push('NUTRITION: Targets set, nothing logged today.')
   } else {
     lines.push('NUTRITION: No targets set.')
+  }
+
+  // 7-day nutrition history — only include if at least 2 days have data
+  const daysWithData = nutrition.history.filter(d => d.meals > 0)
+  if (daysWithData.length >= 2) {
+    lines.push('NUTRITION HISTORY (7 days):')
+    nutrition.history.forEach(d => {
+      if (d.meals > 0) {
+        lines.push(`  ${d.date}: ${d.calories} cal | ${d.protein}g P | ${d.carbs}g C | ${d.fat}g F (${d.meals} meals)`)
+      }
+    })
+  }
+
+  // Health metrics
+  const hmLines: string[] = []
+  if (healthMetrics.stepsToday    != null) hmLines.push(`Steps today: ${healthMetrics.stepsToday.toLocaleString()}`)
+  if (healthMetrics.stepsAvg7d    != null) hmLines.push(`7-day avg steps: ${healthMetrics.stepsAvg7d.toLocaleString()}`)
+  if (healthMetrics.sleepLastNightHours != null) hmLines.push(`Sleep last night: ${healthMetrics.sleepLastNightHours}h`)
+  if (healthMetrics.bodyWeightKg  != null) {
+    const lbs = Math.round(healthMetrics.bodyWeightKg * 2.20462)
+    hmLines.push(`Body weight: ${lbs} lb / ${healthMetrics.bodyWeightKg} kg (${healthMetrics.bodyWeightDate})`)
+  }
+  if (hmLines.length > 0) {
+    lines.push('')
+    lines.push('HEALTH METRICS:')
+    hmLines.forEach(l => lines.push(`  ${l}`))
+    lines.push('NOTE: Do NOT compute energy balance from active calories alone — resting expenditure is substantial and not fully measured here.')
   }
 
   lines.push('')

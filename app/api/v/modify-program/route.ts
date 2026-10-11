@@ -2,7 +2,7 @@ import 'server-only'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/ai/client'
-import { workoutModel } from '@/lib/ai/models'
+import { workoutModel, buildModelParamShape } from '@/lib/ai/models'
 import { SEARCH_EXERCISES_TOOL, executeExerciseSearch } from '@/lib/ai/tools/exercises'
 import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/program'
 import type { ProgramDraft } from '@/lib/ai/tools/program'
@@ -129,8 +129,7 @@ export async function POST(req: NextRequest) {
         messages,
         tools,
         tool_choice: 'auto',
-        max_tokens: 4000,
-        temperature: 0.7,
+        ...buildModelParamShape(model, true, 4000),
       })
 
       const choice = response.choices[0]

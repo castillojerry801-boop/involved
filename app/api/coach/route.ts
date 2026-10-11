@@ -30,6 +30,15 @@ import type OpenAI from 'openai'
 // token budget survives draft → correction → Sol escalation.
 const QUALITY_RETRY_LIMIT = 1
 
+// Keep the most recent messages to prevent context blowout on long conversations.
+// 30 turns ≈ 15 exchanges — enough for full program generation + one follow-up round.
+const MAX_HISTORY_MESSAGES = 30
+
+function trimMessageHistory<T extends { role: string; content: string }>(messages: T[]): T[] {
+  if (messages.length <= MAX_HISTORY_MESSAGES) return messages
+  return messages.slice(-MAX_HISTORY_MESSAGES)
+}
+
 function billingPeriod() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -224,7 +233,7 @@ export async function POST(req: NextRequest) {
     // transcript + prior draft + pool, which is what blew the token budget.
     let chatMessages: ChatMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT + contextSnippet + equipmentCapabilitySummary },
-      ...body.messages.map(m => ({ role: m.role, content: m.content } as ChatMessage)),
+      ...trimMessageHistory(body.messages).map(m => ({ role: m.role, content: m.content } as ChatMessage)),
     ]
 
     let pendingWorkout: ReturnType<typeof validateWorkoutDraft> | null = null
