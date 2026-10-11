@@ -57,6 +57,7 @@ export interface VTrainingContext {
     title:         string
     scheduledDate: string  // e.g. 'Mon', 'Tue'
     focus?:        string
+    source?:       'scheduled' | 'program_template'
   }>
   readinessState:    ReadinessState | null
   coachingPresence:  CoachingPresence
@@ -128,7 +129,7 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
   weekEnd.setDate(weekStart.getDate() + 6)
   weekEnd.setHours(23, 59, 59, 999)
 
-  const [profile, goals, activeEquipment, preferences, prs, weeklyTarget, recentWorkouts, plannedWorkouts] = await Promise.all([
+  const [profile, goals, activeEquipment, preferences, prs, weeklyTarget, recentWorkouts, plannedWorkouts, activeProgram] = await Promise.all([
     prisma.profile.findUnique({
       where: { id: userId },
       select: { fitnessLevel: true, dateOfBirth: true, weightKg: true, coachingPresence: true },
@@ -175,11 +176,18 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
         exercises: {
           include: {
             sets: {
-              where: { completed: true },
+              where: {
+                OR: [
+                  { completed: true },
+                  { actualReps: { not: null } },
+                  { actualDurationSeconds: { not: null } },
+                ],
+              },
               select: {
-                setType:      true,
-                actualWeightKg: true,
-                actualReps:   true,
+                setType:               true,
+                actualWeightKg:        true,
+                actualReps:            true,
+                actualDurationSeconds: true,
               },
             },
           },
@@ -200,6 +208,17 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
       },
       orderBy: { scheduledDate: 'asc' },
     }).catch(() => []),
+
+    prisma.program.findFirst({
+      where: { userId, isActive: true },
+      select: {
+        name: true,
+        days: {
+          select: { name: true, focus: true, weekday: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    }).catch(() => null),
   ])
 
   // Preferences
@@ -270,11 +289,32 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
   })
 
   const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-  const plannedThisWeek = plannedWorkouts.map(w => ({
+  const scheduledFromWorkouts = plannedWorkouts.map(w => ({
     title:         w.programDay?.name ?? w.title,
     scheduledDate: w.scheduledDate ? DAY_ABBR[new Date(w.scheduledDate).getDay()] : 'TBD',
     focus:         w.programDay?.focus ?? undefined,
+    source:        'scheduled' as const,
   }))
+
+  // Fallback: program saves ProgramDay.weekday but does NOT pre-create Workout records.
+  // When no status='planned' Workout rows exist for this week, synthesize the schedule
+  // from the active program's weekday assignments.
+  const REST_DAY_PATTERN = /\b(rest|recovery|off(\s+day)?|deload)\b/i
+  const todayDow = new Date().getDay()
+  const programTemplateDays = (activeProgram?.days ?? [])
+    .filter((d): d is typeof d & { weekday: number } => d.weekday != null)
+    .filter(d => !REST_DAY_PATTERN.test(d.name))
+  const upcomingTemplateDays = programTemplateDays.filter(d => d.weekday >= todayDow)
+  const templateDays = upcomingTemplateDays.length > 0 ? upcomingTemplateDays : programTemplateDays
+
+  const plannedThisWeek = scheduledFromWorkouts.length > 0
+    ? scheduledFromWorkouts
+    : templateDays.map(d => ({
+        title:         d.name,
+        scheduledDate: DAY_ABBR[d.weekday],
+        focus:         d.focus ?? undefined,
+        source:        'program_template' as const,
+      }))
 
   const ctx: Omit<VTrainingContext, 'readinessState'> & { readinessState: ReadinessState | null } = {
     profile: {
@@ -484,6 +524,8 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
           const repsStr = s.topReps != null ? ` × ${s.topReps} reps` : ''
           lines.push(`    ${s.exerciseName}: ${s.setCount} sets @ ${s.maxWeightKg} kg${repsStr}`)
         })
+      } else if (t.totalSets > 0) {
+        lines.push(`    (${t.totalSets} sets performed — no barbell/dumbbell weight recorded; likely bodyweight or cardio)`)
       }
     })
   } else {
@@ -492,8 +534,14 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
 
   // Planned workouts this week
   if (ctx.plannedThisWeek && ctx.plannedThisWeek.length > 0) {
-    lines.push('PLANNED THIS WEEK (scheduled, not yet completed):')
-    ctx.plannedThisWeek!.forEach(w => {
+    const isTemplate = ctx.plannedThisWeek.some(w => w.source === 'program_template')
+    if (isTemplate) {
+      lines.push('PROGRAM SCHEDULE (template — recurring days, not confirmed individual sessions):')
+      lines.push('  NOTE: These repeat each week. A session only becomes confirmed when the user starts it in the app.')
+    } else {
+      lines.push('PLANNED THIS WEEK (scheduled, not yet completed):')
+    }
+    ctx.plannedThisWeek.forEach(w => {
       const focus = w.focus ? ` — ${w.focus}` : ''
       lines.push(`  ${w.scheduledDate}: ${w.title}${focus}`)
     })

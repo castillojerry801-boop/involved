@@ -55,15 +55,21 @@ export async function GET() {
       exercises: {
         include: {
           sets: {
-            where: { completed: true },
+            where: {
+              OR: [
+                { completed: true },
+                { actualReps: { not: null } },
+                { actualDurationSeconds: { not: null } },
+              ],
+            },
             select: {
-              setType:        true,
-              targetWeightKg: true,
-              actualWeightKg: true,
-              targetReps:     true,
-              targetRepsMin:  true,
-              actualReps:     true,
-              rpe:            true,
+              setType:              true,
+              targetWeightKg:       true,
+              actualWeightKg:       true,
+              targetReps:           true,
+              targetRepsMin:        true,
+              actualReps:           true,
+              rpe:                  true,
             },
           },
         },

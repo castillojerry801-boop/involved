@@ -30,6 +30,7 @@ export interface NutritionContext {
 export interface HealthMetricsSummary {
   stepsToday?:         number
   stepsAvg7d?:         number
+  stepsDataDays?:      number
   sleepLastNightHours?: number
   bodyWeightKg?:       number
   bodyWeightDate?:     string
@@ -219,7 +220,8 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
     }
     if (seenDays.size > 0) {
       const total = [...seenDays.values()].reduce((s, v) => s + v, 0)
-      healthMetrics.stepsAvg7d = Math.round(total / seenDays.size)
+      healthMetrics.stepsAvg7d   = Math.round(total / seenDays.size)
+      healthMetrics.stepsDataDays = seenDays.size
     }
   }
 
@@ -286,21 +288,32 @@ export function contextToSystemSnippet(ctx: CoachContext): string {
     lines.push('NUTRITION: No targets set.')
   }
 
-  // 7-day nutrition history — only include if at least 2 days have data
+  // 7-day nutrition history — show if at least 1 day has data; always include pre-computed avg
   const daysWithData = nutrition.history.filter(d => d.meals > 0)
-  if (daysWithData.length >= 2) {
-    lines.push('NUTRITION HISTORY (7 days):')
-    nutrition.history.forEach(d => {
-      if (d.meals > 0) {
-        lines.push(`  ${d.date}: ${d.calories} cal | ${d.protein}g P | ${d.carbs}g C | ${d.fat}g F (${d.meals} meals)`)
-      }
+  if (daysWithData.length >= 1) {
+    const avgCal  = Math.round(daysWithData.reduce((s, d) => s + d.calories, 0) / daysWithData.length)
+    const avgPro  = Math.round(daysWithData.reduce((s, d) => s + d.protein,  0) / daysWithData.length * 10) / 10
+    const avgCarb = Math.round(daysWithData.reduce((s, d) => s + d.carbs,    0) / daysWithData.length * 10) / 10
+    const avgFat  = Math.round(daysWithData.reduce((s, d) => s + d.fat,      0) / daysWithData.length * 10) / 10
+    lines.push(`NUTRITION HISTORY (${daysWithData.length} of 7 days logged):`)
+    daysWithData.forEach(d => {
+      lines.push(`  ${d.date}: ${d.calories} cal | ${d.protein}g P | ${d.carbs}g C | ${d.fat}g F (${d.meals} meals)`)
     })
+    lines.push(`  Avg over ${daysWithData.length} logged day${daysWithData.length === 1 ? '' : 's'}: ${avgCal} cal | ${avgPro}g P | ${avgCarb}g C | ${avgFat}g F`)
+    if (daysWithData.length < 5) {
+      lines.push(`  IMPORTANT: Only ${daysWithData.length} of 7 days have food entries — averages reflect logged days only. Do NOT infer a calorie surplus or deficit from partial logs.`)
+    }
   }
 
   // Health metrics
   const hmLines: string[] = []
   if (healthMetrics.stepsToday    != null) hmLines.push(`Steps today: ${healthMetrics.stepsToday.toLocaleString()}`)
-  if (healthMetrics.stepsAvg7d    != null) hmLines.push(`7-day avg steps: ${healthMetrics.stepsAvg7d.toLocaleString()}`)
+  if (healthMetrics.stepsAvg7d != null) {
+    const daysNote = healthMetrics.stepsDataDays != null && healthMetrics.stepsDataDays < 7
+      ? ` (based on ${healthMetrics.stepsDataDays} of 7 days synced — may not be representative)`
+      : ''
+    hmLines.push(`7-day avg steps: ${healthMetrics.stepsAvg7d.toLocaleString()}${daysNote}`)
+  }
   if (healthMetrics.sleepLastNightHours != null) hmLines.push(`Sleep last night: ${healthMetrics.sleepLastNightHours}h`)
   if (healthMetrics.bodyWeightKg  != null) {
     const lbs = Math.round(healthMetrics.bodyWeightKg * 2.20462)
