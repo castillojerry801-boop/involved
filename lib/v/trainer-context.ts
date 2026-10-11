@@ -66,7 +66,7 @@ export async function buildVTrainerContext(
 
       const [lastWorkout, recentPRs, weeklyWorkouts, missedWorkouts, weeklyTargetRow] = await Promise.all([
         prisma.workout.findFirst({
-          where:   { userId: clientId, status: 'completed' },
+          where:   { userId: clientId, status: 'completed', source: { not: 'strava' } },
           orderBy: { completedAt: 'desc' },
           select:  { completedAt: true, title: true },
         }),
@@ -78,7 +78,7 @@ export async function buildVTrainerContext(
         }),
 
         prisma.workout.count({
-          where: { userId: clientId, status: 'completed', completedAt: { gte: weekStart } },
+          where: { userId: clientId, status: 'completed', source: { not: 'strava' }, completedAt: { gte: weekStart } },
         }),
 
         prisma.workout.count({
@@ -131,7 +131,7 @@ export async function buildVTrainerContext(
       }),
 
       prisma.workout.findMany({
-        where:   { userId: focusClientId, status: { in: ['completed', 'skipped'] } },
+        where:   { userId: focusClientId, status: { in: ['completed', 'skipped'] }, source: { not: 'strava' } },
         orderBy: { completedAt: 'desc' },
         take:    10,
         include: {

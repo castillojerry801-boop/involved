@@ -218,12 +218,14 @@ export default function PrivacyPage() {
             features in Involved, including:
           </P>
           <UL items={[
-            'V, the AI Coach — your messages and relevant training context are processed to generate responses',
+            'V, the AI Coach — your messages and relevant fitness and nutrition context (goals, recent workouts, nutrition logs, health metrics) are processed to generate coaching responses',
             'Workout and training program generation',
+            'Nutrition coaching — your logged food data and macro targets may be included in AI context to support coaching responses',
             'Trainer-mode client analysis and draft program adjustments (trainer subscription only)',
             'Nutrition meal photo analysis — food photos are transmitted to OpenAI for visual analysis and are not stored by Involved after analysis is complete',
             'Voice workout logging — audio recordings are transmitted to OpenAI Whisper for transcription only; the audio is not stored by Involved after the transcript is returned',
             'Voice intent extraction — the resulting transcript (text only) is processed to identify workout actions',
+            'Strava activity data is NOT sent to OpenAI. Strava workout records are excluded from AI context pending verification of permitted use under Strava\'s API terms.',
           ]} />
 
           <H3>Nutrition Data</H3>

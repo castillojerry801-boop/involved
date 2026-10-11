@@ -53,6 +53,11 @@ export interface VTrainingContext {
       setCount:     number
     }>
   }>
+  plannedThisWeek?: Array<{
+    title:         string
+    scheduledDate: string  // e.g. 'Mon', 'Tue'
+    focus?:        string
+  }>
   readinessState:    ReadinessState | null
   coachingPresence:  CoachingPresence
 }
@@ -112,7 +117,18 @@ export function deriveReadinessState(
 // ─── Builder ──────────────────────────────────────────────────────────────────
 
 export async function buildVTrainingContext(userId: string): Promise<VTrainingContext> {
-  const [profile, goals, activeEquipment, preferences, prs, weeklyTarget, recentWorkouts] = await Promise.all([
+  // Monday–Sunday window for planned workouts
+  const todayForWeek = new Date()
+  const dow = todayForWeek.getDay() // 0=Sun
+  const diffToMon = (dow === 0 ? -6 : 1 - dow)
+  const weekStart = new Date(todayForWeek)
+  weekStart.setDate(todayForWeek.getDate() + diffToMon)
+  weekStart.setHours(0, 0, 0, 0)
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 6)
+  weekEnd.setHours(23, 59, 59, 999)
+
+  const [profile, goals, activeEquipment, preferences, prs, weeklyTarget, recentWorkouts, plannedWorkouts] = await Promise.all([
     prisma.profile.findUnique({
       where: { id: userId },
       select: { fitnessLevel: true, dateOfBirth: true, weightKg: true, coachingPresence: true },
@@ -150,8 +166,9 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
       select: { targetValue: true },
     }).catch(() => null),
 
+    // strava workouts excluded from AI context pending API terms verification
     prisma.workout.findMany({
-      where: { userId, status: 'completed' },
+      where: { userId, status: 'completed', source: { not: 'strava' } },
       orderBy: { completedAt: 'desc' },
       take: 10,
       include: {
@@ -168,6 +185,20 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
           },
         },
       },
+    }).catch(() => []),
+
+    prisma.workout.findMany({
+      where: {
+        userId,
+        status: 'planned',
+        scheduledDate: { gte: weekStart, lte: weekEnd },
+      },
+      select: {
+        title:        true,
+        scheduledDate: true,
+        programDay:   { select: { name: true, focus: true } },
+      },
+      orderBy: { scheduledDate: 'asc' },
     }).catch(() => []),
   ])
 
@@ -238,6 +269,13 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
     }
   })
 
+  const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const plannedThisWeek = plannedWorkouts.map(w => ({
+    title:         w.programDay?.name ?? w.title,
+    scheduledDate: w.scheduledDate ? DAY_ABBR[new Date(w.scheduledDate).getDay()] : 'TBD',
+    focus:         w.programDay?.focus ?? undefined,
+  }))
+
   const ctx: Omit<VTrainingContext, 'readinessState'> & { readinessState: ReadinessState | null } = {
     profile: {
       fitnessLevel:        profile?.fitnessLevel ?? null,
@@ -265,6 +303,7 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
     },
     personalRecords,
     recentTraining,
+    plannedThisWeek,
     readinessState:   null,
     coachingPresence: (profile?.coachingPresence as CoachingPresence | undefined) ?? 'weekly_checkin',
   }
@@ -449,6 +488,15 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
     })
   } else {
     lines.push('RECENT TRAINING: No recent sessions.')
+  }
+
+  // Planned workouts this week
+  if (ctx.plannedThisWeek && ctx.plannedThisWeek.length > 0) {
+    lines.push('PLANNED THIS WEEK (scheduled, not yet completed):')
+    ctx.plannedThisWeek!.forEach(w => {
+      const focus = w.focus ? ` — ${w.focus}` : ''
+      lines.push(`  ${w.scheduledDate}: ${w.title}${focus}`)
+    })
   }
 
   return lines.join('\n')
