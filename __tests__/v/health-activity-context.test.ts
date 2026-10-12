@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { contextToSystemSnippet } from '../../lib/ai/context'
+import { contextToSystemSnippet, timesOverlap } from '../../lib/ai/context'
 import type { CoachContext, HealthActivityForV } from '../../lib/ai/context'
 import { deriveReadinessState } from '../../lib/v/training-context'
 import type { VTrainingContext } from '../../lib/v/training-context'
@@ -53,7 +53,7 @@ function makeActivity(overrides: Partial<HealthActivityForV> = {}): HealthActivi
     maxHeartRateBpm:   null,
     stepCount:         4823,
     involvedWorkoutId: null,
-    potentialDuplicate: false,
+    overlapKind:       null,
     ...overrides,
   }
 }
@@ -172,32 +172,41 @@ describe('contextToSystemSnippet — duplicate labels', () => {
 
   it('does NOT add [also logged in Involved] when involvedWorkoutId is null', () => {
     const out = contextToSystemSnippet(makeCoachCtx({
-      recentHealthActivities: [makeActivity({ involvedWorkoutId: null, potentialDuplicate: false })],
+      recentHealthActivities: [makeActivity({ involvedWorkoutId: null, overlapKind: null })],
     }))
     expect(out).not.toContain('[also logged in Involved]')
   })
 
-  it('adds [possible overlap with Involved session] when potentialDuplicate is true', () => {
+  it('adds date-overlap label when overlapKind is "date"', () => {
     const out = contextToSystemSnippet(makeCoachCtx({
-      recentHealthActivities: [makeActivity({ involvedWorkoutId: null, potentialDuplicate: true })],
+      recentHealthActivities: [makeActivity({ involvedWorkoutId: null, overlapKind: 'date' })],
     }))
-    expect(out).toContain('[possible overlap with Involved session]')
+    expect(out).toContain('[possible overlap — Involved workout on same date, timestamps unavailable]')
   })
 
-  it('does not add any duplicate label when both flags are false', () => {
+  it('adds time-overlap label when overlapKind is "time"', () => {
     const out = contextToSystemSnippet(makeCoachCtx({
-      recentHealthActivities: [makeActivity({ involvedWorkoutId: null, potentialDuplicate: false })],
+      recentHealthActivities: [makeActivity({ involvedWorkoutId: null, overlapKind: 'time' })],
+    }))
+    expect(out).toContain('[likely same session — time window overlaps Involved workout]')
+  })
+
+  it('does not add any duplicate label when overlapKind is null', () => {
+    const out = contextToSystemSnippet(makeCoachCtx({
+      recentHealthActivities: [makeActivity({ involvedWorkoutId: null, overlapKind: null })],
     }))
     expect(out).not.toContain('[also logged in Involved]')
     expect(out).not.toContain('[possible overlap')
+    expect(out).not.toContain('[likely same session')
   })
 
-  it('involvedWorkoutId takes precedence over potentialDuplicate', () => {
+  it('involvedWorkoutId takes precedence over overlapKind', () => {
     const out = contextToSystemSnippet(makeCoachCtx({
-      recentHealthActivities: [makeActivity({ involvedWorkoutId: 'wk-001', potentialDuplicate: true })],
+      recentHealthActivities: [makeActivity({ involvedWorkoutId: 'wk-001', overlapKind: 'date' })],
     }))
     expect(out).toContain('[also logged in Involved]')
     expect(out).not.toContain('[possible overlap')
+    expect(out).not.toContain('[likely same session')
   })
 })
 
@@ -501,41 +510,48 @@ describe('contextToSystemSnippet — date window availability for filtering', ()
 // ─── Duplicate/overlap — uniqueness claim prohibition ────────────────────────
 
 describe('contextToSystemSnippet — potential duplicate labeling', () => {
-  it('marks potential duplicate with [possible overlap with Involved session]', () => {
-    const dup = makeActivity({ activityType: 'strength_training', potentialDuplicate: true })
+  it('marks date-only overlap with [possible overlap — Involved workout on same date, timestamps unavailable]', () => {
+    const dup = makeActivity({ activityType: 'strength_training', overlapKind: 'date' })
     const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [dup] }))
-    expect(out).toContain('[possible overlap with Involved session]')
+    expect(out).toContain('[possible overlap — Involved workout on same date, timestamps unavailable]')
   })
 
-  it('does NOT emit [possible overlap] when potentialDuplicate is false', () => {
-    const clean = makeActivity({ potentialDuplicate: false })
+  it('marks time overlap with [likely same session — time window overlaps Involved workout]', () => {
+    const dup = makeActivity({ activityType: 'strength_training', overlapKind: 'time' })
+    const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [dup] }))
+    expect(out).toContain('[likely same session — time window overlaps Involved workout]')
+  })
+
+  it('does NOT emit overlap label when overlapKind is null', () => {
+    const clean = makeActivity({ overlapKind: null })
     const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [clean] }))
     expect(out).not.toContain('[possible overlap')
+    expect(out).not.toContain('[likely same session')
   })
 
   it('marks confirmed-linked activity with [also logged in Involved]', () => {
-    const linked = makeActivity({ involvedWorkoutId: 'workout-xyz', potentialDuplicate: false })
+    const linked = makeActivity({ involvedWorkoutId: 'workout-xyz', overlapKind: null })
     const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [linked] }))
     expect(out).toContain('[also logged in Involved]')
   })
 
-  it('activity with potentialDuplicate is rendered — not silently omitted', () => {
+  it('activity with overlapKind is rendered — not silently omitted', () => {
     const dup = makeActivity({
-      date:              daysAgo(2),
-      activityType:      'strength_training',
-      durationMinutes:   55,
-      potentialDuplicate: true,
+      date:            daysAgo(2),
+      activityType:    'strength_training',
+      durationMinutes: 55,
+      overlapKind:     'date',
     })
     const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [dup] }))
     expect(out).toContain('strength training')
     expect(out).toContain('55 min')
-    expect(out).toContain('[possible overlap with Involved session]')
+    expect(out).toContain('[possible overlap — Involved workout on same date, timestamps unavailable]')
   })
 
   it('NOTE text does not claim the list is unique or deduplicated', () => {
-    // Regression: V told the user the list was unique while also showing [possible
-    // overlap] labels. The NOTE must not claim uniqueness.
-    const dup = makeActivity({ potentialDuplicate: true })
+    // Regression: V told the user the list was unique while also showing overlap
+    // labels. The NOTE must not claim uniqueness.
+    const dup = makeActivity({ overlapKind: 'date' })
     const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [dup] }))
     const lower = out.toLowerCase()
     expect(lower).not.toContain('unique workouts')
@@ -546,12 +562,12 @@ describe('contextToSystemSnippet — potential duplicate labeling', () => {
 
   it('mixed activities: overlap/linked/clean each labeled correctly', () => {
     const activities = [
-      makeActivity({ id: 'a1', date: daysAgo(1), activityType: 'running',           potentialDuplicate: false }),
-      makeActivity({ id: 'a2', date: daysAgo(2), activityType: 'strength_training',  potentialDuplicate: true }),
-      makeActivity({ id: 'a3', date: daysAgo(3), activityType: 'walking',            potentialDuplicate: false, involvedWorkoutId: 'w1' }),
+      makeActivity({ id: 'a1', date: daysAgo(1), activityType: 'running',           overlapKind: null }),
+      makeActivity({ id: 'a2', date: daysAgo(2), activityType: 'strength_training',  overlapKind: 'date' }),
+      makeActivity({ id: 'a3', date: daysAgo(3), activityType: 'walking',            overlapKind: null, involvedWorkoutId: 'w1' }),
     ]
     const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: activities }))
-    expect(out).toContain('[possible overlap with Involved session]')
+    expect(out).toContain('[possible overlap — Involved workout on same date, timestamps unavailable]')
     expect(out).toContain('[also logged in Involved]')
     const runningLine = out.split('\n').find(l => l.includes('running'))
     expect(runningLine).toBeTruthy()
@@ -569,12 +585,67 @@ describe('SYSTEM_PROMPT — date-window and duplicate guard instructions', () =>
     expect(SYSTEM_PROMPT.toLowerCase()).toContain('filter')
   })
 
-  it('explicitly prohibits claiming uniqueness when possible-overlap labels are present', () => {
-    expect(SYSTEM_PROMPT).toContain('[possible overlap]')
-    expect(SYSTEM_PROMPT.toLowerCase()).toContain('never claim')
+  it('explicitly prohibits claiming uniqueness when overlap labels are present', () => {
+    expect(SYSTEM_PROMPT).toContain('[possible overlap — Involved workout on same date, timestamps unavailable]')
+    expect(SYSTEM_PROMPT.toUpperCase()).toContain('NEVER CLAIM')
   })
 
-  it('instructs V to state which dates were included', () => {
-    expect(SYSTEM_PROMPT.toLowerCase()).toContain('which dates')
+  it('instructs V to state which date range was used', () => {
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('which date range')
+  })
+
+  it('references both RECENT TRAINING and HEALTH ACTIVITIES for date filtering', () => {
+    expect(SYSTEM_PROMPT).toContain('RECENT TRAINING')
+    expect(SYSTEM_PROMPT).toContain('HEALTH ACTIVITIES')
+  })
+})
+
+// ─── timesOverlap — time-overlap detection ────────────────────────────────────
+
+describe('timesOverlap — interval overlap', () => {
+  function t(iso: string) { return new Date(iso) }
+
+  it('returns true when intervals fully overlap', () => {
+    // HA: 10:00–11:00, Workout: 10:30–11:30
+    expect(timesOverlap(t('2026-10-05T10:00:00Z'), 3600, t('2026-10-05T10:30:00Z'), t('2026-10-05T11:30:00Z'), null)).toBe(true)
+  })
+
+  it('returns true when HA is fully inside workout window', () => {
+    // HA: 10:15–10:45, Workout: 10:00–11:00
+    expect(timesOverlap(t('2026-10-05T10:15:00Z'), 1800, t('2026-10-05T10:00:00Z'), t('2026-10-05T11:00:00Z'), null)).toBe(true)
+  })
+
+  it('returns false when intervals are well apart', () => {
+    // HA: 07:00–08:00, Workout: 18:00–19:00
+    expect(timesOverlap(t('2026-10-05T07:00:00Z'), 3600, t('2026-10-05T18:00:00Z'), t('2026-10-05T19:00:00Z'), null)).toBe(false)
+  })
+
+  it('returns true via proximity fallback when starts are within 60 min', () => {
+    // HA start: 10:00 (no duration), Workout start: 10:45 → 45 min apart
+    expect(timesOverlap(t('2026-10-05T10:00:00Z'), null, t('2026-10-05T10:45:00Z'), null, null)).toBe(true)
+  })
+
+  it('returns false via proximity fallback when starts are more than 60 min apart', () => {
+    // HA start: 07:00, Workout start: 18:00 → 11 hours apart
+    expect(timesOverlap(t('2026-10-05T07:00:00Z'), null, t('2026-10-05T18:00:00Z'), null, null)).toBe(false)
+  })
+
+  it('reconstructs workout end from startedAt + durationSeconds', () => {
+    // HA: 10:00–11:00, Workout: start 10:30 + 60 min → 10:30–11:30
+    expect(timesOverlap(t('2026-10-05T10:00:00Z'), 3600, t('2026-10-05T10:30:00Z'), null, 3600)).toBe(true)
+  })
+
+  it('reconstructs workout start from completedAt + durationSeconds', () => {
+    // HA: 10:00–11:00, Workout: end 11:30 - 60 min → 10:30–11:30
+    expect(timesOverlap(t('2026-10-05T10:00:00Z'), 3600, null, t('2026-10-05T11:30:00Z'), 3600)).toBe(true)
+  })
+
+  it('returns false when no workout timestamps are available', () => {
+    expect(timesOverlap(t('2026-10-05T10:00:00Z'), 3600, null, null, null)).toBe(false)
+  })
+
+  it('returns true when HA end is within 60 min of workout end (proximity)', () => {
+    // HA: 10:00 + 60 min = 11:00 end; Workout: completedAt 11:30 → 30 min apart
+    expect(timesOverlap(t('2026-10-05T10:00:00Z'), 3600, null, t('2026-10-05T11:30:00Z'), null)).toBe(true)
   })
 })

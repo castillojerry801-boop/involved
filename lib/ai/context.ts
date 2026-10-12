@@ -52,9 +52,11 @@ export interface HealthActivityForV {
   stepCount:        number | null
   // Non-null = formally matched to an Involved workout via involvedWorkoutId FK.
   involvedWorkoutId: string | null
-  // True when a same-date Involved resistance session exists but no formal link.
-  // V must not count this twice when summarising completed volume.
-  potentialDuplicate: boolean
+  // How confident we are that this activity overlaps an Involved session:
+  //   'time'  — start/end timestamps overlap (high confidence)
+  //   'date'  — same calendar date only, no timestamp data for one side (lower confidence)
+  //   null    — no Involved session on the same date
+  overlapKind: 'time' | 'date' | null
 }
 
 const PROVIDER_DISPLAY: Record<string, string> = {
@@ -63,6 +65,49 @@ const PROVIDER_DISPLAY: Record<string, string> = {
   garmin:         'Garmin',
   polar:          'Polar',
   manual:         'Manual',
+}
+
+// Exported for unit testing.
+// Returns true when two activity time windows overlap or are within 60 minutes.
+// Falls back to false (not "unknown") so callers can apply date-only detection separately.
+export function timesOverlap(
+  haStart: Date,
+  haDurationSec: number | null,
+  wStart: Date | null,
+  wEnd:   Date | null,
+  wDurationSec: number | null,
+): boolean {
+  // Compute health-activity end time
+  const haEnd = haDurationSec != null
+    ? new Date(haStart.getTime() + haDurationSec * 1000)
+    : null
+
+  // Compute workout start/end from whatever is available
+  const effectiveWStart =
+    wStart ??
+    (wEnd != null && wDurationSec != null
+      ? new Date(wEnd.getTime() - wDurationSec * 1000)
+      : null)
+  const effectiveWEnd =
+    wEnd ??
+    (wStart != null && wDurationSec != null
+      ? new Date(wStart.getTime() + wDurationSec * 1000)
+      : null)
+
+  // Full interval overlap when both ranges are known
+  if (haEnd && effectiveWStart && effectiveWEnd) {
+    return haStart < effectiveWEnd && haEnd > effectiveWStart
+  }
+
+  // Proximity fallback: if starts/ends are within 60 minutes, treat as the same session.
+  // Covers the common case where one side lacks duration (e.g. Apple Watch start +
+  // Involved completedAt only) — a 60-min window is conservative for typical gym sessions.
+  const PROXIMITY_MS = 60 * 60 * 1000
+  if (effectiveWStart && Math.abs(haStart.getTime() - effectiveWStart.getTime()) <= PROXIMITY_MS) return true
+  if (effectiveWEnd   && Math.abs(haStart.getTime() - effectiveWEnd.getTime())   <= PROXIMITY_MS) return true
+  if (haEnd && effectiveWEnd && Math.abs(haEnd.getTime() - effectiveWEnd.getTime()) <= PROXIMITY_MS) return true
+
+  return false
 }
 
 export interface GoalSummary {
@@ -97,7 +142,7 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
   fourteenDaysAgo.setDate(todayDate.getDate() - 13)
   fourteenDaysAgo.setHours(0, 0, 0, 0)
 
-  const [profile, goals, target, entries7d, healthMetricRows, trainingCtx, rawHealthActivities] = await Promise.all([
+  const [profile, goals, target, entries7d, healthMetricRows, trainingCtx, rawHealthActivities, workoutTimestamps] = await Promise.all([
     prisma.profile.findUnique({
       where:  { id: userId },
       select: { displayName: true, subscriptionTier: true },
@@ -168,6 +213,24 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
       },
       orderBy: { startedAt: 'desc' },
       take: 20,
+    }).catch(() => []),
+
+    // Lightweight timestamp query for the same 14-day window — used for time-overlap
+    // duplicate detection against health activities. Only timing fields are fetched;
+    // full workout data comes from trainingCtx above.
+    prisma.workout.findMany({
+      where: {
+        userId,
+        status:    'completed',
+        source:    { not: 'strava' },
+        completedAt: { gte: fourteenDaysAgo },
+      },
+      select: {
+        id:              true,
+        startedAt:       true,
+        completedAt:     true,
+        durationSeconds: true,
+      },
     }).catch(() => []),
   ])
 
@@ -300,19 +363,35 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
     healthMetrics.bodyWeightDate = weightRows[0].recordedAt.toISOString().slice(0, 10)
   }
 
-  // ── Health activities — dedup + readiness update ──────────────────────────
-  // Dates of completed Involved sessions (for overlap detection below).
-  const involvedResistanceDateSet = new Set(
-    (trainingCtx?.recentTraining ?? []).map(t => t.date),
-  )
+  // ── Health activities — overlap detection + readiness update ─────────────
+  type WorkoutStamp = { id: string; startedAt: Date | null; completedAt: Date | null; durationSeconds: number | null }
+  // Group workout timestamps by date for efficient per-activity lookup.
+  const workoutsByDate = new Map<string, WorkoutStamp[]>()
+  for (const w of workoutTimestamps) {
+    const d = (w.completedAt ?? w.startedAt)?.toISOString().slice(0, 10)
+    if (!d) continue
+    if (!workoutsByDate.has(d)) workoutsByDate.set(d, [])
+    workoutsByDate.get(d)!.push(w)
+  }
 
   const recentHealthActivities: HealthActivityForV[] = rawHealthActivities.map(a => {
-    const date        = a.startedAt.toISOString().slice(0, 10)
+    const date         = a.startedAt.toISOString().slice(0, 10)
     const isResistance = RESISTANCE_ACTIVITY_TYPES.has(a.activityType)
-    // Flag potential duplicates: same-day Involved resistance workout exists but no formal link.
-    // V must not double-count these. We do NOT merge or delete records.
-    const potentialDuplicate =
-      a.involvedWorkoutId === null && isResistance && involvedResistanceDateSet.has(date)
+
+    let overlapKind: HealthActivityForV['overlapKind'] = null
+
+    if (a.involvedWorkoutId === null && isResistance) {
+      const sameDayWorkouts = workoutsByDate.get(date) ?? []
+      if (sameDayWorkouts.length > 0) {
+        // Prefer time-overlap detection when workout has at least one timestamp.
+        const timeMatch = sameDayWorkouts.some(w =>
+          (w.startedAt != null || w.completedAt != null) &&
+          timesOverlap(a.startedAt, a.durationSeconds, w.startedAt, w.completedAt, w.durationSeconds)
+        )
+        overlapKind = timeMatch ? 'time' : 'date'
+      }
+    }
+
     return {
       id:               a.id,
       provider:         a.provider,
@@ -326,7 +405,7 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
       maxHeartRateBpm:  a.maxHeartRateBpm,
       stepCount:        a.stepCount,
       involvedWorkoutId: a.involvedWorkoutId,
-      potentialDuplicate,
+      overlapKind,
     }
   })
 
@@ -459,8 +538,10 @@ export function contextToSystemSnippet(ctx: CoachContext): string {
       let suffix = ''
       if (a.involvedWorkoutId != null) {
         suffix = ' [also logged in Involved]'
-      } else if (a.potentialDuplicate) {
-        suffix = ' [possible overlap with Involved session]'
+      } else if (a.overlapKind === 'time') {
+        suffix = ' [likely same session — time window overlaps Involved workout]'
+      } else if (a.overlapKind === 'date') {
+        suffix = ' [possible overlap — Involved workout on same date, timestamps unavailable]'
       }
       lines.push(`  • ${parts.join(' · ')}${suffix}`)
     }
