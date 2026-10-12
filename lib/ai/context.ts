@@ -1,6 +1,6 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
-import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training-context'
+import { buildVTrainingContext, deriveReadinessState, trainingContextToPrompt, RESISTANCE_ACTIVITY_TYPES } from '@/lib/v/training-context'
 import type { VTrainingContext } from '@/lib/v/training-context'
 
 // Compact structured context sent to the Coach.
@@ -36,6 +36,35 @@ export interface HealthMetricsSummary {
   bodyWeightDate?:     string
 }
 
+// A single Apple Health / Health Connect / manual activity as surfaced to V.
+// Never contains set-level data — only activity-level summaries.
+export interface HealthActivityForV {
+  id:               string
+  provider:         string
+  activityType:     string
+  title:            string | null
+  date:             string   // YYYY-MM-DD
+  durationMinutes:  number | null
+  activeEnergyKcal: number | null
+  distanceKm:       number | null
+  avgHeartRateBpm:  number | null
+  maxHeartRateBpm:  number | null
+  stepCount:        number | null
+  // Non-null = formally matched to an Involved workout via involvedWorkoutId FK.
+  involvedWorkoutId: string | null
+  // True when a same-date Involved resistance session exists but no formal link.
+  // V must not count this twice when summarising completed volume.
+  potentialDuplicate: boolean
+}
+
+const PROVIDER_DISPLAY: Record<string, string> = {
+  apple_health:   'Apple Health',
+  health_connect: 'Health Connect',
+  garmin:         'Garmin',
+  polar:          'Polar',
+  manual:         'Manual',
+}
+
 export interface GoalSummary {
   type: string
   title: string
@@ -44,12 +73,13 @@ export interface GoalSummary {
 }
 
 export interface CoachContext {
-  user:            { name: string; tier: 'free' | 'plus' }
-  goals:           GoalSummary[]
-  nutrition:       NutritionContext
-  healthMetrics:   HealthMetricsSummary
-  trainingSnippet: string
-  trainingCtx:     VTrainingContext | null
+  user:                   { name: string; tier: 'free' | 'plus' }
+  goals:                  GoalSummary[]
+  nutrition:              NutritionContext
+  healthMetrics:          HealthMetricsSummary
+  recentHealthActivities?: HealthActivityForV[]
+  trainingSnippet:        string
+  trainingCtx:            VTrainingContext | null
 }
 
 export async function buildCoachContext(userId: string, userEmail?: string): Promise<CoachContext> {
@@ -61,7 +91,12 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
   sevenDaysAgo.setDate(todayDate.getDate() - 6)
   sevenDaysAgo.setHours(0, 0, 0, 0)
 
-  const [profile, goals, target, entries7d, healthMetricRows, trainingCtx] = await Promise.all([
+  // 14-day window for health activities — matches buildHealthVSummary default
+  const fourteenDaysAgo = new Date(todayDate)
+  fourteenDaysAgo.setDate(todayDate.getDate() - 13)
+  fourteenDaysAgo.setHours(0, 0, 0, 0)
+
+  const [profile, goals, target, entries7d, healthMetricRows, trainingCtx, rawHealthActivities] = await Promise.all([
     prisma.profile.findUnique({
       where:  { id: userId },
       select: { displayName: true, subscriptionTier: true },
@@ -107,6 +142,32 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
     }).catch(() => []),
 
     buildVTrainingContext(userId).catch(() => null),
+
+    // Non-Strava health activities for the last 14 days.
+    // Strava excluded pending API-terms review — consistent with training-context.ts.
+    prisma.healthActivity.findMany({
+      where: {
+        userId,
+        provider:  { not: 'strava' },
+        startedAt: { gte: fourteenDaysAgo },
+      },
+      select: {
+        id:               true,
+        provider:         true,
+        activityType:     true,
+        title:            true,
+        startedAt:        true,
+        durationSeconds:  true,
+        activeEnergyKcal: true,
+        distanceM:        true,
+        avgHeartRateBpm:  true,
+        maxHeartRateBpm:  true,
+        stepCount:        true,
+        involvedWorkoutId: true,
+      },
+      orderBy: { startedAt: 'desc' },
+      take: 20,
+    }).catch(() => []),
   ])
 
   const name = profile?.displayName || userEmail?.split('@')[0] || 'Athlete'
@@ -238,18 +299,61 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
     healthMetrics.bodyWeightDate = weightRows[0].recordedAt.toISOString().slice(0, 10)
   }
 
+  // ── Health activities — dedup + readiness update ──────────────────────────
+  // Dates of completed Involved sessions (for overlap detection below).
+  const involvedResistanceDateSet = new Set(
+    (trainingCtx?.recentTraining ?? []).map(t => t.date),
+  )
+
+  const recentHealthActivities: HealthActivityForV[] = rawHealthActivities.map(a => {
+    const date        = a.startedAt.toISOString().slice(0, 10)
+    const isResistance = RESISTANCE_ACTIVITY_TYPES.has(a.activityType)
+    // Flag potential duplicates: same-day Involved resistance workout exists but no formal link.
+    // V must not double-count these. We do NOT merge or delete records.
+    const potentialDuplicate =
+      a.involvedWorkoutId === null && isResistance && involvedResistanceDateSet.has(date)
+    return {
+      id:               a.id,
+      provider:         a.provider,
+      activityType:     a.activityType,
+      title:            a.title,
+      date,
+      durationMinutes:  a.durationSeconds ? Math.round(a.durationSeconds / 60) : null,
+      activeEnergyKcal: a.activeEnergyKcal ? Math.round(Number(a.activeEnergyKcal)) : null,
+      distanceKm:       a.distanceM ? Math.round(Number(a.distanceM) / 10) / 100 : null,
+      avgHeartRateBpm:  a.avgHeartRateBpm,
+      maxHeartRateBpm:  a.maxHeartRateBpm,
+      stepCount:        a.stepCount,
+      involvedWorkoutId: a.involvedWorkoutId,
+      potentialDuplicate,
+    }
+  })
+
+  // Re-derive readiness now that we have health activities. This overrides the
+  // estimate computed inside buildVTrainingContext (which had no health data).
+  // Must happen before trainingContextToPrompt so READINESS guidance is correct.
+  if (trainingCtx) {
+    trainingCtx.readinessState = deriveReadinessState(
+      trainingCtx.profile.fitnessLevel,
+      trainingCtx.recentTraining,
+      trainingCtx.personalRecords,
+      recentHealthActivities,
+    )
+  }
+
   return {
     user: { name, tier },
     goals: goalSummaries,
     nutrition,
     healthMetrics,
+    recentHealthActivities,
     trainingSnippet: trainingCtx ? trainingContextToPrompt(trainingCtx) : 'TRAINING: No data available.',
     trainingCtx,
   }
 }
 
 export function contextToSystemSnippet(ctx: CoachContext): string {
-  const { goals, nutrition, healthMetrics, trainingSnippet } = ctx
+  const { goals, nutrition, healthMetrics, recentHealthActivities, trainingSnippet } = ctx
   const lines: string[] = []
 
   if (goals.length > 0) {
@@ -330,6 +434,31 @@ export function contextToSystemSnippet(ctx: CoachContext): string {
     lines.push('HEALTH METRICS:')
     hmLines.forEach(l => lines.push(`  ${l}`))
     lines.push('NOTE: Do NOT compute energy balance from active calories alone — resting expenditure is substantial and not fully measured here.')
+  }
+
+  // Health activities (Apple Health / Health Connect / manual — last 14 days)
+  const activities = recentHealthActivities ?? []
+  if (activities.length > 0) {
+    lines.push('')
+    lines.push('HEALTH ACTIVITIES (non-Strava — last 14 days):')
+    for (const a of activities) {
+      const label    = a.title ?? a.activityType.replace(/_/g, ' ')
+      const provider = PROVIDER_DISPLAY[a.provider] ?? a.provider
+      const parts: string[] = [a.date, label, provider]
+      if (a.durationMinutes  != null) parts.push(`${a.durationMinutes} min`)
+      if (a.avgHeartRateBpm  != null) parts.push(`avg HR ${a.avgHeartRateBpm} bpm`)
+      if (a.activeEnergyKcal != null) parts.push(`${a.activeEnergyKcal} kcal active`)
+      if (a.distanceKm       != null) parts.push(`${a.distanceKm} km`)
+      if (a.stepCount        != null) parts.push(`${a.stepCount.toLocaleString()} steps`)
+      let suffix = ''
+      if (a.involvedWorkoutId != null) {
+        suffix = ' [also logged in Involved]'
+      } else if (a.potentialDuplicate) {
+        suffix = ' [possible overlap with Involved session]'
+      }
+      lines.push(`  • ${parts.join(' · ')}${suffix}`)
+    }
+    lines.push('NOTE: Activity summaries only — no set data. For load calibration use RECENT TRAINING. Linked sessions (source-noted above) count once across both sections.')
   }
 
   lines.push('')

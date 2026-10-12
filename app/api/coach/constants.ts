@@ -50,6 +50,12 @@ TRAINING DATA INTERPRETATION
 • If a session shows sets performed but no weight data (noted as "no barbell/dumbbell weight recorded" or "bodyweight or cardio"): this is a bodyweight or cardio session — do NOT treat it as a zero-effort workout or suggest the user needs to add load.
 • Schedule questions ("what's my workout today/tomorrow/this week"): answer DIRECTLY from the PLANNED THIS WEEK data in context. Do NOT enter the equipment intake flow for schedule lookups.
 • Separate confirmed findings from assumptions: if data is ambiguous or incomplete, say so before drawing conclusions.
+• HEALTH ACTIVITIES section (when present): lists completed workouts from Apple Health, Health Connect, or manual entry. These are genuine completed exercise — never treat them as missing or failed workouts.
+• Non-resistance health activities (walking, cycling, yoga, swimming, hiking, elliptical, stair climbing): demonstrate real physical activity but do NOT establish resistance-training capacity or justify strength load recommendations. Use only PRs and Involved strength session data for load calibration.
+• Apple Watch vs. Involved sessions: NEVER assume an Apple Watch activity completed a scheduled Involved strength session unless it is marked [also logged in Involved]. Program adherence tracks Involved sessions only.
+• Duplicate guard: sessions marked [also logged in Involved] appear in BOTH RECENT TRAINING (with set data) and HEALTH ACTIVITIES (with HR/energy data). Count them ONCE. Sessions marked [possible overlap with Involved session] share a date with an Involved workout — do not sum their volume.
+• Unified activity history: when the user asks "what workouts did I complete this week?" or any similar question, answer using BOTH RECENT TRAINING (Involved sessions with set data) AND HEALTH ACTIVITIES (health platform records), filtered to the requested date window. Note the source for each entry — "logged in Involved" vs. "recorded by Apple Watch". Do NOT list [also logged in Involved] sessions twice.
+• Activity source: always identify whether an activity came from Involved or a health platform when discussing workout history or comparing sessions.
 
 ════════════════════════════════════════
 SAFETY
@@ -156,7 +162,51 @@ export const GENERATION_FAILED_ALT_MESSAGE = "I'm still not able to assemble a c
 
 // Matches user messages that express program-building intent.
 // Used server-side to decide whether a freeform text response should be suppressed.
-export const PROGRAM_INTENT_PATTERN = /\b(program|plan|routine|\d+[\s-]?week|split|schedule|build\s+me|make\s+me)\b/i
+// NOTE: 'schedule' was intentionally excluded — it more commonly appears in lookup
+// queries ("what's my schedule?") than in creation requests, which causes the intake
+// gate to intercept informational questions.
+export const PROGRAM_INTENT_PATTERN = /\b(program|plan|routine|\d+[\s-]?week|split|build\s+me|make\s+me)\b/i
+
+// Explicit creation verbs — user is asking V to build something new.
+// When present, the current turn is treated as a generation request even if
+// LOOKUP_INTENT_PATTERN also matches.
+export const CREATION_INTENT_PATTERN = /\b(build\s+me|make\s+me|create\s+(?:me\s+)?(?:a|an)\b|generate\s+(?:me\s+)?(?:a|an)\b|design\s+(?:me\s+)?(?:a|an)\b|give\s+me\s+a\b)\b/i
+
+// Informational lookup signals — user is asking about existing data, not requesting
+// generation. When the current turn matches this AND lacks CREATION_INTENT_PATTERN,
+// the intake gate is bypassed so V can answer directly from context.
+export const LOOKUP_INTENT_PATTERN = /\b(what|show\s+me|how\s+(?:many|much|often|do|did)|my\s+(?:current|existing|next|recent|active)|steps?|did\s+i|have\s+i|i\s+asked|workout\s+history|activity\s+history)\b/i
+
+/**
+ * Determines which tools are offered to the model for a given round.
+ * Exported for unit testing — the route closes over programGenerationMode and
+ * currentTurnIsLookup which are computed per-request.
+ *
+ * programGenerationMode=true  → only propose_program, tool_choice forced
+ * lookup turn                 → all tools EXCEPT propose_program
+ * chat/intake turn            → all tools, tool_choice auto
+ */
+export function selectRoundTools<T extends { function: { name: string } }>(
+  allTools: readonly T[],
+  programGenerationMode: boolean,
+  currentTurnIsLookup: boolean,
+): {
+  tools: T[]
+  tool_choice: 'auto' | { type: 'function'; function: { name: string } }
+} {
+  if (!programGenerationMode) {
+    return {
+      tools: currentTurnIsLookup
+        ? allTools.filter(t => t.function.name !== 'propose_program')
+        : [...allTools],
+      tool_choice: 'auto',
+    }
+  }
+  return {
+    tools: allTools.filter(t => t.function.name === 'propose_program'),
+    tool_choice: { type: 'function', function: { name: 'propose_program' } },
+  }
+}
 
 // Compact system prompt for quality-correction rounds. The full SYSTEM_PROMPT, the
 // conversation transcript, and prior drafts are NOT resent on a correction — only

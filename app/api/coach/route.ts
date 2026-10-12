@@ -22,7 +22,7 @@ import {
   type SearchPhase, type CandidatePool,
 } from '@/lib/v/search-orchestration'
 import type { QualityIssue } from '@/lib/v/program-quality'
-import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN } from './constants'
+import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools } from './constants'
 import type OpenAI from 'openai'
 
 // One Luna draft + one targeted Luna correction, then escalate to Sol (which also
@@ -173,10 +173,19 @@ export async function POST(req: NextRequest) {
     const conversationHasProgramIntent = body.messages.some(
       m => m.role === 'user' && PROGRAM_INTENT_PATTERN.test(m.content)
     )
-    // We are in program-generation mode only once all required context is present.
-    // This is what routes the tool loop to the stronger programModel — intake and
-    // plain chat stay on the cheap chatModel.
-    const programGenerationMode = conversationHasProgramIntent && missingContext.length === 0
+    // Current-turn lookup detection — the latest user message asks for information
+    // (schedule, steps, history, etc.) rather than requesting generation. When true,
+    // the intake gate and programGenerationMode are bypassed so V answers directly.
+    // A creation verb in the same message overrides the lookup signal.
+    const latestUserMessage = [...body.messages].reverse().find(m => m.role === 'user')?.content ?? ''
+    const currentTurnIsLookup =
+      LOOKUP_INTENT_PATTERN.test(latestUserMessage) &&
+      !CREATION_INTENT_PATTERN.test(latestUserMessage)
+    // We are in program-generation mode only once all required context is present
+    // AND the current turn is not a simple lookup. This is what routes the tool loop
+    // to the stronger programModel — intake and plain chat stay on the cheap chatModel.
+    const programGenerationMode =
+      conversationHasProgramIntent && missingContext.length === 0 && !currentTurnIsLookup
     // Shallow config check surfaced BEFORE the call — a bad env value logs a clear
     // config error rather than only failing deep inside the model call.
     if (programGenerationMode) {
@@ -195,6 +204,7 @@ export async function POST(req: NextRequest) {
       secondaryGoals: intake.secondaryGoals,
       weeks: intake.weeks,
       conversationHasProgramIntent,
+      currentTurnIsLookup,
       missing: missingContext.map(m => m.field),
     })
 
@@ -257,7 +267,10 @@ export async function POST(req: NextRequest) {
     // do NOT let the model search or generate — we ask only for the missing
     // field(s). This is what prevents generation starting on incomplete context
     // (e.g. trainingDaysPerWeek never supplied) and the resulting failure loop.
-    if (conversationHasProgramIntent && missingContext.length > 0) {
+    //
+    // Bypassed when the current turn is a lookup (schedule, steps, history, etc.) —
+    // V must answer those directly regardless of prior program-building history.
+    if (conversationHasProgramIntent && missingContext.length > 0 && !currentTurnIsLookup) {
       let prompt = buildMissingContextPrompt(missingContext)!
       console.log('[V-model]', { userId: user.id, stage: 'intake', model: 'deterministic' })
 
@@ -368,17 +381,10 @@ export async function POST(req: NextRequest) {
     // ever runs the DRAFT/ESCALATION phase (search already happened deterministically),
     // so we expose ONLY propose_program and FORCE it — the drafting model must produce
     // a draft from the candidate pool and can never stall in a search loop. Plain chat
-    // keeps all tools on auto.
-    const roundToolShape = (): {
-      tools: typeof tools
-      tool_choice: OpenAI.Chat.ChatCompletionToolChoiceOption
-    } => {
-      if (!programGenerationMode) return { tools, tool_choice: 'auto' }
-      return {
-        tools: [PROPOSE_PROGRAM_TOOL],
-        tool_choice: { type: 'function', function: { name: 'propose_program' } },
-      }
-    }
+    // keeps all tools on auto. Lookup turns (schedule, steps, history) never receive
+    // propose_program — it is removed from the offered list entirely so the model
+    // cannot call it even if it decides to.
+    const roundToolShape = () => selectRoundTools(tools, programGenerationMode, currentTurnIsLookup)
 
     const callModel = async (
       messages: OpenAI.Chat.ChatCompletionMessageParam[],
@@ -652,6 +658,24 @@ export async function POST(req: NextRequest) {
             }
 
           } else if (fn.name === 'propose_program') {
+            // Execution-boundary guard: propose_program is not offered to the model
+            // for lookup turns (it is filtered out of the tool list in roundToolShape).
+            // This rejection handles the case where the model calls it anyway.
+            if (currentTurnIsLookup) {
+              console.error('[V-routing-violation]', {
+                userId: user.id,
+                toolCalled: 'propose_program',
+                currentTurnIsLookup,
+                latestUserMessage: latestUserMessage.slice(0, 120),
+                note: 'propose_program called on a lookup turn — rejected at execution boundary',
+              })
+              result = JSON.stringify({
+                status: 'rejected',
+                message: 'propose_program is not available for informational queries. Answer the user\'s question directly from the context data provided.',
+              })
+              chatMessages.push({ role: 'tool', tool_call_id: call.id, content: result })
+              continue
+            }
             proposeProgramAttempted = true
             lastDraftJson = fn.arguments // the only draft payload a correction round needs
             emitRaw({ type: 'status', message: qualityRetries > 0 ? 'Refining your program...' : 'Building your program...' })

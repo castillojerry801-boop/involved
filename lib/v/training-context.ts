@@ -14,6 +14,19 @@ export type ReadinessState =
   | 'consistent_intermediate' // intermediate, regular recent training
   | 'advanced'                // advanced, recent training
 
+// Activity types that count toward resistance/strength readiness.
+// Walking, running, cycling, yoga, HIIT, etc. demonstrate general fitness but do NOT
+// establish strength capacity or justify load recommendations.
+// HIIT is intentionally excluded — Apple Watch labels any high-intensity circuit as
+// "HIIT" regardless of whether it involves weights. Treating it as resistance would
+// overstate strength readiness for users whose HIIT is purely cardio-based.
+export const RESISTANCE_ACTIVITY_TYPES = new Set([
+  'strength_training', 'functional_strength',
+])
+
+// Minimal shape needed by deriveReadinessState — satisfied by HealthActivityForV
+export type ActivityForReadiness = { activityType: string; date: string }
+
 export type CoachingPresence = 'quiet' | 'weekly_checkin' | 'active'
 
 export interface VTrainingContext {
@@ -79,20 +92,51 @@ export function deriveReadinessState(
   fitnessLevel: string | null,
   recentTraining: VTrainingContext['recentTraining'],
   personalRecords: VTrainingContext['personalRecords'],
+  recentHealthActivities?: ActivityForReadiness[],
 ): ReadinessState {
   const hasPRs = personalRecords.length > 0
-  const hasAnySessions = recentTraining.length > 0
+  const healthActivities = recentHealthActivities ?? []
 
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
   const fourWeeksAgo = new Date()
   fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28)
 
-  const mostRecentDate = hasAnySessions ? new Date(recentTraining[0].date) : null
-  const activeRecently = mostRecentDate != null && mostRecentDate > threeMonthsAgo
+  // Resistance health activities (strength_training, functional_strength) — these
+  // count toward strength readiness. HIIT, walking, cycling, yoga, etc. do NOT.
+  const resistanceHealthActivities = healthActivities.filter(
+    a => RESISTANCE_ACTIVITY_TYPES.has(a.activityType),
+  )
 
-  const sessionsLast4Weeks = recentTraining.filter(t => new Date(t.date) > fourWeeksAgo).length
-  const isConsistent = sessionsLast4Weeks >= 3
+  // All Involved sessions count as resistance-capable; health activities are split above.
+  const allResistanceDates = [
+    ...recentTraining.map(t => new Date(t.date)),
+    ...resistanceHealthActivities.map(a => new Date(a.date)),
+  ]
+  const allActivityDates = [
+    ...recentTraining.map(t => new Date(t.date)),
+    ...healthActivities.map(a => new Date(a.date)),
+  ]
+
+  const mostRecentResistanceDate = allResistanceDates.length > 0
+    ? allResistanceDates.reduce((a, b) => (a > b ? a : b))
+    : null
+  const mostRecentActivityDate = allActivityDates.length > 0
+    ? allActivityDates.reduce((a, b) => (a > b ? a : b))
+    : null
+
+  const activeResistanceRecently = mostRecentResistanceDate != null && mostRecentResistanceDate > threeMonthsAgo
+  const activeAnyRecently        = mostRecentActivityDate  != null && mostRecentActivityDate  > threeMonthsAgo
+  const hasAnyActivity           = allActivityDates.length > 0
+
+  // Consistency uses Involved sessions + resistance health activities (not cardio).
+  const resistanceLast4Weeks =
+    recentTraining.filter(t => new Date(t.date) > fourWeeksAgo).length +
+    resistanceHealthActivities.filter(a => new Date(a.date) > fourWeeksAgo).length
+  const isConsistentResistance = resistanceLast4Weeks >= 3
+
+  // Strength history: PRs, any Involved session, or any resistance health activity.
+  const hasStrengthHistory = hasPRs || recentTraining.length > 0 || allResistanceDates.length > 0
 
   const lvl = (fitnessLevel ?? '').toLowerCase()
   const isAdvanced     = lvl.includes('advanced') || lvl.includes('expert')
@@ -100,19 +144,19 @@ export function deriveReadinessState(
   const isBeginner     = lvl.includes('beginner') || lvl.includes('novice')
 
   if (isAdvanced) {
-    if (activeRecently) return 'advanced'
-    if (hasPRs || hasAnySessions) return 'detrained'
+    if (activeResistanceRecently) return 'advanced'
+    if (hasStrengthHistory)       return 'detrained'
   }
   if (isIntermediate) {
-    if (!activeRecently && (hasPRs || hasAnySessions)) return 'detrained'
-    if (isConsistent) return 'consistent_intermediate'
-    if (activeRecently) return 'recreationally_active'
+    if (!activeResistanceRecently && hasStrengthHistory) return 'detrained'
+    if (isConsistentResistance)                         return 'consistent_intermediate'
+    if (activeResistanceRecently || activeAnyRecently)  return 'recreationally_active'
   }
-  if (isBeginner && activeRecently) return 'new_beginner'
-  if ((hasPRs || hasAnySessions) && !activeRecently) return 'detrained'
-  if (!hasPRs && !hasAnySessions) return 'never_trained'
-  if (activeRecently && isConsistent) return 'consistent_intermediate'
-  if (activeRecently) return 'recreationally_active'
+  if (isBeginner && activeAnyRecently)          return 'new_beginner'
+  if (hasStrengthHistory && !activeResistanceRecently) return 'detrained'
+  if (!hasAnyActivity && !hasPRs)               return 'never_trained'
+  if (activeAnyRecently && isConsistentResistance) return 'consistent_intermediate'
+  if (activeAnyRecently)                        return 'recreationally_active'
   return 'never_trained'
 }
 
