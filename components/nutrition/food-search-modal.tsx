@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Search, Barcode, Camera, X, Plus, Loader2, ChevronDown, ChevronUp, Minus, Clock, CheckCircle2 } from 'lucide-react'
+import { Search, Barcode, Camera, X, Plus, Loader2, ChevronDown, ChevronUp, Minus, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { BarcodeScanner } from './barcode-scanner'
 import { PhotoAnalyzer } from './photo-analyzer'
+import { FoodSearchController, isSearchable } from '@/lib/nutrition/food-search-controller'
 
 type Tab = 'search' | 'barcode' | 'photo'
 type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
@@ -226,9 +227,24 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
   const [recentFoods, setRecentFoods] = useState<FoodResult[]>([])
   const [searching, setSearching] = useState(false)
   const [searchWarning, setSearchWarning] = useState<string | null>(null)
+  const [searchError, setSearchError] = useState<string | null>(null)
   const [logging, setLogging] = useState<string | null>(null)
   const [loggedFood, setLoggedFood] = useState<{ name: string; cal: number; multiplier: number } | null>(null)
+
+  const inputRef      = useRef<HTMLInputElement>(null)
+  const searchCtrl    = useRef(new FoodSearchController())
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Focus the search input without triggering iOS WKWebView's auto-scroll-to-focused-element.
+  // autoFocus fires before the modal is visible and causes the native scroll offset to jump,
+  // pushing the bottom sheet off screen. The delay lets the modal finish rendering; preventScroll
+  // tells the browser not to scroll to the element when focus is acquired.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      inputRef.current?.focus({ preventScroll: true })
+    }, 100)
+    return () => clearTimeout(t)
+  }, [])
 
   useEffect(() => {
     fetch('/api/nutrition/recent')
@@ -237,17 +253,40 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
       .catch(() => {})
   }, [])
 
+  // Cancel any in-flight request on unmount
+  useEffect(() => {
+    const ctrl = searchCtrl.current
+    return () => ctrl.cancel()
+  }, [])
+
   const search = useCallback(async (q: string) => {
-    if (q.trim().length < 2) { setResults([]); setSearchWarning(null); return }
+    if (!isSearchable(q)) {
+      setResults([])
+      setSearchWarning(null)
+      setSearchError(null)
+      return
+    }
+
+    const { signal, seq } = searchCtrl.current.begin()
     setSearching(true)
     setSearchWarning(null)
+    setSearchError(null)
+
     try {
-      const res = await fetch(`/api/nutrition/search?q=${encodeURIComponent(q)}`)
+      const res = await fetch(`/api/nutrition/search?q=${encodeURIComponent(q)}`, { signal })
+      if (!searchCtrl.current.isCurrent(seq)) return  // superseded — discard
+
+      if (!res.ok) throw new Error(`Search failed (${res.status})`)
       const data = await res.json() as { results: FoodResult[]; warning?: string }
       setResults(data.results ?? [])
       setSearchWarning(data.warning ?? null)
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return  // cancelled by newer search — silent
+      if (!searchCtrl.current.isCurrent(seq)) return   // superseded — discard error too
+      setSearchError('Search failed. Tap to retry.')
     } finally {
-      setSearching(false)
+      // Only clear loading state if this is still the active request
+      if (searchCtrl.current.isCurrent(seq)) setSearching(false)
     }
   }, [])
 
@@ -259,19 +298,28 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
 
   const handleNaturalSearch = async () => {
     if (!query.trim()) return
+    const { signal, seq } = searchCtrl.current.begin()
     setSearching(true)
     setSearchWarning(null)
+    setSearchError(null)
     try {
       const res = await fetch('/api/nutrition/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
+        signal,
       })
+      if (!searchCtrl.current.isCurrent(seq)) return
+      if (!res.ok) throw new Error(`Search failed (${res.status})`)
       const data = await res.json() as { results: FoodResult[]; warning?: string }
       setResults(data.results ?? [])
       setSearchWarning(data.warning ?? null)
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return
+      if (!searchCtrl.current.isCurrent(seq)) return
+      setSearchError('Search failed. Tap to retry.')
     } finally {
-      setSearching(false)
+      if (searchCtrl.current.isCurrent(seq)) setSearching(false)
     }
   }
 
@@ -379,8 +427,9 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
                 <input
-                  autoFocus
+                  ref={inputRef}
                   type="text"
+                  inputMode="search"
                   value={query}
                   onChange={e => handleQueryChange(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleNaturalSearch()}
@@ -399,14 +448,17 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
         <div className={loggedFood ? 'hidden' : 'flex-1 overflow-y-auto'}>
           {tab === 'search' && (
             <div className="p-4">
-              {searching && (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="size-5 animate-spin text-zinc-400" />
-                </div>
-              )}
-
-              {!searching && results.length > 0 && (
+              {/* Results list — shown immediately; stays visible while a new search is in flight
+                  to prevent a blank/dark content area during the loading period. */}
+              {results.length > 0 && (
                 <div className="flex flex-col">
+                  {/* Subtle in-list loading indicator when refreshing results */}
+                  {searching && (
+                    <div className="flex items-center gap-1.5 pb-2 text-zinc-400">
+                      <Loader2 className="size-3 animate-spin" />
+                      <span className="text-xs">Searching…</span>
+                    </div>
+                  )}
                   {results.map(food => (
                     <FoodCard
                       key={`${food.provider}:${food.externalId}`}
@@ -423,7 +475,31 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
                 </div>
               )}
 
-              {!searching && query.length >= 2 && results.length === 0 && (
+              {/* Full spinner only when there are no prior results to show */}
+              {searching && results.length === 0 && (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="size-5 animate-spin text-zinc-400" />
+                </div>
+              )}
+
+              {/* Error state */}
+              {searchError && !searching && (
+                <div className="py-8 text-center">
+                  <div className="flex justify-center mb-2">
+                    <AlertCircle className="size-5 text-zinc-400" />
+                  </div>
+                  <p className="text-sm text-zinc-400 mb-3">{searchError}</p>
+                  <button
+                    onClick={() => search(query)}
+                    className="text-sm font-medium text-emerald-600 dark:text-emerald-400"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {!searching && !searchError && isSearchable(query) && results.length === 0 && (
                 <div className="py-8 text-center">
                   {searchWarning ? (
                     <p className="text-sm text-zinc-400">{searchWarning}</p>
@@ -436,6 +512,7 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
                 </div>
               )}
 
+              {/* Recent foods — shown when search field is empty */}
               {!query && recentFoods.length > 0 && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
