@@ -73,6 +73,7 @@ describe('trainingContextToPrompt — plannedThisWeek', () => {
 
 function makeCoachCtx(overrides: Partial<CoachContext> = {}): CoachContext {
   return {
+    today: new Date().toISOString().slice(0, 10),
     user: { name: 'Athlete', tier: 'plus' },
     goals: [],
     nutrition: {

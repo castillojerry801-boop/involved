@@ -16,6 +16,7 @@ import type { CoachContext, HealthActivityForV } from '../../lib/ai/context'
 import { deriveReadinessState } from '../../lib/v/training-context'
 import type { VTrainingContext } from '../../lib/v/training-context'
 import type { ActivityForReadiness } from '../../lib/v/training-context'
+import { SYSTEM_PROMPT } from '../../app/api/coach/constants'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ function daysAgo(n: number): string {
 
 function makeCoachCtx(overrides: Partial<CoachContext> = {}): CoachContext {
   return {
+    today:           daysAgo(0),
     user:            { name: 'Athlete', tier: 'plus' },
     goals:           [],
     nutrition:       { targetsSet: false, history: [] },
@@ -411,5 +413,168 @@ describe('contextToSystemSnippet — multiple activities sorted newest-first', (
     // Provided order: run < walk < cycle
     expect(runPos).toBeLessThan(walkPos)
     expect(walkPos).toBeLessThan(cyclePos)
+  })
+})
+
+// ─── TODAY anchor in context ──────────────────────────────────────────────────
+
+describe('contextToSystemSnippet — TODAY anchor', () => {
+  it('always emits TODAY: YYYY-MM-DD at the start of context', () => {
+    const today = daysAgo(0)
+    const out = contextToSystemSnippet(makeCoachCtx())
+    expect(out).toContain(`TODAY: ${today}`)
+  })
+
+  it('TODAY appears before HEALTH ACTIVITIES section', () => {
+    const activity = makeActivity({ date: daysAgo(1) })
+    const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [activity] }))
+    const todayPos  = out.indexOf('TODAY:')
+    const healthPos = out.indexOf('HEALTH ACTIVITIES')
+    expect(todayPos).toBeGreaterThan(-1)
+    expect(healthPos).toBeGreaterThan(-1)
+    expect(todayPos).toBeLessThan(healthPos)
+  })
+
+  it('TODAY appears before USER GOALS section', () => {
+    const out = contextToSystemSnippet(makeCoachCtx())
+    const todayPos = out.indexOf('TODAY:')
+    const goalsPos = out.indexOf('USER GOALS')
+    expect(todayPos).toBeGreaterThan(-1)
+    expect(goalsPos).toBeGreaterThan(-1)
+    expect(todayPos).toBeLessThan(goalsPos)
+  })
+
+  it('HEALTH ACTIVITIES header includes today date as the through-date', () => {
+    const today    = daysAgo(0)
+    const activity = makeActivity({ date: daysAgo(3) })
+    const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [activity] }))
+    expect(out).toContain(`last 14 days through ${today}`)
+  })
+
+  it('fixed today date is used consistently in header and TODAY line', () => {
+    const fixedToday = '2026-10-11'
+    const ctx = makeCoachCtx({
+      today: fixedToday,
+      recentHealthActivities: [makeActivity({ date: '2026-10-08' })],
+    })
+    const out = contextToSystemSnippet(ctx)
+    expect(out).toContain('TODAY: 2026-10-11')
+    expect(out).toContain('last 14 days through 2026-10-11')
+  })
+})
+
+// ─── Date window: 14-day context vs. 7-day question ──────────────────────────
+
+describe('contextToSystemSnippet — date window availability for filtering', () => {
+  it('includes activities from 10 days ago (V filters by requested window via TODAY)', () => {
+    // V must see older activities to answer "last 14 days" questions.
+    // Filtering to "last 7 days" is V's responsibility using the TODAY anchor.
+    const old    = makeActivity({ date: daysAgo(10), activityType: 'running',  id: 'run-old' })
+    const recent = makeActivity({ date: daysAgo(2),  activityType: 'walking',  id: 'walk-recent' })
+    const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [old, recent] }))
+    expect(out).toContain(daysAgo(10))  // present in context for "last 14 days" use
+    expect(out).toContain(daysAgo(2))   // also present
+  })
+
+  it('provides TODAY anchor so V can filter Oct 1/2 out of a last-7-days question', () => {
+    // Regression: user asked for "last 7 days" on Oct 11; V included Oct 1 and Oct 2
+    // because it had no anchor to compute the cutoff date.
+    const fixedToday = '2026-10-11'
+    const ctx = makeCoachCtx({
+      today: fixedToday,
+      recentHealthActivities: [
+        makeActivity({ date: '2026-10-01', id: 'old-1' }),   // outside last-7: Oct 11-6 = Oct 5
+        makeActivity({ date: '2026-10-02', id: 'old-2' }),   // outside last-7
+        makeActivity({ date: '2026-10-06', id: 'rec-1' }),   // inside last-7
+        makeActivity({ date: '2026-10-09', id: 'rec-2' }),   // inside last-7
+      ],
+    })
+    const out = contextToSystemSnippet(ctx)
+    // TODAY anchor present — V uses it to filter on "last 7 days" questions
+    expect(out).toContain('TODAY: 2026-10-11')
+    // All 4 in context (14-day fetch); filtering to 7 days is V's job using TODAY
+    expect(out).toContain('2026-10-01')
+    expect(out).toContain('2026-10-06')
+  })
+})
+
+// ─── Duplicate/overlap — uniqueness claim prohibition ────────────────────────
+
+describe('contextToSystemSnippet — potential duplicate labeling', () => {
+  it('marks potential duplicate with [possible overlap with Involved session]', () => {
+    const dup = makeActivity({ activityType: 'strength_training', potentialDuplicate: true })
+    const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [dup] }))
+    expect(out).toContain('[possible overlap with Involved session]')
+  })
+
+  it('does NOT emit [possible overlap] when potentialDuplicate is false', () => {
+    const clean = makeActivity({ potentialDuplicate: false })
+    const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [clean] }))
+    expect(out).not.toContain('[possible overlap')
+  })
+
+  it('marks confirmed-linked activity with [also logged in Involved]', () => {
+    const linked = makeActivity({ involvedWorkoutId: 'workout-xyz', potentialDuplicate: false })
+    const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [linked] }))
+    expect(out).toContain('[also logged in Involved]')
+  })
+
+  it('activity with potentialDuplicate is rendered — not silently omitted', () => {
+    const dup = makeActivity({
+      date:              daysAgo(2),
+      activityType:      'strength_training',
+      durationMinutes:   55,
+      potentialDuplicate: true,
+    })
+    const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [dup] }))
+    expect(out).toContain('strength training')
+    expect(out).toContain('55 min')
+    expect(out).toContain('[possible overlap with Involved session]')
+  })
+
+  it('NOTE text does not claim the list is unique or deduplicated', () => {
+    // Regression: V told the user the list was unique while also showing [possible
+    // overlap] labels. The NOTE must not claim uniqueness.
+    const dup = makeActivity({ potentialDuplicate: true })
+    const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: [dup] }))
+    const lower = out.toLowerCase()
+    expect(lower).not.toContain('unique workouts')
+    expect(lower).not.toContain('all unique')
+    expect(lower).not.toContain('deduplicated')
+    expect(lower).not.toContain('no duplicates')
+  })
+
+  it('mixed activities: overlap/linked/clean each labeled correctly', () => {
+    const activities = [
+      makeActivity({ id: 'a1', date: daysAgo(1), activityType: 'running',           potentialDuplicate: false }),
+      makeActivity({ id: 'a2', date: daysAgo(2), activityType: 'strength_training',  potentialDuplicate: true }),
+      makeActivity({ id: 'a3', date: daysAgo(3), activityType: 'walking',            potentialDuplicate: false, involvedWorkoutId: 'w1' }),
+    ]
+    const out = contextToSystemSnippet(makeCoachCtx({ recentHealthActivities: activities }))
+    expect(out).toContain('[possible overlap with Involved session]')
+    expect(out).toContain('[also logged in Involved]')
+    const runningLine = out.split('\n').find(l => l.includes('running'))
+    expect(runningLine).toBeTruthy()
+    expect(runningLine).not.toContain('[possible overlap')
+    expect(runningLine).not.toContain('[also logged in Involved]')
+  })
+})
+
+// ─── SYSTEM_PROMPT — date-window and duplicate guard instructions ─────────────
+
+describe('SYSTEM_PROMPT — date-window and duplicate guard instructions', () => {
+  it('contains TODAY-anchored date-window filtering instruction', () => {
+    expect(SYSTEM_PROMPT).toContain('TODAY')
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('last 7 days')
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('filter')
+  })
+
+  it('explicitly prohibits claiming uniqueness when possible-overlap labels are present', () => {
+    expect(SYSTEM_PROMPT).toContain('[possible overlap]')
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('never claim')
+  })
+
+  it('instructs V to state which dates were included', () => {
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('which dates')
   })
 })

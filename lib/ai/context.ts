@@ -73,6 +73,7 @@ export interface GoalSummary {
 }
 
 export interface CoachContext {
+  today:                  string  // YYYY-MM-DD UTC — anchor for "last N days" calculations
   user:                   { name: string; tier: 'free' | 'plus' }
   goals:                  GoalSummary[]
   nutrition:              NutritionContext
@@ -342,6 +343,7 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
   }
 
   return {
+    today,
     user: { name, tier },
     goals: goalSummaries,
     nutrition,
@@ -353,8 +355,12 @@ export async function buildCoachContext(userId: string, userEmail?: string): Pro
 }
 
 export function contextToSystemSnippet(ctx: CoachContext): string {
-  const { goals, nutrition, healthMetrics, recentHealthActivities, trainingSnippet } = ctx
+  const { today, goals, nutrition, healthMetrics, recentHealthActivities, trainingSnippet } = ctx
   const lines: string[] = []
+
+  // Anchor date — V uses this to compute any "last N days" or "this week" window.
+  lines.push(`TODAY: ${today}`)
+  lines.push('')
 
   if (goals.length > 0) {
     lines.push('USER GOALS:')
@@ -440,7 +446,7 @@ export function contextToSystemSnippet(ctx: CoachContext): string {
   const activities = recentHealthActivities ?? []
   if (activities.length > 0) {
     lines.push('')
-    lines.push('HEALTH ACTIVITIES (non-Strava — last 14 days):')
+    lines.push(`HEALTH ACTIVITIES (non-Strava — last 14 days through ${today}):`)
     for (const a of activities) {
       const label    = a.title ?? a.activityType.replace(/_/g, ' ')
       const provider = PROVIDER_DISPLAY[a.provider] ?? a.provider
