@@ -19,6 +19,7 @@ const { mockSupabase, mockPrisma } = vi.hoisted(() => {
     foodLogEntry: { findUnique: vi.fn(), create: vi.fn() },
     recipeIngredient: { deleteMany: vi.fn(), createMany: vi.fn() },
     recipeStep: { deleteMany: vi.fn(), createMany: vi.fn() },
+    foodItem: { findMany: vi.fn().mockResolvedValue([]) },
     $transaction: vi.fn(),
   }
   return { mockSupabase, mockPrisma }

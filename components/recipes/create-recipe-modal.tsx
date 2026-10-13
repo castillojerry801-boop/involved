@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useId } from 'react'
 import { X, Plus, Camera, Loader2, ChevronUp, ChevronDown, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { RecipeIngredientRow, type IngredientDraft } from './recipe-ingredient-row'
+import { RecipeIngredientRow, toApiIngredient, hasValidNutrition, type IngredientDraft } from './recipe-ingredient-row'
 
 interface RecipeFormData {
   name: string
@@ -52,7 +52,7 @@ export function CreateRecipeModal({ onClose, onCreated }: CreateRecipeModalProps
   const labelId = useId()
 
   const unresolvedCount = ingredients.filter(
-    (i) => i.name.trim() && !i.foodItemId,
+    (i) => i.name.trim() && !hasValidNutrition(i),
   ).length
   const hasIngredients = ingredients.some((i) => i.name.trim())
 
@@ -86,7 +86,9 @@ export function CreateRecipeModal({ onClose, onCreated }: CreateRecipeModalProps
       const { recipe } = await res.json() as { recipe: { id: string } }
 
       // 2. Save ingredients + steps
-      const cleanIngredients = ingredients.filter((i) => i.name.trim() && i.quantity > 0)
+      const cleanIngredients = ingredients
+        .filter((i) => i.name.trim() && i.quantity > 0)
+        .map(toApiIngredient)
       const cleanSteps = steps.map((s) => s.trim()).filter(Boolean)
 
       if (cleanIngredients.length > 0 || cleanSteps.length > 0) {
@@ -156,7 +158,7 @@ export function CreateRecipeModal({ onClose, onCreated }: CreateRecipeModalProps
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/heic"
+              accept="image/jpeg,image/png,image/webp"
               className="hidden"
               onChange={handleImagePick}
             />

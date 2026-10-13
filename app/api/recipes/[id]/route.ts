@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { generateSignedUrl } from '@/lib/recipes/image'
-import { computeRecipeNutrition } from '@/lib/recipes/nutrition'
+import { computeRecipeNutrition, ingredientNutritionFromFood } from '@/lib/recipes/nutrition'
 import {
   canReadRecipe,
   canMutateRecipe,
@@ -13,6 +13,13 @@ import {
 import type { RecipeStatus } from '@prisma/client'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+// A snapshot value is valid when it is null (unresolved) OR a finite non-negative number.
+// Rejects negative values, NaN, Infinity, and non-numeric types supplied by clients.
+function isValidSnapshotValue(v: unknown): boolean {
+  if (v === null || v === undefined) return true
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0
+}
 
 const DETAIL_SELECT = {
   id: true,
@@ -183,6 +190,109 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'Archived recipes cannot be edited' }, { status: 403 })
   }
 
+  if (body.ingredients !== undefined) {
+    const badSnapshot = body.ingredients.some(
+      (ing) =>
+        !isValidSnapshotValue(ing.snapshotCalories) ||
+        !isValidSnapshotValue(ing.snapshotProteinG) ||
+        !isValidSnapshotValue(ing.snapshotCarbG) ||
+        !isValidSnapshotValue(ing.snapshotFatG),
+    )
+    if (badSnapshot) {
+      return NextResponse.json({ error: 'Invalid ingredient nutrition values' }, { status: 400 })
+    }
+  }
+
+  // Pre-fetch library FoodItems so the server can recompute authoritative snapshots.
+  // For library ingredients (foodItemId set), client-supplied snapshot values are ignored
+  // and replaced with values derived from the actual DB food data + quantity/unit.
+  // For external ingredients (foodItemId null), client-supplied snapshots are used as-is.
+  type ComputedIngredient = {
+    recipeId: string
+    foodItemId: string | null
+    name: string
+    quantity: number
+    unit: string
+    sortOrder: number
+    notes: string | null
+    snapshotCalories: number | null
+    snapshotProteinG: number | null
+    snapshotCarbG: number | null
+    snapshotFatG: number | null
+  }
+
+  let ingredientData: ComputedIngredient[] | null = null
+  if (body.ingredients !== undefined) {
+    const libraryIds = [
+      ...new Set(
+        body.ingredients
+          .filter((i) => i.foodItemId != null)
+          .map((i) => i.foodItemId as string),
+      ),
+    ]
+
+    const foodMap = new Map<string, {
+      calories: import('@prisma/client/runtime/library').Decimal
+      proteinG: import('@prisma/client/runtime/library').Decimal
+      carbohydrateG: import('@prisma/client/runtime/library').Decimal
+      fatG: import('@prisma/client/runtime/library').Decimal
+      servingSize: import('@prisma/client/runtime/library').Decimal
+      servingUnit: string
+    }>()
+
+    if (libraryIds.length > 0) {
+      const foods = await prisma.foodItem.findMany({
+        where: { id: { in: libraryIds } },
+        select: { id: true, calories: true, proteinG: true, carbohydrateG: true, fatG: true, servingSize: true, servingUnit: true },
+      })
+      for (const f of foods) foodMap.set(f.id, f)
+    }
+
+    ingredientData = body.ingredients.map((ing, idx) => {
+      let foodItemId = ing.foodItemId ?? null
+      let snapshotCalories: number | null = null
+      let snapshotProteinG: number | null = null
+      let snapshotCarbG: number | null = null
+      let snapshotFatG: number | null = null
+
+      if (foodItemId && foodMap.has(foodItemId)) {
+        // Library item: recompute from DB, ignoring what the client sent.
+        const food = foodMap.get(foodItemId)!
+        const computed = ingredientNutritionFromFood(food, ing.quantity, ing.unit)
+        if (computed) {
+          snapshotCalories = computed.calories
+          snapshotProteinG = computed.proteinG
+          snapshotCarbG    = computed.carbG
+          snapshotFatG     = computed.fatG
+        }
+        // Unit incompatible with food's serving unit → snapshots stay null (unresolved).
+      } else if (foodItemId) {
+        // foodItemId was provided but the food is no longer in the DB — clear the stale link.
+        foodItemId = null
+      } else {
+        // External provider item: use validated client-supplied snapshot values.
+        snapshotCalories = ing.snapshotCalories ?? null
+        snapshotProteinG = ing.snapshotProteinG ?? null
+        snapshotCarbG    = ing.snapshotCarbG    ?? null
+        snapshotFatG     = ing.snapshotFatG     ?? null
+      }
+
+      return {
+        recipeId: id,
+        foodItemId,
+        name: ing.name.trim(),
+        quantity: ing.quantity,
+        unit: ing.unit.trim(),
+        sortOrder: ing.sortOrder ?? idx,
+        notes: ing.notes ?? null,
+        snapshotCalories,
+        snapshotProteinG,
+        snapshotCarbG,
+        snapshotFatG,
+      }
+    })
+  }
+
   const newStatus: RecipeStatus = requiresReviseOnEdit(status)
     ? status === 'published' ? 'pending' : 'draft'
     : status
@@ -202,38 +312,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
     })
 
-    if (body.ingredients !== undefined) {
+    if (ingredientData !== null) {
       await tx.recipeIngredient.deleteMany({ where: { recipeId: id } })
-      if (body.ingredients.length > 0) {
-        await tx.recipeIngredient.createMany({
-          data: body.ingredients.map((ing, idx) => ({
-            recipeId: id,
-            foodItemId: ing.foodItemId ?? null,
-            name: ing.name.trim(),
-            quantity: ing.quantity,
-            unit: ing.unit.trim(),
-            sortOrder: ing.sortOrder ?? idx,
-            notes: ing.notes ?? null,
-            snapshotCalories: ing.snapshotCalories ?? null,
-            snapshotProteinG: ing.snapshotProteinG ?? null,
-            snapshotCarbG: ing.snapshotCarbG ?? null,
-            snapshotFatG: ing.snapshotFatG ?? null,
-          })),
-        })
+      if (ingredientData.length > 0) {
+        await tx.recipeIngredient.createMany({ data: ingredientData })
       }
 
-      // Recompute cached nutrition
-      const allIngredients = body.ingredients.map((ing) => ({
-        foodItemId: ing.foodItemId ?? null,
-        quantity: ing.quantity as unknown as import('@prisma/client/runtime/library').Decimal,
-        unit: ing.unit,
-        snapshotCalories: ing.snapshotCalories != null ? (ing.snapshotCalories as unknown as import('@prisma/client/runtime/library').Decimal) : null,
-        snapshotProteinG: ing.snapshotProteinG != null ? (ing.snapshotProteinG as unknown as import('@prisma/client/runtime/library').Decimal) : null,
-        snapshotCarbG: ing.snapshotCarbG != null ? (ing.snapshotCarbG as unknown as import('@prisma/client/runtime/library').Decimal) : null,
-        snapshotFatG: ing.snapshotFatG != null ? (ing.snapshotFatG as unknown as import('@prisma/client/runtime/library').Decimal) : null,
-      }))
-
-      const nutrition = computeRecipeNutrition(allIngredients, body.servings ?? recipe.servings)
+      // Recompute cached nutrition using server-authoritative snapshot values.
+      const nutrition = computeRecipeNutrition(
+        ingredientData.map((d) => ({
+          foodItemId: d.foodItemId,
+          quantity: d.quantity as unknown as import('@prisma/client/runtime/library').Decimal,
+          unit: d.unit,
+          snapshotCalories: d.snapshotCalories != null ? (d.snapshotCalories as unknown as import('@prisma/client/runtime/library').Decimal) : null,
+          snapshotProteinG: d.snapshotProteinG != null ? (d.snapshotProteinG as unknown as import('@prisma/client/runtime/library').Decimal) : null,
+          snapshotCarbG:    d.snapshotCarbG    != null ? (d.snapshotCarbG    as unknown as import('@prisma/client/runtime/library').Decimal) : null,
+          snapshotFatG:     d.snapshotFatG     != null ? (d.snapshotFatG     as unknown as import('@prisma/client/runtime/library').Decimal) : null,
+        })),
+        body.servings ?? recipe.servings,
+      )
       await tx.recipe.update({
         where: { id },
         data: {

@@ -21,22 +21,45 @@ export interface RecipeNutritionResult {
   fatGPerServing: number | null
 }
 
+// A macro snapshot value is valid when it is a finite, non-negative number.
+// Null means the snapshot was never populated.
+function isValidMacro(v: Decimal | null): boolean {
+  if (v === null) return false
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 0
+}
+
+// Whether an ingredient has a complete, usable nutrition snapshot.
+// foodItemId is intentionally NOT checked — an ingredient sourced from an
+// external provider (no DB link) with valid snapshot macros IS resolved.
+export function isIngredientResolved(
+  ing: Pick<IngredientNutrition, 'snapshotCalories' | 'snapshotProteinG' | 'snapshotCarbG' | 'snapshotFatG'>,
+): boolean {
+  return (
+    isValidMacro(ing.snapshotCalories) &&
+    isValidMacro(ing.snapshotProteinG) &&
+    isValidMacro(ing.snapshotCarbG) &&
+    isValidMacro(ing.snapshotFatG)
+  )
+}
+
 export function computeRecipeNutrition(
   ingredients: IngredientNutrition[],
   servings: number,
 ): RecipeNutritionResult {
   const total = ingredients.length
-  const unresolved = ingredients.filter(
-    (i) =>
-      i.foodItemId === null ||
-      i.snapshotCalories === null ||
-      i.snapshotProteinG === null ||
-      i.snapshotCarbG === null ||
-      i.snapshotFatG === null,
-  ).length
+  const unresolved = ingredients.filter((i) => !isIngredientResolved(i)).length
 
   if (unresolved > 0 || total === 0) {
-    return { complete: false, unresolvedCount: unresolved, totalCount: total, calPerServing: null, proteinGPerServing: null, carbGPerServing: null, fatGPerServing: null }
+    return {
+      complete: false,
+      unresolvedCount: unresolved,
+      totalCount: total,
+      calPerServing: null,
+      proteinGPerServing: null,
+      carbGPerServing: null,
+      fatGPerServing: null,
+    }
   }
 
   const safeServings = servings > 0 ? servings : 1
@@ -63,6 +86,48 @@ export function computeRecipeNutrition(
 function round2(n: number) { return Math.round(n * 100) / 100 }
 function round3(n: number) { return Math.round(n * 1000) / 1000 }
 
+// ── Unit conversion sets (shared between server and client helpers) ────────────
+
+const SERVING_ALIASES = new Set(['serving', 'servings', 'portion', 'portions'])
+const GRAM_UNITS      = new Set(['g', 'gram', 'grams'])
+const ML_UNITS        = new Set(['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'])
+const OZ_UNITS        = new Set(['oz', 'ounce', 'ounces'])
+const LB_UNITS        = new Set(['lb', 'lbs', 'pound', 'pounds'])
+const CUP_UNITS       = new Set(['cup', 'cups'])
+const TBSP_UNITS      = new Set(['tbsp', 'tablespoon', 'tablespoons'])
+const TSP_UNITS       = new Set(['tsp', 'teaspoon', 'teaspoons'])
+
+// Computes the multiplicative factor to scale a food's per-serving nutrition
+// by the given ingredient quantity and unit. Returns null for unsupported
+// or incompatible unit combinations — never guesses.
+// This is pure (no Decimal dependency) so it can be used on the client too.
+export function computeIngredientFactor(
+  servingSize: number,
+  servingUnit: string,
+  quantity: number,
+  unit: string,
+): number | null {
+  if (servingSize <= 0 || quantity <= 0) return null
+
+  const fu = servingUnit.toLowerCase().trim()
+  const iu = unit.toLowerCase().trim()
+
+  const sameUnit =
+    fu === iu ||
+    (SERVING_ALIASES.has(fu) && SERVING_ALIASES.has(iu))
+
+  if (sameUnit) return quantity / servingSize
+  if (GRAM_UNITS.has(iu) && GRAM_UNITS.has(fu))    return quantity / servingSize
+  if (ML_UNITS.has(iu)   && ML_UNITS.has(fu))      return quantity / servingSize
+  if (OZ_UNITS.has(iu)   && GRAM_UNITS.has(fu))    return (quantity * 28.3495)  / servingSize
+  if (LB_UNITS.has(iu)   && GRAM_UNITS.has(fu))    return (quantity * 453.592)  / servingSize
+  if (CUP_UNITS.has(iu)  && ML_UNITS.has(fu))      return (quantity * 236.588)  / servingSize
+  if (TBSP_UNITS.has(iu) && ML_UNITS.has(fu))      return (quantity * 14.7868)  / servingSize
+  if (TSP_UNITS.has(iu)  && ML_UNITS.has(fu))      return (quantity * 4.92892)  / servingSize
+
+  return null
+}
+
 // Compute per-ingredient contribution given a FoodItem's nutrition and
 // the ingredient's quantity/unit relative to the food item's serving.
 // Returns { calories, proteinG, carbG, fatG } or null if unit is unknown.
@@ -80,53 +145,18 @@ export function ingredientNutritionFromFood(
   ingredientQty: number,
   ingredientUnit: string,
 ): { calories: number; proteinG: number; carbG: number; fatG: number } | null {
-  const foodUnit = food.servingUnit.toLowerCase().trim()
-  const ingUnit = ingredientUnit.toLowerCase().trim()
-  const servingSize = Number(food.servingSize)
-
-  if (servingSize <= 0) return null
-
-  // Same unit (or "serving" / "portion" aliases)
-  const SERVING_ALIASES = new Set(['serving', 'servings', 'portion', 'portions'])
-  const sameUnit =
-    foodUnit === ingUnit ||
-    (SERVING_ALIASES.has(foodUnit) && SERVING_ALIASES.has(ingUnit))
-
-  // Gram/ml equivalents
-  const GRAM_UNITS = new Set(['g', 'gram', 'grams'])
-  const ML_UNITS = new Set(['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'])
-  const OZ_UNITS = new Set(['oz', 'ounce', 'ounces'])
-  const LB_UNITS = new Set(['lb', 'lbs', 'pound', 'pounds'])
-  const CUP_UNITS = new Set(['cup', 'cups'])
-  const TBSP_UNITS = new Set(['tbsp', 'tablespoon', 'tablespoons'])
-  const TSP_UNITS = new Set(['tsp', 'teaspoon', 'teaspoons'])
-
-  let factor: number | null = null
-
-  if (sameUnit) {
-    factor = ingredientQty / servingSize
-  } else if (GRAM_UNITS.has(ingUnit) && GRAM_UNITS.has(foodUnit)) {
-    factor = ingredientQty / servingSize
-  } else if (ML_UNITS.has(ingUnit) && ML_UNITS.has(foodUnit)) {
-    factor = ingredientQty / servingSize
-  } else if (OZ_UNITS.has(ingUnit) && GRAM_UNITS.has(foodUnit)) {
-    factor = (ingredientQty * 28.3495) / servingSize
-  } else if (LB_UNITS.has(ingUnit) && GRAM_UNITS.has(foodUnit)) {
-    factor = (ingredientQty * 453.592) / servingSize
-  } else if (CUP_UNITS.has(ingUnit) && ML_UNITS.has(foodUnit)) {
-    factor = (ingredientQty * 236.588) / servingSize
-  } else if (TBSP_UNITS.has(ingUnit) && ML_UNITS.has(foodUnit)) {
-    factor = (ingredientQty * 14.7868) / servingSize
-  } else if (TSP_UNITS.has(ingUnit) && ML_UNITS.has(foodUnit)) {
-    factor = (ingredientQty * 4.92892) / servingSize
-  }
-
+  const factor = computeIngredientFactor(
+    Number(food.servingSize),
+    food.servingUnit,
+    ingredientQty,
+    ingredientUnit,
+  )
   if (factor === null) return null
 
   return {
-    calories: round2(Number(food.calories) * factor),
-    proteinG: round3(Number(food.proteinG) * factor),
-    carbG:    round3(Number(food.carbohydrateG) * factor),
-    fatG:     round3(Number(food.fatG) * factor),
+    calories: round2(Number(food.calories)       * factor),
+    proteinG: round3(Number(food.proteinG)        * factor),
+    carbG:    round3(Number(food.carbohydrateG)   * factor),
+    fatG:     round3(Number(food.fatG)            * factor),
   }
 }

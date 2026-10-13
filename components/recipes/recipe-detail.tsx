@@ -4,7 +4,7 @@ import { useState, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import {
   Clock, ChefHat, Bookmark, BookmarkCheck, Share2,
-  AlertTriangle, CheckCircle2, Loader2, ArrowLeft, Trash2, Edit3
+  AlertTriangle, CheckCircle2, Link2, Loader2, ArrowLeft, Trash2, Edit3
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { RecipeStatus } from '@prisma/client'
@@ -357,7 +357,14 @@ export function RecipeDetailView({ recipe, currentUserId, onBack, onDeleted, onE
   const [deleting, setDeleting] = useState(false)
   const isOwner = recipe.userId === currentUserId
   const totalMinutes = (recipe.prepMinutes ?? 0) + (recipe.cookMinutes ?? 0)
-  const unresolvedCount = recipe.ingredients.filter((i) => !i.foodItemId).length
+  const unresolvedCount = recipe.ingredients.filter(
+    (i) => !(
+      i.snapshotCalories != null && Number.isFinite(i.snapshotCalories) && i.snapshotCalories >= 0 &&
+      i.snapshotProteinG != null && Number.isFinite(i.snapshotProteinG) && i.snapshotProteinG >= 0 &&
+      i.snapshotCarbG    != null && Number.isFinite(i.snapshotCarbG)    && i.snapshotCarbG    >= 0 &&
+      i.snapshotFatG     != null && Number.isFinite(i.snapshotFatG)     && i.snapshotFatG     >= 0
+    ),
+  ).length
 
   const handleSave = useCallback(async () => {
     if (savePending) return
@@ -496,8 +503,11 @@ export function RecipeDetailView({ recipe, currentUserId, onBack, onDeleted, onE
           <ul className="space-y-2">
             {recipe.ingredients.map((ing) => (
               <li key={ing.id} className="flex items-start gap-2 text-sm">
-                {ing.foodItemId
-                  ? <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-500" />
+                {ing.snapshotCalories != null && Number.isFinite(ing.snapshotCalories) && ing.snapshotCalories >= 0 &&
+                 ing.snapshotProteinG != null && ing.snapshotCarbG != null && ing.snapshotFatG != null
+                  ? ing.foodItemId
+                    ? <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-500" />
+                    : <Link2 className="size-4 shrink-0 mt-0.5 text-amber-500" />
                   : <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber-400" />}
                 <span className="text-zinc-700 dark:text-zinc-300">
                   <span className="font-medium">{ing.quantity} {ing.unit}</span> {ing.name}

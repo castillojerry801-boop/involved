@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   computeRecipeNutrition,
   ingredientNutritionFromFood,
+  computeIngredientFactor,
+  isIngredientResolved,
   type IngredientNutrition,
   type FoodItemServing,
 } from '../../lib/recipes/nutrition'
@@ -24,6 +26,37 @@ function makeIngredient(override?: Partial<IngredientNutrition>): IngredientNutr
   }
 }
 
+// ── isIngredientResolved ───────────────────────────────────────────────────────
+
+describe('isIngredientResolved', () => {
+  it('returns true when all four snapshots are valid', () => {
+    expect(isIngredientResolved(makeIngredient())).toBe(true)
+  })
+
+  it('returns true when foodItemId is null but all snapshots are valid (external food)', () => {
+    expect(isIngredientResolved(makeIngredient({ foodItemId: null }))).toBe(true)
+  })
+
+  it('returns false when any snapshot is null', () => {
+    expect(isIngredientResolved(makeIngredient({ snapshotCalories: null }))).toBe(false)
+    expect(isIngredientResolved(makeIngredient({ snapshotProteinG: null }))).toBe(false)
+    expect(isIngredientResolved(makeIngredient({ snapshotCarbG: null }))).toBe(false)
+    expect(isIngredientResolved(makeIngredient({ snapshotFatG: null }))).toBe(false)
+  })
+
+  it('returns false when a snapshot is NaN (treated as invalid by Number.isFinite)', () => {
+    expect(isIngredientResolved(makeIngredient({ snapshotCalories: d(NaN) }))).toBe(false)
+  })
+
+  it('returns false when a snapshot is negative', () => {
+    expect(isIngredientResolved(makeIngredient({ snapshotCalories: d(-1) }))).toBe(false)
+  })
+
+  it('returns true when a macro is exactly zero (valid for zero-calorie foods)', () => {
+    expect(isIngredientResolved(makeIngredient({ snapshotCalories: d(0) }))).toBe(true)
+  })
+})
+
 // ── computeRecipeNutrition ─────────────────────────────────────────────────────
 
 describe('computeRecipeNutrition — empty recipe', () => {
@@ -43,8 +76,8 @@ describe('computeRecipeNutrition — fully matched', () => {
     const result = computeRecipeNutrition(ingredients, 2)
     expect(result.complete).toBe(true)
     expect(result.unresolvedCount).toBe(0)
-    expect(result.calPerServing).toBe(300) // (400 + 200) / 2
-    expect(result.proteinGPerServing).toBe(30) // (40 + 20) / 2
+    expect(result.calPerServing).toBe(300)   // (400 + 200) / 2
+    expect(result.proteinGPerServing).toBe(30)
     expect(result.carbGPerServing).toBe(20)
     expect(result.fatGPerServing).toBe(12)
   })
@@ -56,18 +89,31 @@ describe('computeRecipeNutrition — fully matched', () => {
   })
 })
 
-describe('computeRecipeNutrition — unresolved ingredients', () => {
-  it('is incomplete when foodItemId is null', () => {
+describe('computeRecipeNutrition — external food (foodItemId null, valid snapshots)', () => {
+  it('is complete when all ingredients have valid snapshots even without foodItemId', () => {
     const ingredients = [
       makeIngredient(),
-      makeIngredient({ foodItemId: null }),
+      makeIngredient({ foodItemId: null }),  // external: no DB link, valid snapshots
+    ]
+    const result = computeRecipeNutrition(ingredients, 2)
+    expect(result.complete).toBe(true)
+    expect(result.unresolvedCount).toBe(0)
+    expect(result.calPerServing).toBe(200)   // (200 + 200) / 2
+  })
+
+  it('is incomplete when an ingredient has foodItemId null AND null snapshots (free-text)', () => {
+    const ingredients = [
+      makeIngredient(),
+      makeIngredient({ foodItemId: null, snapshotCalories: null, snapshotProteinG: null, snapshotCarbG: null, snapshotFatG: null }),
     ]
     const result = computeRecipeNutrition(ingredients, 1)
     expect(result.complete).toBe(false)
     expect(result.unresolvedCount).toBe(1)
     expect(result.calPerServing).toBeNull()
   })
+})
 
+describe('computeRecipeNutrition — unresolved ingredients', () => {
   it('is incomplete when snapshot macros are null', () => {
     const ingredients = [
       makeIngredient({ snapshotCalories: null }),
@@ -84,7 +130,6 @@ describe('computeRecipeNutrition — unresolved ingredients', () => {
     ]
     const result = computeRecipeNutrition(ingredients, 1)
     expect(result.complete).toBe(false)
-    // Must NOT return a partial sum
     expect(result.calPerServing).toBeNull()
     expect(result.proteinGPerServing).toBeNull()
   })
@@ -93,6 +138,16 @@ describe('computeRecipeNutrition — unresolved ingredients', () => {
     const ingredients = [
       makeIngredient({ snapshotCalories: d(100), snapshotProteinG: null, snapshotCarbG: null, snapshotFatG: null }),
     ]
+    expect(computeRecipeNutrition(ingredients, 1).complete).toBe(false)
+  })
+
+  it('treats NaN snapshot as unresolved', () => {
+    const ingredients = [makeIngredient({ snapshotCalories: d(NaN) })]
+    expect(computeRecipeNutrition(ingredients, 1).complete).toBe(false)
+  })
+
+  it('treats negative snapshot as unresolved', () => {
+    const ingredients = [makeIngredient({ snapshotCalories: d(-100) })]
     expect(computeRecipeNutrition(ingredients, 1).complete).toBe(false)
   })
 })
@@ -106,6 +161,82 @@ describe('computeRecipeNutrition — single ingredient, 1 serving', () => {
     expect(result.complete).toBe(true)
     expect(result.calPerServing).toBe(150.5)
     expect(result.proteinGPerServing).toBe(12.333)
+  })
+})
+
+// ── computeIngredientFactor ────────────────────────────────────────────────────
+
+describe('computeIngredientFactor — same units', () => {
+  it('returns qty/servingSize for identical units', () => {
+    expect(computeIngredientFactor(100, 'g', 200, 'g')).toBe(2)
+    expect(computeIngredientFactor(100, 'g', 50, 'g')).toBe(0.5)
+  })
+
+  it('treats gram variants as the same unit', () => {
+    expect(computeIngredientFactor(100, 'grams', 100, 'g')).toBe(1)
+  })
+
+  it('treats ml variants as the same unit', () => {
+    expect(computeIngredientFactor(240, 'ml', 240, 'milliliters')).toBe(1)
+  })
+
+  it('treats serving aliases as the same unit', () => {
+    expect(computeIngredientFactor(1, 'serving', 2, 'servings')).toBe(2)
+    expect(computeIngredientFactor(1, 'portion', 3, 'portions')).toBe(3)
+  })
+})
+
+describe('computeIngredientFactor — cross-unit conversions', () => {
+  it('converts oz to g', () => {
+    const factor = computeIngredientFactor(28.3495, 'g', 1, 'oz')
+    expect(factor).not.toBeNull()
+    expect(factor!).toBeCloseTo(1, 3)
+  })
+
+  it('converts lb to g', () => {
+    const factor = computeIngredientFactor(453.592, 'g', 1, 'lb')
+    expect(factor).not.toBeNull()
+    expect(factor!).toBeCloseTo(1, 3)
+  })
+
+  it('converts cups to ml', () => {
+    const factor = computeIngredientFactor(236.588, 'ml', 1, 'cup')
+    expect(factor).not.toBeNull()
+    expect(factor!).toBeCloseTo(1, 3)
+  })
+
+  it('converts tbsp to ml', () => {
+    const factor = computeIngredientFactor(14.7868, 'ml', 1, 'tbsp')
+    expect(factor).not.toBeNull()
+    expect(factor!).toBeCloseTo(1, 3)
+  })
+
+  it('converts tsp to ml', () => {
+    const factor = computeIngredientFactor(4.92892, 'ml', 1, 'tsp')
+    expect(factor).not.toBeNull()
+    expect(factor!).toBeCloseTo(1, 3)
+  })
+})
+
+describe('computeIngredientFactor — invalid / unsupported', () => {
+  it('returns null for incompatible units (cup vs g)', () => {
+    expect(computeIngredientFactor(100, 'g', 1, 'cup')).toBeNull()
+  })
+
+  it('returns null for incompatible units (oz vs ml)', () => {
+    expect(computeIngredientFactor(240, 'ml', 1, 'oz')).toBeNull()
+  })
+
+  it('returns null when servingSize is 0', () => {
+    expect(computeIngredientFactor(0, 'g', 100, 'g')).toBeNull()
+  })
+
+  it('returns null when quantity is 0', () => {
+    expect(computeIngredientFactor(100, 'g', 0, 'g')).toBeNull()
+  })
+
+  it('returns null for unknown unit', () => {
+    expect(computeIngredientFactor(100, 'g', 1, 'pinch')).toBeNull()
   })
 })
 

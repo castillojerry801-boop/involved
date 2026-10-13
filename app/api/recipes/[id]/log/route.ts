@@ -61,11 +61,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       cachedProteinGPerServing: true,
       cachedCarbGPerServing: true,
       cachedFatGPerServing: true,
-      // Count ingredients that are unresolved: no food item match OR missing any macro snapshot
+      // An ingredient is unresolved when any snapshot macro is missing.
+      // foodItemId is not checked — external foods have valid snapshots without a DB link.
       ingredients: {
         where: {
           OR: [
-            { foodItemId: null },
             { snapshotCalories: null },
             { snapshotProteinG: null },
             { snapshotCarbG: null },
