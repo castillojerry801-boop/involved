@@ -162,8 +162,28 @@ function pickServing(servings: FatSecretServing | FatSecretServing[]): FatSecret
   return arr[0]
 }
 
+// Parse a household text like "1 large egg" or "2 strips" into a countable unit noun + count.
+function parseHouseholdText(text: string): { householdUnit: string; unitsPerServing: number } | null {
+  const m = text.trim().match(/^(\d+(?:\.\d+)?)\s+(.+)$/)
+  if (!m) return null
+  const n = parseFloat(m[1])
+  const noun = m[2].trim()
+  if (!(n > 0) || !noun) return null
+  return { householdUnit: noun, unitsPerServing: n }
+}
+
 function mapSearchResult(item: FatSecretSearchResult): ExternalFoodResult {
   const parsed = item.food_description ? parseDescription(item.food_description) : null
+
+  let householdUnit: string | undefined
+  let unitsPerServing: number | undefined
+  if (parsed?.householdText) {
+    const hParsed = parseHouseholdText(parsed.householdText)
+    if (hParsed) {
+      householdUnit = hParsed.householdUnit
+      unitsPerServing = hParsed.unitsPerServing
+    }
+  }
 
   return {
     provider:    'fatsecret',
@@ -173,6 +193,8 @@ function mapSearchResult(item: FatSecretSearchResult): ExternalFoodResult {
     servingSize: parsed?.servingSize ?? 100,
     servingUnit: parsed?.servingUnit ?? 'g',
     householdServingText: parsed?.householdText,
+    householdUnit,
+    unitsPerServing,
     coreNutrients: {
       calories:      Math.round(parsed?.calories ?? 0),
       proteinG:      Math.round((parsed?.protein ?? 0) * 10) / 10,
@@ -207,6 +229,26 @@ function mapFoodDetail(food: FatSecretFood): ExternalFoodDetail {
     }
   }
 
+  // Extract countable unit from FatSecret's measurement_description and number_of_units fields.
+  // These are more precise than parsing the description string.
+  let householdUnit: string | undefined
+  let unitsPerServing: number | undefined
+  if (serving?.measurement_description) {
+    const noun = serving.measurement_description.trim()
+    if (noun) {
+      householdUnit = noun
+      const n = parseFloat(serving?.number_of_units ?? '1')
+      if (n > 0 && Number.isFinite(n)) unitsPerServing = n
+    }
+  } else if (householdServingText) {
+    // Fall back to parsing the household text
+    const hParsed = parseHouseholdText(householdServingText)
+    if (hParsed) {
+      householdUnit = hParsed.householdUnit
+      unitsPerServing = hParsed.unitsPerServing
+    }
+  }
+
   return {
     provider:    'fatsecret',
     externalId:  food.food_id,
@@ -215,6 +257,8 @@ function mapFoodDetail(food: FatSecretFood): ExternalFoodDetail {
     servingSize,
     servingUnit,
     householdServingText,
+    householdUnit,
+    unitsPerServing,
     coreNutrients: {
       calories:      Math.round(calories),
       proteinG:      Math.round(protein * 10) / 10,

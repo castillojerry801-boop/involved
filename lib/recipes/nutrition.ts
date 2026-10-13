@@ -101,22 +101,37 @@ const TSP_UNITS       = new Set(['tsp', 'teaspoon', 'teaspoons'])
 // by the given ingredient quantity and unit. Returns null for unsupported
 // or incompatible unit combinations — never guesses.
 // This is pure (no Decimal dependency) so it can be used on the client too.
+//
+// Optional householdUnit + unitsPerServing support countable items (e.g. eggs, strips):
+//   computeIngredientFactor(50, 'g', 2, 'large egg', 'large egg', 1) → 2
+//   (2 large eggs × 1 serving per egg = 2 servings)
 export function computeIngredientFactor(
   servingSize: number,
   servingUnit: string,
   quantity: number,
   unit: string,
+  householdUnit?: string,
+  unitsPerServing?: number,
 ): number | null {
   if (servingSize <= 0 || quantity <= 0) return null
 
   const fu = servingUnit.toLowerCase().trim()
   const iu = unit.toLowerCase().trim()
 
-  const sameUnit =
-    fu === iu ||
-    (SERVING_ALIASES.has(fu) && SERVING_ALIASES.has(iu))
+  // Countable household unit (e.g. "large egg", "strip")
+  if (householdUnit && unitsPerServing && unitsPerServing > 0) {
+    if (iu === householdUnit.toLowerCase().trim()) {
+      return quantity / unitsPerServing
+    }
+  }
 
-  if (sameUnit) return quantity / servingSize
+  // "serving/servings/portion" is a universal count: N servings = N × base nutrition.
+  // Works for both metric-unit foods (servingUnit='g') and serving-unit foods (servingUnit='serving').
+  if (SERVING_ALIASES.has(iu)) return quantity
+
+  // Same-unit shortcut (handles servingUnit='serving' ↔ unit='serving' too)
+  if (fu === iu) return quantity / servingSize
+
   if (GRAM_UNITS.has(iu) && GRAM_UNITS.has(fu))    return quantity / servingSize
   if (ML_UNITS.has(iu)   && ML_UNITS.has(fu))      return quantity / servingSize
   if (OZ_UNITS.has(iu)   && GRAM_UNITS.has(fu))    return (quantity * 28.3495)  / servingSize
@@ -138,6 +153,8 @@ export interface FoodItemServing {
   fatG: Decimal
   servingSize: Decimal
   servingUnit: string
+  householdUnit?: string | null
+  unitsPerServing?: Decimal | null
 }
 
 export function ingredientNutritionFromFood(
@@ -150,6 +167,8 @@ export function ingredientNutritionFromFood(
     food.servingUnit,
     ingredientQty,
     ingredientUnit,
+    food.householdUnit ?? undefined,
+    food.unitsPerServing != null ? Number(food.unitsPerServing) : undefined,
   )
   if (factor === null) return null
 

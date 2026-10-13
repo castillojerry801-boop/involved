@@ -238,12 +238,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       fatG: import('@prisma/client/runtime/library').Decimal
       servingSize: import('@prisma/client/runtime/library').Decimal
       servingUnit: string
+      householdUnit: string | null
+      unitsPerServing: import('@prisma/client/runtime/library').Decimal | null
     }>()
 
     if (libraryIds.length > 0) {
       const foods = await prisma.foodItem.findMany({
         where: { id: { in: libraryIds } },
-        select: { id: true, calories: true, proteinG: true, carbohydrateG: true, fatG: true, servingSize: true, servingUnit: true },
+        select: { id: true, calories: true, proteinG: true, carbohydrateG: true, fatG: true, servingSize: true, servingUnit: true, householdUnit: true, unitsPerServing: true },
       })
       for (const f of foods) foodMap.set(f.id, f)
     }

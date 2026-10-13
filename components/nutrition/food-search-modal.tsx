@@ -20,6 +20,8 @@ interface FoodResult {
   servingSize: number
   servingUnit: string
   householdServingText?: string
+  householdUnit?: string
+  unitsPerServing?: number
   coreNutrients: {
     calories: number
     proteinG: number
@@ -338,6 +340,9 @@ export function FoodSearchModal({ mealType, logDate, onLogged, onClose }: Props)
           servingMultiplier,
           servingSize: food.servingSize,
           servingUnit: food.servingUnit,
+          householdServingText: food.householdServingText,
+          householdUnit: food.householdUnit,
+          unitsPerServing: food.unitsPerServing,
           calories: food.coreNutrients.calories,
           proteinG: food.coreNutrients.proteinG,
           carbohydrateG: food.coreNutrients.carbohydrateG,

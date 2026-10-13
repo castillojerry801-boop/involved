@@ -355,6 +355,9 @@ export function RecipeDetailView({ recipe, currentUserId, onBack, onDeleted, onE
   const [savePending, setSavePending] = useState(false)
   const [savedByMe, setSavedByMe] = useState(recipe.savedByMe)
   const [deleting, setDeleting] = useState(false)
+  // Yield multiplier: how many servings to prepare (scales ingredient display only — original recipe unchanged)
+  const [prepServings, setPrepServings] = useState(recipe.servings)
+  const yieldMultiplier = recipe.servings > 0 ? prepServings / recipe.servings : 1
   const isOwner = recipe.userId === currentUserId
   const totalMinutes = (recipe.prepMinutes ?? 0) + (recipe.cookMinutes ?? 0)
   const unresolvedCount = recipe.ingredients.filter(
@@ -499,22 +502,58 @@ export function RecipeDetailView({ recipe, currentUserId, onBack, onDeleted, onE
       {/* Ingredients */}
       {recipe.ingredients.length > 0 && (
         <section className="mb-6">
-          <h2 className="text-base font-bold text-zinc-900 dark:text-white mb-3">Ingredients</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-bold text-zinc-900 dark:text-white">Ingredients</h2>
+            {/* Yield adjuster: scales ingredient quantities for batch cooking */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-zinc-400">Makes</span>
+              <button
+                onClick={() => setPrepServings((s) => Math.max(1, s - 1))}
+                className="flex size-6 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700"
+              >−</button>
+              <span className="text-sm font-semibold text-zinc-900 dark:text-white w-6 text-center">{prepServings}</span>
+              <button
+                onClick={() => setPrepServings((s) => s + 1)}
+                className="flex size-6 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700"
+              >+</button>
+              <span className="text-xs text-zinc-400">serving{prepServings !== 1 ? 's' : ''}</span>
+              {prepServings !== recipe.servings && (
+                <button
+                  onClick={() => setPrepServings(recipe.servings)}
+                  className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 underline ml-1"
+                >reset</button>
+              )}
+            </div>
+          </div>
+          {prepServings !== recipe.servings && (
+            <p className="mb-2 text-xs text-zinc-400">
+              Quantities scaled {yieldMultiplier === Math.round(yieldMultiplier) ? `${Math.round(yieldMultiplier)}×` : `${yieldMultiplier.toFixed(2)}×`} for {prepServings} serving{prepServings !== 1 ? 's' : ''}. Nutrition per serving is unchanged.
+            </p>
+          )}
           <ul className="space-y-2">
-            {recipe.ingredients.map((ing) => (
-              <li key={ing.id} className="flex items-start gap-2 text-sm">
-                {ing.snapshotCalories != null && Number.isFinite(ing.snapshotCalories) && ing.snapshotCalories >= 0 &&
-                 ing.snapshotProteinG != null && ing.snapshotCarbG != null && ing.snapshotFatG != null
-                  ? ing.foodItemId
-                    ? <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-500" />
-                    : <Link2 className="size-4 shrink-0 mt-0.5 text-amber-500" />
-                  : <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber-400" />}
-                <span className="text-zinc-700 dark:text-zinc-300">
-                  <span className="font-medium">{ing.quantity} {ing.unit}</span> {ing.name}
-                  {ing.notes && <span className="text-zinc-400 ml-1">({ing.notes})</span>}
-                </span>
-              </li>
-            ))}
+            {recipe.ingredients.map((ing) => {
+              const nutritionOk = (
+                ing.snapshotCalories != null && Number.isFinite(ing.snapshotCalories) && ing.snapshotCalories >= 0 &&
+                ing.snapshotProteinG != null && ing.snapshotCarbG != null && ing.snapshotFatG != null
+              )
+              const scaledQty = ing.quantity * yieldMultiplier
+              const displayQty = Number.isInteger(scaledQty)
+                ? String(scaledQty)
+                : (Math.round(scaledQty * 100) / 100).toString()
+              return (
+                <li key={ing.id} className="flex items-start gap-2 text-sm">
+                  {nutritionOk
+                    ? ing.foodItemId
+                      ? <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-500" />
+                      : <Link2 className="size-4 shrink-0 mt-0.5 text-amber-500" />
+                    : <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber-400" />}
+                  <span className="text-zinc-700 dark:text-zinc-300">
+                    <span className="font-medium">{displayQty} {ing.unit}</span> {ing.name}
+                    {ing.notes && <span className="text-zinc-400 ml-1">({ing.notes})</span>}
+                  </span>
+                </li>
+              )
+            })}
           </ul>
         </section>
       )}

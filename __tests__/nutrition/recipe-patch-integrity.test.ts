@@ -77,6 +77,21 @@ const CHICKEN_FOOD_ITEM = {
   fatG: 3.6 as unknown as import('@prisma/client/runtime/library').Decimal,
   servingSize: 100 as unknown as import('@prisma/client/runtime/library').Decimal,
   servingUnit: 'g',
+  householdUnit: null,
+  unitsPerServing: null,
+}
+
+// DB FoodItem for eggs — 50g serving, 70 cal, 1 large egg per serving
+const EGG_FOOD_ITEM = {
+  id: 'food-uuid-egg',
+  calories: 70 as unknown as import('@prisma/client/runtime/library').Decimal,
+  proteinG: 6 as unknown as import('@prisma/client/runtime/library').Decimal,
+  carbohydrateG: 0 as unknown as import('@prisma/client/runtime/library').Decimal,
+  fatG: 5 as unknown as import('@prisma/client/runtime/library').Decimal,
+  servingSize: 50 as unknown as import('@prisma/client/runtime/library').Decimal,
+  servingUnit: 'g',
+  householdUnit: 'large egg',
+  unitsPerServing: 1 as unknown as import('@prisma/client/runtime/library').Decimal,
 }
 
 function makePatchReq(body: unknown) {
@@ -314,5 +329,84 @@ describe('PATCH — mixed library and external ingredients', () => {
     // Hot sauce: client snapshot preserved
     expect(sauce.snapshotCalories).toBe(5)
     expect(sauce.foodItemId).toBeNull()
+  })
+})
+
+// ── Household unit server recomputation ───────────────────────────────────────
+
+describe('PATCH — household unit recomputation (eggs, strips)', () => {
+  it('recomputes 2 large eggs using householdUnit from DB (1 egg = 50g = 70 cal)', async () => {
+    mockPrisma.foodItem.findMany.mockResolvedValue([EGG_FOOD_ITEM])
+
+    const req = makePatchReq({
+      ingredients: [{
+        foodItemId: 'food-uuid-egg',
+        name: 'Large Eggs',
+        quantity: 2,
+        unit: 'large egg',
+        snapshotCalories: 9999,  // ignored — server recomputes
+        snapshotProteinG: 9999,
+        snapshotCarbG: 9999,
+        snapshotFatG: 9999,
+      }],
+    })
+
+    const res = await recipesPatch(req, TEST_PARAMS)
+    expect(res.status).toBe(200)
+
+    const createCall = mockPrisma.recipeIngredient.createMany.mock.calls[0][0]
+    const saved = createCall.data[0]
+
+    // 2 large eggs × 1 egg/serving × 70 cal/serving = 140 cal
+    expect(saved.snapshotCalories).toBeCloseTo(140, 0)
+    expect(saved.snapshotProteinG).toBeCloseTo(12, 1)
+    expect(saved.foodItemId).toBe('food-uuid-egg')
+  })
+
+  it('recomputes 1 large egg = 70 cal', async () => {
+    mockPrisma.foodItem.findMany.mockResolvedValue([EGG_FOOD_ITEM])
+
+    const req = makePatchReq({
+      ingredients: [{
+        foodItemId: 'food-uuid-egg',
+        name: 'Large Egg',
+        quantity: 1,
+        unit: 'large egg',
+        snapshotCalories: null,
+        snapshotProteinG: null,
+        snapshotCarbG: null,
+        snapshotFatG: null,
+      }],
+    })
+
+    const res = await recipesPatch(req, TEST_PARAMS)
+    expect(res.status).toBe(200)
+
+    const saved = mockPrisma.recipeIngredient.createMany.mock.calls[0][0].data[0]
+    expect(saved.snapshotCalories).toBeCloseTo(70, 0)
+  })
+
+  it('"serving" unit with metric food resolves (not null)', async () => {
+    mockPrisma.foodItem.findMany.mockResolvedValue([CHICKEN_FOOD_ITEM])
+
+    const req = makePatchReq({
+      ingredients: [{
+        foodItemId: 'food-uuid-chicken',
+        name: 'Chicken Breast',
+        quantity: 1,
+        unit: 'serving',
+        snapshotCalories: null,
+        snapshotProteinG: null,
+        snapshotCarbG: null,
+        snapshotFatG: null,
+      }],
+    })
+
+    const res = await recipesPatch(req, TEST_PARAMS)
+    expect(res.status).toBe(200)
+
+    const saved = mockPrisma.recipeIngredient.createMany.mock.calls[0][0].data[0]
+    // 1 serving = base nutrition = 165 cal
+    expect(saved.snapshotCalories).toBeCloseTo(165, 0)
   })
 })

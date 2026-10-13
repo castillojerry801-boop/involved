@@ -16,6 +16,9 @@ export async function POST(req: NextRequest) {
     servingMultiplier: number
     servingSize: number
     servingUnit: string
+    householdServingText?: string
+    householdUnit?: string
+    unitsPerServing?: number
     calories: number
     proteinG: number
     carbohydrateG: number
@@ -24,6 +27,28 @@ export async function POST(req: NextRequest) {
     sourceProvider?: string
     externalId?: string
   }
+
+  // Validate and sanitize household serving metadata.
+  // Reject clearly invalid values rather than silently dropping them.
+  if (body.householdUnit !== undefined && body.householdUnit !== null) {
+    if (typeof body.householdUnit !== 'string' || body.householdUnit.trim().length > 100) {
+      return NextResponse.json({ error: 'Invalid householdUnit' }, { status: 400 })
+    }
+  }
+  if (body.householdServingText !== undefined && body.householdServingText !== null) {
+    if (typeof body.householdServingText !== 'string' || body.householdServingText.trim().length > 200) {
+      return NextResponse.json({ error: 'Invalid householdServingText' }, { status: 400 })
+    }
+  }
+  if (body.unitsPerServing !== undefined && body.unitsPerServing !== null) {
+    if (typeof body.unitsPerServing !== 'number' || !Number.isFinite(body.unitsPerServing) || body.unitsPerServing <= 0) {
+      return NextResponse.json({ error: 'Invalid unitsPerServing' }, { status: 400 })
+    }
+  }
+
+  const householdServingText = body.householdServingText?.trim() || null
+  const householdUnit        = body.householdUnit?.trim() || null
+  const unitsPerServing      = body.unitsPerServing ?? null
 
   // Cache this food in the shared library (community visibility = searchable by all users)
   // Deduplicates on externalId + provider so we don't create duplicates
@@ -50,6 +75,9 @@ export async function POST(req: NextRequest) {
         createdById: user.id,
         servingSize: body.servingSize,
         servingUnit: body.servingUnit,
+        householdServingText,
+        householdUnit,
+        unitsPerServing,
         calories: body.calories,
         proteinG: body.proteinG,
         carbohydrateG: body.carbohydrateG,

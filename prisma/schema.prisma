@@ -237,6 +237,11 @@ model FoodItem {
   servingUnit          String   @map("serving_unit") @db.VarChar(50)
   servingsPerContainer Decimal? @map("servings_per_container") @db.Decimal(8, 2)
 
+  // Household serving — countable unit data for natural ingredient entry (e.g., eggs, slices, strips)
+  householdServingText String?  @map("household_serving_text") @db.VarChar(200)
+  householdUnit        String?  @map("household_unit") @db.VarChar(100)
+  unitsPerServing      Decimal? @map("units_per_serving") @db.Decimal(8, 3)
+
   calories      Decimal @db.Decimal(8, 2)
   proteinG      Decimal @map("protein_g") @db.Decimal(8, 3)
   carbohydrateG Decimal @map("carbohydrate_g") @db.Decimal(8, 3)

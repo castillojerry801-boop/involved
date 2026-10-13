@@ -37,6 +37,10 @@ export interface ExternalFoodResult {
   servingUnit: string
   /** Human-readable serving label, e.g. "1 medium", "1 cup", "1 bar (65g)". */
   householdServingText?: string
+  /** Countable unit noun, e.g. "large egg", "strip", "slice". Singular form. */
+  householdUnit?: string
+  /** How many household units equal one DB serving (e.g. 1 for "1 large egg", 2 for "2 strips"). */
+  unitsPerServing?: number
   coreNutrients: CoreNutrients
 }
 

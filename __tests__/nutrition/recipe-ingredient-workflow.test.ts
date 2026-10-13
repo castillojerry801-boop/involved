@@ -26,6 +26,29 @@ const OAKDELL_EGGS: FoodSearchResult = {
   source: 'library',
 }
 
+// Library result with household unit (1 large egg = 50g)
+const OAKDELL_EGGS_WITH_HOUSEHOLD: FoodSearchResult = {
+  ...OAKDELL_EGGS,
+  householdServingText: '1 large egg',
+  householdUnit: 'large egg',
+  unitsPerServing: 1,
+}
+
+// Library result with household unit where multiple units = 1 serving (2 strips = 46g)
+const HICKORY_BACON: FoodSearchResult = {
+  provider: 'fatsecret',
+  externalId: 'a1b2c3d4-0000-0000-0000-000000000005',
+  name: 'Hickory Smoked Bacon',
+  brand: 'Oscar Mayer',
+  servingSize: 46,
+  servingUnit: 'g',
+  householdServingText: '2 strips',
+  householdUnit: 'strip',
+  unitsPerServing: 2,
+  coreNutrients: { calories: 70, proteinG: 5, carbohydrateG: 0, fatG: 6 },
+  source: 'library',
+}
+
 const KROGER_EGG_WHITES: FoodSearchResult = {
   provider: 'fatsecret',
   externalId: 'a1b2c3d4-0000-0000-0000-000000000002',  // DB UUID
@@ -78,16 +101,31 @@ function makeBlankIngredient(): IngredientDraft {
   }
 }
 
+type BaseFood = {
+  servingSize: number; servingUnit: string
+  calories: number; proteinG: number; carbohydrateG: number; fatG: number
+  householdUnit?: string; unitsPerServing?: number
+}
+
 function simulateSelectFood(food: FoodSearchResult, existing: IngredientDraft = makeBlankIngredient()): IngredientDraft {
   const { calories, proteinG, carbohydrateG, fatG } = food.coreNutrients
   const servingSize = food.servingSize > 0 ? food.servingSize : 1
-  const _baseFood = { servingSize, servingUnit: food.servingUnit, calories, proteinG, carbohydrateG, fatG }
+  const _baseFood: BaseFood = {
+    servingSize,
+    servingUnit: food.servingUnit,
+    calories, proteinG, carbohydrateG, fatG,
+    householdUnit: food.householdUnit,
+    unitsPerServing: food.unitsPerServing,
+  }
+  // Use household unit as default when available
+  const defaultUnit = food.householdUnit ?? food.servingUnit
+  const defaultQty  = food.householdUnit && food.unitsPerServing ? food.unitsPerServing : servingSize
   return {
     ...existing,
     name: food.brand ? `${food.name} (${food.brand})` : food.name,
     foodItemId: food.source === 'library' ? food.externalId : null,
-    quantity: servingSize,
-    unit: food.servingUnit,
+    quantity: defaultQty,
+    unit: defaultUnit,
     _baseFood,
     snapshotCalories: Math.round(calories * 100) / 100,
     snapshotProteinG: Math.round(proteinG * 1000) / 1000,
@@ -97,7 +135,7 @@ function simulateSelectFood(food: FoodSearchResult, existing: IngredientDraft = 
 }
 
 // Mirrors synthesizeBaseFood() in the component: reconstructs a reference from persisted snapshot.
-function synthesizeBaseFood(ing: IngredientDraft): { servingSize: number; servingUnit: string; calories: number; proteinG: number; carbohydrateG: number; fatG: number } | null {
+function synthesizeBaseFood(ing: IngredientDraft): BaseFood | null {
   if (!hasValidNutrition(ing) || !(ing.quantity > 0) || !ing.unit) return null
   return {
     servingSize: ing.quantity,
@@ -108,8 +146,6 @@ function synthesizeBaseFood(ing: IngredientDraft): { servingSize: number; servin
     fatG: ing.snapshotFatG!,
   }
 }
-
-type BaseFood = { servingSize: number; servingUnit: string; calories: number; proteinG: number; carbohydrateG: number; fatG: number }
 
 function applyFactor(b: BaseFood, factor: number, ing: IngredientDraft): IngredientDraft {
   return {
@@ -126,17 +162,23 @@ function simulateQuantityChange(ing: IngredientDraft, qty: number): IngredientDr
   if (!Number.isFinite(qty) || qty <= 0) {
     return { ...ing, quantity: qty, snapshotCalories: null, snapshotProteinG: null, snapshotCarbG: null, snapshotFatG: null }
   }
-  const baseFood = ing._baseFood ?? synthesizeBaseFood(ing)
+  const baseFood = (ing._baseFood as BaseFood | null | undefined) ?? synthesizeBaseFood(ing)
   if (!baseFood) return { ...ing, quantity: qty }
-  const factor = computeIngredientFactor(baseFood.servingSize, baseFood.servingUnit, qty, ing.unit)
+  const factor = computeIngredientFactor(
+    baseFood.servingSize, baseFood.servingUnit, qty, ing.unit,
+    baseFood.householdUnit, baseFood.unitsPerServing,
+  )
   if (factor === null) return { ...ing, quantity: qty, _baseFood: baseFood, snapshotCalories: null, snapshotProteinG: null, snapshotCarbG: null, snapshotFatG: null }
   return applyFactor(baseFood, factor, { ...ing, quantity: qty })
 }
 
 function simulateUnitChange(ing: IngredientDraft, unit: string): IngredientDraft {
-  const baseFood = ing._baseFood ?? synthesizeBaseFood(ing)
+  const baseFood = (ing._baseFood as BaseFood | null | undefined) ?? synthesizeBaseFood(ing)
   if (!baseFood) return { ...ing, unit }
-  const factor = computeIngredientFactor(baseFood.servingSize, baseFood.servingUnit, ing.quantity, unit)
+  const factor = computeIngredientFactor(
+    baseFood.servingSize, baseFood.servingUnit, ing.quantity, unit,
+    baseFood.householdUnit, baseFood.unitsPerServing,
+  )
   if (factor === null) return { ...ing, unit, _baseFood: baseFood, snapshotCalories: null, snapshotProteinG: null, snapshotCarbG: null, snapshotFatG: null }
   return applyFactor(baseFood, factor, { ...ing, unit })
 }
@@ -571,5 +613,111 @@ describe('saved recipe reopening with correct ingredient data', () => {
     const repaired = simulateSelectFood(KIRKLAND_BEEF, broken)
     expect(hasValidNutrition(repaired)).toBe(true)
     expect(repaired.snapshotCalories).toBe(200)
+  })
+})
+
+// ── Household unit food selection ─────────────────────────────────────────────
+
+describe('selecting a food with household unit (Oakdell eggs, 1 large egg = 50g)', () => {
+  const selected = simulateSelectFood(OAKDELL_EGGS_WITH_HOUSEHOLD)
+
+  it('defaults to household unit instead of metric', () => {
+    expect(selected.unit).toBe('large egg')
+  })
+
+  it('defaults quantity to unitsPerServing (1)', () => {
+    expect(selected.quantity).toBe(1)
+  })
+
+  it('initial snapshot = 1 serving nutrition (factor 1)', () => {
+    expect(selected.snapshotCalories).toBe(70)
+    expect(selected.snapshotProteinG).toBe(6)
+    expect(selected.snapshotFatG).toBe(5)
+  })
+
+  it('stores householdUnit in _baseFood', () => {
+    expect((selected._baseFood as BaseFood).householdUnit).toBe('large egg')
+    expect((selected._baseFood as BaseFood).unitsPerServing).toBe(1)
+  })
+
+  it('changing to 2 eggs doubles nutrition', () => {
+    const two = simulateQuantityChange(selected, 2)
+    expect(two.snapshotCalories).toBeCloseTo(140, 1)
+    expect(two.snapshotProteinG).toBeCloseTo(12, 2)
+  })
+
+  it('changing to 0.5 egg halves nutrition', () => {
+    const half = simulateQuantityChange(selected, 0.5)
+    expect(half.snapshotCalories).toBeCloseTo(35, 1)
+  })
+
+  it('switching to grams still works via metric conversion', () => {
+    const inGrams = simulateUnitChange(selected, 'g')
+    // qty=1, unit='g' → factor = 1/50 = 0.02 → 70 * 0.02 = 1.4 cal
+    expect(inGrams.snapshotCalories).toBeCloseTo(70 * (1 / 50), 2)
+  })
+
+  it('switching to serving (1 serving) = factor 1', () => {
+    const asServing = simulateUnitChange(selected, 'serving')
+    expect(asServing.snapshotCalories).toBeCloseTo(70, 1)
+  })
+
+  it('unknown unit clears snapshots', () => {
+    const withEgg = simulateUnitChange(selected, 'egg')  // 'egg' != 'large egg'
+    expect(withEgg.snapshotCalories).toBeNull()
+  })
+})
+
+describe('selecting bacon with multi-unit serving (2 strips = 46g)', () => {
+  const selected = simulateSelectFood(HICKORY_BACON)
+
+  it('defaults to "strip" unit', () => {
+    expect(selected.unit).toBe('strip')
+  })
+
+  it('defaults quantity to 2 (unitsPerServing)', () => {
+    expect(selected.quantity).toBe(2)
+  })
+
+  it('2 strips = factor 1 = base nutrition', () => {
+    expect(selected.snapshotCalories).toBe(70)
+  })
+
+  it('4 strips = factor 2 = double nutrition', () => {
+    const four = simulateQuantityChange(selected, 4)
+    expect(four.snapshotCalories).toBeCloseTo(140, 1)
+  })
+
+  it('1 strip = factor 0.5 = half nutrition', () => {
+    const one = simulateQuantityChange(selected, 1)
+    expect(one.snapshotCalories).toBeCloseTo(35, 1)
+  })
+})
+
+// ── "serving" universal alias (bug fix) ───────────────────────────────────────
+
+describe('"serving" unit with metric-unit food (was broken — returned null)', () => {
+  it('qty=1 serving of a g-unit egg = factor 1 → 70 cal', () => {
+    const selected = simulateSelectFood(OAKDELL_EGGS)  // qty=50, unit='g'
+    // Switch quantity to 1 first (1g → factor 0.02), then switch unit to 'serving' (1 serving → factor 1)
+    const oneG = simulateQuantityChange(selected, 1)
+    const oneServing = simulateUnitChange(oneG, 'serving')
+    expect(oneServing.snapshotCalories).toBeCloseTo(70, 1)
+  })
+
+  it('qty=50 servings = factor 50 (not null, and mathematically correct)', () => {
+    // Before fix: computeIngredientFactor(50, 'g', 50, 'serving') returned null → "Nutrition unavailable"
+    // After fix: returns 50 → 50 × 70 = 3500 cal (expected: the user has 50 servings)
+    const selected = simulateSelectFood(OAKDELL_EGGS)
+    const asServing = simulateUnitChange(selected, 'serving')
+    // Nutrition is now available (not null), value is large because qty=50 servings
+    expect(asServing.snapshotCalories).not.toBeNull()
+    expect(asServing.snapshotCalories).toBeCloseTo(3500, 0)
+  })
+
+  it('2 servings of ground beef = factor 2 = 400 cal', () => {
+    const selected = simulateSelectFood(KIRKLAND_BEEF)
+    const twoServings = simulateQuantityChange(simulateUnitChange(selected, 'serving'), 2)
+    expect(twoServings.snapshotCalories).toBeCloseTo(400, 1)
   })
 })

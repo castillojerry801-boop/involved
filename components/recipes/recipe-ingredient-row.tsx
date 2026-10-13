@@ -22,6 +22,8 @@ interface BaseFoodData {
   proteinG: number
   carbohydrateG: number
   fatG: number
+  householdUnit?: string    // "large egg", "strip", "slice"
+  unitsPerServing?: number  // how many household units = 1 DB serving
 }
 
 export interface IngredientDraft {
@@ -63,6 +65,55 @@ export function hasValidNutrition(ing: Pick<IngredientDraft, 'snapshotCalories' 
   )
 }
 
+// ── Unit sets (mirrored from lib/recipes/nutrition.ts for client-side chip logic) ──
+
+const GRAM_UNITS      = new Set(['g', 'gram', 'grams'])
+const ML_UNITS        = new Set(['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'])
+const OZ_UNITS        = new Set(['oz', 'ounce', 'ounces'])
+const CUP_UNITS       = new Set(['cup', 'cups'])
+const TBSP_UNITS      = new Set(['tbsp', 'tablespoon', 'tablespoons'])
+const TSP_UNITS       = new Set(['tsp', 'teaspoon', 'teaspoons'])
+const SERVING_ALIASES = new Set(['serving', 'servings', 'portion', 'portions'])
+
+// Build the ordered list of unit options for a given food's base data.
+// Used to populate the unit dropdown.
+export function getUnitOptions(baseFood: BaseFoodData): { label: string; value: string }[] {
+  const options: { label: string; value: string }[] = []
+  const fu = baseFood.servingUnit.toLowerCase().trim()
+
+  // Household countable unit is always the top option when available
+  if (baseFood.householdUnit) {
+    options.push({ label: baseFood.householdUnit, value: baseFood.householdUnit })
+  }
+
+  // Standard units based on the food's metric serving type
+  if (GRAM_UNITS.has(fu) || OZ_UNITS.has(fu)) {
+    options.push({ label: 'g', value: 'g' }, { label: 'oz', value: 'oz' })
+  } else if (ML_UNITS.has(fu) || CUP_UNITS.has(fu) || TBSP_UNITS.has(fu) || TSP_UNITS.has(fu)) {
+    options.push(
+      { label: 'ml', value: 'ml' },
+      { label: 'cup', value: 'cup' },
+      { label: 'tbsp', value: 'tbsp' },
+      { label: 'tsp', value: 'tsp' },
+    )
+  } else if (!SERVING_ALIASES.has(fu) && !baseFood.householdUnit) {
+    // Unknown / synthesized unit (e.g. "large egg" stored as servingUnit on reopen)
+    options.push({ label: baseFood.servingUnit, value: baseFood.servingUnit })
+  }
+
+  // Serving is always available
+  options.push({ label: 'serving', value: 'serving' })
+
+  // Deduplicate preserving order
+  const seen = new Set<string>()
+  return options.filter(o => {
+    const key = o.value.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 interface RecipeIngredientRowProps {
   ingredient: IngredientDraft
   onChange: (updated: IngredientDraft) => void
@@ -100,6 +151,9 @@ function synthesizeBaseFood(ing: IngredientDraft): BaseFoodData | null {
     proteinG: ing.snapshotProteinG!,
     carbohydrateG: ing.snapshotCarbG!,
     fatG: ing.snapshotFatG!,
+    // householdUnit / unitsPerServing are not reconstructable from the snapshot
+    // (they are not stored in RecipeIngredient). The unit itself ("large egg") acts
+    // as the serving unit in the synthesized base, so the same-unit path handles it.
   }
 }
 
@@ -170,16 +224,22 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
         proteinG,
         carbohydrateG,
         fatG,
+        householdUnit: food.householdUnit,
+        unitsPerServing: food.unitsPerServing,
       }
 
-      // Initialize quantity to the food's serving size so factor = 1 and
-      // the default snapshot exactly equals one serving of the food.
+      // Default to household unit when available (e.g., "1 large egg"), otherwise metric serving.
+      const defaultUnit = food.householdUnit ?? food.servingUnit
+      const defaultQty  = food.householdUnit && food.unitsPerServing
+        ? food.unitsPerServing
+        : servingSize
+
       onChange({
         ...ingredient,
         name: food.brand ? `${food.name} (${food.brand})` : food.name,
         foodItemId: food.source === 'library' ? food.externalId : null,
-        quantity: servingSize,
-        unit: food.servingUnit,
+        quantity: defaultQty,
+        unit: defaultUnit,
         _baseFood: baseFood,
         ...applyFactor(baseFood, 1),
       })
@@ -200,7 +260,10 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
       // Store the resolved baseFood back so subsequent changes chain off the same reference.
       const baseFood = ingredient._baseFood ?? synthesizeBaseFood(ingredient)
       if (baseFood) {
-        const factor = computeIngredientFactor(baseFood.servingSize, baseFood.servingUnit, qty, ingredient.unit)
+        const factor = computeIngredientFactor(
+          baseFood.servingSize, baseFood.servingUnit, qty, ingredient.unit,
+          baseFood.householdUnit, baseFood.unitsPerServing,
+        )
         if (factor !== null) {
           onChange({ ...ingredient, quantity: qty, _baseFood: baseFood, ...applyFactor(baseFood, factor) })
         } else {
@@ -217,7 +280,10 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
     (unit: string) => {
       const baseFood = ingredient._baseFood ?? synthesizeBaseFood(ingredient)
       if (baseFood) {
-        const factor = computeIngredientFactor(baseFood.servingSize, baseFood.servingUnit, ingredient.quantity, unit)
+        const factor = computeIngredientFactor(
+          baseFood.servingSize, baseFood.servingUnit, ingredient.quantity, unit,
+          baseFood.householdUnit, baseFood.unitsPerServing,
+        )
         if (factor !== null) {
           onChange({ ...ingredient, unit, _baseFood: baseFood, ...applyFactor(baseFood, factor) })
         } else {
@@ -245,32 +311,18 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
   }, [])
 
   const nutritionOk = hasValidNutrition(ingredient)
-  const isLinked    = ingredient.foodItemId != null  // library item with DB UUID
+  const isLinked    = ingredient.foodItemId != null
+
+  // Unit dropdown: show when _baseFood is available; fall back to text input.
+  const baseFood = ingredient._baseFood
+  const unitOptions = baseFood ? getUnitOptions(baseFood) : []
+  const hasUnitOptions = unitOptions.length > 0
 
   return (
     <div data-ingredient-row className="relative rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 p-3">
+
+      {/* Row 1: Name with inline search + remove */}
       <div className="flex gap-2 items-start">
-        {/* Quantity */}
-        <input
-          type="number"
-          min={0.1}
-          step={0.1}
-          value={ingredient.quantity || ''}
-          onChange={(e) => handleQuantityChange(e.target.value)}
-          placeholder="Qty"
-          className="w-16 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:ring-2 focus:ring-zinc-400"
-        />
-
-        {/* Unit */}
-        <input
-          type="text"
-          value={ingredient.unit}
-          onChange={(e) => handleUnitChange(e.target.value)}
-          placeholder="Unit"
-          className="w-16 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-400"
-        />
-
-        {/* Name with inline search */}
         <div className="flex-1 relative">
           <div className="relative">
             <input
@@ -282,9 +334,9 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
               placeholder="Ingredient name"
               className={cn(
                 'w-full rounded-lg border bg-white dark:bg-zinc-900 px-2 py-1.5 pr-7 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-400',
-                isLinked
+                isLinked && nutritionOk
                   ? 'border-emerald-300 dark:border-emerald-700'
-                  : nutritionOk
+                  : isLinked || nutritionOk
                     ? 'border-amber-300 dark:border-amber-700'
                     : 'border-zinc-200 dark:border-zinc-600',
               )}
@@ -292,8 +344,10 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
             <span className="absolute right-2 top-1/2 -translate-y-1/2">
               {searching ? (
                 <Loader2 className="size-3.5 text-zinc-400 animate-spin" />
-              ) : isLinked ? (
+              ) : isLinked && nutritionOk ? (
                 <CheckCircle2 className="size-3.5 text-emerald-500" />
+              ) : isLinked && !nutritionOk ? (
+                <AlertCircle className="size-3.5 text-amber-500" />
               ) : nutritionOk ? (
                 <Link2 className="size-3.5 text-amber-500" />
               ) : ingredient.name.length >= 2 ? (
@@ -302,7 +356,7 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
             </span>
           </div>
 
-          {/* Dropdown results */}
+          {/* Search dropdown */}
           {showDropdown && (
             <div className="absolute z-20 mt-1 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg overflow-hidden">
               {results.map((food) => {
@@ -311,6 +365,8 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
                   cal != null && Number.isFinite(cal) && cal >= 0
                     ? `${Math.round(cal)} cal`
                     : 'Nutrition unavailable'
+                const servingLabel = food.householdServingText
+                  ?? `${food.servingSize} ${food.servingUnit}`
                 return (
                   <button
                     key={food.externalId}
@@ -321,7 +377,7 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
                       {food.name}{food.brand ? ` (${food.brand})` : ''}
                     </span>
                     <span className="text-xs text-zinc-400">
-                      {food.servingSize} {food.servingUnit} · {calDisplay}
+                      {servingLabel} · {calDisplay}
                     </span>
                   </button>
                 )
@@ -339,6 +395,43 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
         </button>
       </div>
 
+      {/* Row 2: Quantity + unit */}
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          type="number"
+          min={0.1}
+          step={0.1}
+          value={ingredient.quantity || ''}
+          onChange={(e) => handleQuantityChange(e.target.value)}
+          placeholder="Qty"
+          className="w-16 shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:ring-2 focus:ring-zinc-400"
+        />
+
+        {hasUnitOptions ? (
+          <select
+            value={ingredient.unit}
+            onChange={(e) => handleUnitChange(e.target.value)}
+            className="rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-400"
+          >
+            {unitOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+            {/* Preserve the current unit if it isn't in our options list */}
+            {ingredient.unit && !unitOptions.some(o => o.value.toLowerCase() === ingredient.unit.toLowerCase()) && (
+              <option value={ingredient.unit}>{ingredient.unit}</option>
+            )}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={ingredient.unit}
+            onChange={(e) => handleUnitChange(e.target.value)}
+            placeholder="Unit"
+            className="w-20 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-400"
+          />
+        )}
+      </div>
+
       {/* Notes */}
       <input
         type="text"
@@ -354,7 +447,7 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
           ≈ {Math.round(ingredient.snapshotCalories!)} cal · P {ingredient.snapshotProteinG!.toFixed(1)}g · C {ingredient.snapshotCarbG!.toFixed(1)}g · F {ingredient.snapshotFatG!.toFixed(1)}g
         </p>
       ) : ingredient.name.trim() && (ingredient.foodItemId != null || ingredient._baseFood != null) ? (
-        <p className="mt-1.5 text-xs text-zinc-400">Nutrition unavailable</p>
+        <p className="mt-1.5 text-xs text-zinc-400">Nutrition unavailable — try a different unit</p>
       ) : null}
     </div>
   )

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { RecipeDetailView, type RecipeDetail } from '@/components/recipes/recipe-detail'
+import { CreateRecipeModal } from '@/components/recipes/create-recipe-modal'
 import { createClient } from '@/lib/supabase/client'
 
 export default function RecipeDetailPage() {
@@ -13,6 +14,7 @@ export default function RecipeDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [showEdit, setShowEdit] = useState(false)
 
   useEffect(() => {
     createClient().auth.getUser().then(({ data }) => {
@@ -56,12 +58,22 @@ export default function RecipeDetailPage() {
   }
 
   return (
-    <RecipeDetailView
-      recipe={recipe}
-      currentUserId={currentUserId ?? ''}
-      onBack={() => router.push('/nutrition/recipes')}
-      onDeleted={() => router.push('/nutrition/recipes')}
-      onRefresh={fetchRecipe}
-    />
+    <>
+      <RecipeDetailView
+        recipe={recipe}
+        currentUserId={currentUserId ?? ''}
+        onBack={() => router.push('/nutrition/recipes')}
+        onDeleted={() => router.push('/nutrition/recipes')}
+        onRefresh={fetchRecipe}
+        onEdit={() => setShowEdit(true)}
+      />
+      {showEdit && (
+        <CreateRecipeModal
+          editingRecipe={recipe}
+          onClose={() => setShowEdit(false)}
+          onCreated={() => { setShowEdit(false); fetchRecipe() }}
+        />
+      )}
+    </>
   )
 }

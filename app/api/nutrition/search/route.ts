@@ -191,6 +191,9 @@ export async function GET(req: NextRequest) {
     barcode: f.barcode ?? undefined,
     servingSize: Number(f.servingSize),
     servingUnit: f.servingUnit,
+    householdServingText: f.householdServingText ?? undefined,
+    householdUnit: f.householdUnit ?? undefined,
+    unitsPerServing: f.unitsPerServing != null ? Number(f.unitsPerServing) : undefined,
     coreNutrients: {
       calories:      Number(f.calories),
       proteinG:      Number(f.proteinG),
