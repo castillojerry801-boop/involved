@@ -66,6 +66,8 @@ model Profile {
   nutritionTargets NutritionTarget[]
   foodFavorites    FoodFavorite[]
   savedMeals       SavedMeal[]
+  recipes          Recipe[]
+  recipeSaves      RecipeSave[]
 
   // Health / wearable
   healthActivities HealthActivity[]
@@ -247,12 +249,13 @@ model FoodItem {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  createdBy      Profile?       @relation("FoodItemsCreated", fields: [createdById], references: [id], onDelete: SetNull)
-  duplicateOf    FoodItem?      @relation("FoodDuplicates", fields: [duplicateOfId], references: [id])
-  duplicatedBy   FoodItem[]     @relation("FoodDuplicates")
-  foodLogEntries FoodLogEntry[]
-  foodFavorites  FoodFavorite[]
-  savedMealItems SavedMealItem[]
+  createdBy         Profile?           @relation("FoodItemsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  duplicateOf       FoodItem?          @relation("FoodDuplicates", fields: [duplicateOfId], references: [id])
+  duplicatedBy      FoodItem[]         @relation("FoodDuplicates")
+  foodLogEntries    FoodLogEntry[]
+  foodFavorites     FoodFavorite[]
+  savedMealItems    SavedMealItem[]
+  recipeIngredients RecipeIngredient[]
 
   @@index([name])
   @@index([barcode])
@@ -282,14 +285,23 @@ model FoodLogEntry {
   snapshotFatGPerServing          Decimal  @map("snapshot_fat_g_per_serving") @db.Decimal(8, 3)
   snapshotNutrientsJson           Json?    @map("snapshot_nutrients_json")
 
+  // Recipe log: when this entry was logged from a recipe, recipeId links back to it.
+  // foodItemId will be null in this case; nutrition is always snapshotted regardless.
+  recipeId String? @map("recipe_id") @db.Uuid
+
+  // Client-generated key for idempotent log submissions (prevents accidental double-logging).
+  idempotencyKey String? @unique @map("idempotency_key")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   profile  Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
   foodItem FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+  recipe   Recipe?   @relation(fields: [recipeId], references: [id], onDelete: SetNull)
 
   @@index([userId, logDate])
   @@index([userId, mealType])
+  @@index([recipeId])
   @@map("food_log_entries")
 }
 
@@ -355,6 +367,122 @@ model SavedMealItem {
 
   @@index([savedMealId])
   @@map("saved_meal_items")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// RECIPE LIBRARY
+// One shared community library. Discover / Saved / My Recipes are
+// filtered views of the same Recipe table. Status drives the moderation
+// pipeline; private recipes and pending submissions are never in Discover.
+// Images live in the private `recipe-images` Supabase bucket — signed
+// URLs are generated per-request; no URL is persisted in the schema.
+// ═════════════════════════════════════════════════════════════════════
+
+model Recipe {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  name        String       @db.VarChar(300)
+  description String?      @db.VarChar(1000)
+  servings    Int          @default(1)
+  prepMinutes Int?         @map("prep_minutes")
+  cookMinutes Int?         @map("cook_minutes")
+
+  status RecipeStatus @default(draft)
+
+  // Permanent storage key for the private `recipe-images` bucket.
+  // Signed URLs are generated on read — not persisted here.
+  storageKey String? @map("storage_key")
+
+  // Cached per-serving macros — recomputed whenever ingredients change.
+  // All four are null until every ingredient has a resolved FoodItem with
+  // non-null macros. Never show null totals as verified nutrition.
+  cachedCalPerServing      Decimal? @map("cached_cal_per_serving")      @db.Decimal(8, 2)
+  cachedProteinGPerServing Decimal? @map("cached_protein_g_per_serving") @db.Decimal(8, 3)
+  cachedCarbGPerServing    Decimal? @map("cached_carb_g_per_serving")   @db.Decimal(8, 3)
+  cachedFatGPerServing     Decimal? @map("cached_fat_g_per_serving")    @db.Decimal(8, 3)
+  nutritionComplete        Boolean  @default(false) @map("nutrition_complete")
+
+  // Explicit public-sharing consent — must be true before status can
+  // advance to pending or published.
+  sharingConsent   Boolean   @default(false) @map("sharing_consent")
+  sharingConsentAt DateTime? @map("sharing_consent_at")
+
+  // Snapshot of the creator's display name at submission time so
+  // attribution survives account changes or deletion.
+  creatorName String? @map("creator_name") @db.VarChar(200)
+
+  sourceUrl     String? @map("source_url")
+  sourceLicense String? @map("source_license")
+
+  submittedAt     DateTime? @map("submitted_at")
+  reviewedAt      DateTime? @map("reviewed_at")
+  rejectionReason String?   @map("rejection_reason") @db.VarChar(500)
+
+  isAiGenerated Boolean @default(false) @map("is_ai_generated")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  profile     Profile            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ingredients RecipeIngredient[]
+  steps       RecipeStep[]
+  saves       RecipeSave[]
+  logEntries  FoodLogEntry[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("recipes")
+}
+
+model RecipeIngredient {
+  id         String  @id @default(uuid()) @db.Uuid
+  recipeId   String  @map("recipe_id") @db.Uuid
+  foodItemId String? @map("food_item_id") @db.Uuid
+  name       String  @db.VarChar(300)
+  quantity   Decimal @db.Decimal(10, 3)
+  unit       String  @db.VarChar(50)
+  sortOrder  Int     @default(0) @map("sort_order")
+  notes      String? @db.VarChar(200)
+
+  // Nutrition snapshot computed from foodItem at the time the ingredient
+  // was matched. Null when foodItemId is unresolved — that ingredient
+  // contributes nothing to the recipe total and sets nutritionComplete=false.
+  snapshotCalories Decimal? @map("snapshot_calories") @db.Decimal(8, 2)
+  snapshotProteinG Decimal? @map("snapshot_protein_g") @db.Decimal(8, 3)
+  snapshotCarbG    Decimal? @map("snapshot_carb_g")    @db.Decimal(8, 3)
+  snapshotFatG     Decimal? @map("snapshot_fat_g")     @db.Decimal(8, 3)
+
+  recipe   Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  foodItem FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+
+  @@index([recipeId])
+  @@map("recipe_ingredients")
+}
+
+model RecipeStep {
+  id        String @id @default(uuid()) @db.Uuid
+  recipeId  String @map("recipe_id") @db.Uuid
+  sortOrder Int    @default(0) @map("sort_order")
+  body      String @db.Text
+
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@index([recipeId])
+  @@map("recipe_steps")
+}
+
+model RecipeSave {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id")   @db.Uuid
+  recipeId  String   @map("recipe_id") @db.Uuid
+  createdAt DateTime @default(now())  @map("created_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe  Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@index([userId])
+  @@map("recipe_saves")
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1262,6 +1390,17 @@ enum WeeklyTargetType {
   training_days
   nutrition_log_days
   protein_target_days
+}
+
+// ─── Recipes ──────────────────────────────────────────────────────────
+
+enum RecipeStatus {
+  draft     // user is still building; not visible to others
+  private   // user explicitly kept private; visible only to owner
+  pending   // submitted for community review; not yet in Discover
+  published // approved; visible in Discover to all authenticated users
+  rejected  // submission rejected; owner sees rejection reason
+  archived  // removed from Discover by moderation; preserved for owner
 }
 
 // ─── Nutrition ────────────────────────────────────────────────────────

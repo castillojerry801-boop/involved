@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, Search, ChevronLeft, ChevronRight, Pencil, Minus, Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, Trash2, Search, ChevronLeft, ChevronRight, Pencil, Minus, Loader2, ChefHat } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { FoodSearchModal } from '@/components/nutrition/food-search-modal'
@@ -293,12 +294,22 @@ export default function NutritionPage() {
       {canEdit && (
         <button
           onClick={() => setAddingTo('breakfast')}
-          className="mb-6 flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/80 px-4 py-3 text-left text-sm text-zinc-400 shadow-sm transition-colors hover:border-zinc-300 backdrop-blur-sm"
+          className="mb-3 flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/80 px-4 py-3 text-left text-sm text-zinc-400 shadow-sm transition-colors hover:border-zinc-300 backdrop-blur-sm"
         >
           <Search className="size-4 shrink-0" />
           Search foods, scan barcode, or snap a photo...
         </button>
       )}
+
+      {/* Explore Recipes */}
+      <Link
+        href="/nutrition/recipes"
+        className="mb-6 flex items-center gap-3 rounded-xl border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/80 px-4 py-3 text-sm shadow-sm transition-colors hover:border-zinc-300 backdrop-blur-sm"
+      >
+        <ChefHat className="size-4 shrink-0 text-zinc-400" />
+        <span className="flex-1 text-zinc-600 dark:text-zinc-300">Explore Recipes</span>
+        <ChevronRight className="size-4 text-zinc-400" />
+      </Link>
 
       {/* Meal cards */}
       <div className="flex flex-col gap-3">
