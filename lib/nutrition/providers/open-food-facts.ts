@@ -3,6 +3,7 @@
 // OFF asks that apps send a descriptive User-Agent to identify traffic.
 
 import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail } from './types'
+import { parseHouseholdText } from './household-parser'
 
 const BASE_URL = 'https://world.openfoodfacts.org'
 const FETCH_TIMEOUT_MS = 5000
@@ -44,10 +45,13 @@ async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Respon
 function resolveServing(p: Record<string, unknown>): {
   servingSize: number
   householdServingText: string | undefined
+  householdUnit: string | undefined
+  unitsPerServing: number | undefined
 } {
   const servingText = (p.serving_size as string | undefined) ?? ''
 
-  // Try to extract the household description from text like "1 bar (65g)" or "1 cup (240ml)"
+  // Try to extract the household description from text like "1 bar (65g)" or "3 tbsp (46g)"
+  // or "1/4 cup (28g)". The label before the parenthesized gram/ml amount is the household text.
   let householdServingText: string | undefined
   const labelMatch = servingText.match(/^(.+?)\s*\(\s*[\d.]+\s*(?:g|ml)\s*\)/i)
   if (labelMatch) {
@@ -55,21 +59,34 @@ function resolveServing(p: Record<string, unknown>): {
     if (label && !/^\d+\s*g$/i.test(label)) householdServingText = label
   }
 
+  // Parse household unit/count from the household text.
+  // Volume units (cup, tbsp, tsp) are safe for packaged foods — the manufacturer's
+  // label defines the exact relationship (e.g. "3 tbsp = 46g = 1 serving").
+  let householdUnit: string | undefined
+  let unitsPerServing: number | undefined
+  if (householdServingText) {
+    const parsed = parseHouseholdText(householdServingText)
+    if (parsed) {
+      householdUnit   = parsed.householdUnit
+      unitsPerServing = parsed.unitsPerServing
+    }
+  }
+
   // serving_quantity (numeric, grams/ml per serving)
   const sq = num(p.serving_quantity)
   if (sq != null && sq > 0 && sq <= 500) {
-    return { servingSize: sq, householdServingText }
+    return { servingSize: sq, householdServingText, householdUnit, unitsPerServing }
   }
 
   // Parse the serving_size text for a gram/ml amount
   if (servingText) {
     const gramMatch = servingText.match(/([\d.]+)\s*g\b/i)
     const mlMatch   = servingText.match(/([\d.]+)\s*ml\b/i)
-    if (gramMatch) return { servingSize: parseFloat(gramMatch[1]), householdServingText }
-    if (mlMatch)   return { servingSize: parseFloat(mlMatch[1]),   householdServingText }
+    if (gramMatch) return { servingSize: parseFloat(gramMatch[1]), householdServingText, householdUnit, unitsPerServing }
+    if (mlMatch)   return { servingSize: parseFloat(mlMatch[1]),   householdServingText, householdUnit, unitsPerServing }
   }
 
-  return { servingSize: 100, householdServingText }
+  return { servingSize: 100, householdServingText, householdUnit, unitsPerServing }
 }
 
 function mapProduct(p: Record<string, unknown>): ExternalFoodDetail | null {
@@ -83,7 +100,7 @@ function mapProduct(p: Record<string, unknown>): ExternalFoodDetail | null {
   // Product name and at least some nutrient data required to be usable
   if (!p.product_name && cal100g == null) return null
 
-  const { servingSize, householdServingText } = resolveServing(p)
+  const { servingSize, householdServingText, householdUnit, unitsPerServing } = resolveServing(p)
   const factor = servingSize / 100
 
   const incompleteData = cal100g == null || protein100g == null ||
@@ -111,6 +128,8 @@ function mapProduct(p: Record<string, unknown>): ExternalFoodDetail | null {
     servingSize,
     servingUnit: 'g',
     householdServingText,
+    householdUnit,
+    unitsPerServing,
     coreNutrients: {
       calories:      Math.round((cal100g ?? 0) * factor),
       proteinG:      Math.round((protein100g ?? 0) * factor * 10) / 10,

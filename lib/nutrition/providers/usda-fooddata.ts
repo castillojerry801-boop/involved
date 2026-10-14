@@ -3,6 +3,7 @@
 // API key required (free): https://fdc.nal.usda.gov/api-key-signup
 
 import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail } from './types'
+import { parseHouseholdText, enrichWithFoodNoun } from './household-parser'
 
 const BASE_URL = 'https://api.nal.usda.gov/fdc/v1'
 const ALL_DATA_TYPES = 'Foundation,SR Legacy,Survey (FNDDS),Branded'
@@ -76,12 +77,34 @@ function mineral(val: number): number | undefined {
 function mapFood(food: UsdaFood): ExternalFoodDetail {
   const isBranded = food.dataType === 'Branded'
 
-  const servingSize = isBranded ? (food.servingSize ?? 100) : 100
+  // Guard against malformed data: USDA occasionally returns servingSize=0 for branded products.
+  const rawServingSize = isBranded ? (food.servingSize ?? 100) : 100
+  const servingSize = rawServingSize > 0 ? rawServingSize : 100
   const servingUnit = isBranded
     ? (food.servingSizeUnit ?? 'g').toLowerCase()
     : 'g'
 
+  // USDA foodNutrients.value is always expressed per 100g, regardless of food type or endpoint.
+  // For branded foods the manufacturer's serving size is frequently ≠ 100g (e.g. 44g for eggs),
+  // so we must scale nutrients to per-serving before storing. Foundation/SR Legacy/Survey are
+  // always normalized to 100g servings, so their factor is 1 and scaling is a no-op.
+  const nutritionFactor = isBranded ? servingSize / 100 : 1
+
   const brand = food.brandName ?? food.brandOwner
+
+  // For branded foods, householdServingFullText corresponds to the manufacturer-defined
+  // servingSize. For non-branded (Foundation/SR Legacy), servingSize is normalized to 100g
+  // and the household text describes a different gram weight — so we skip extraction there.
+  let householdUnit: string | undefined
+  let unitsPerServing: number | undefined
+  const rawHousehold = food.householdServingFullText?.trim()
+  if (isBranded && rawHousehold) {
+    const parsed = parseHouseholdText(rawHousehold)
+    if (parsed) {
+      householdUnit    = enrichWithFoodNoun(parsed.householdUnit, food.description)
+      unitsPerServing  = parsed.unitsPerServing
+    }
+  }
 
   return {
     provider:    'usda_fooddata',
@@ -91,26 +114,28 @@ function mapFood(food: UsdaFood): ExternalFoodDetail {
     barcode:     food.gtinUpc ?? undefined,
     servingSize,
     servingUnit,
-    householdServingText: food.householdServingFullText?.trim() || undefined,
+    householdServingText: rawHousehold || undefined,
+    householdUnit,
+    unitsPerServing,
     coreNutrients: {
-      calories:      Math.round(getNutrient(food, NID.calories)),
-      proteinG:      Math.round(getNutrient(food, NID.protein) * 10) / 10,
-      carbohydrateG: Math.round(getNutrient(food, NID.carbs) * 10) / 10,
-      fatG:          Math.round(getNutrient(food, NID.fat) * 10) / 10,
+      calories:      Math.round(getNutrient(food, NID.calories) * nutritionFactor),
+      proteinG:      Math.round(getNutrient(food, NID.protein) * nutritionFactor * 10) / 10,
+      carbohydrateG: Math.round(getNutrient(food, NID.carbs) * nutritionFactor * 10) / 10,
+      fatG:          Math.round(getNutrient(food, NID.fat) * nutritionFactor * 10) / 10,
     },
     extendedNutrients: {
-      fiberG:        mineral(getNutrient(food, NID.fiber)),
-      sugarG:        mineral(getNutrient(food, NID.sugar)),
-      sodiumMg:      mineral(getNutrient(food, NID.sodium)),
-      saturatedFatG: mineral(getNutrient(food, NID.saturatedFat)),
-      transFatG:     mineral(getNutrient(food, NID.transFat)),
-      cholesterolMg: mineral(getNutrient(food, NID.cholesterol)),
-      potassiumMg:   mineral(getNutrient(food, NID.potassium)),
-      calciumMg:     mineral(getNutrient(food, NID.calcium)),
-      ironMg:        mineral(getNutrient(food, NID.iron)),
-      vitaminDMcg:   mineral(getNutrient(food, NID.vitaminD)),
-      vitaminCMg:    mineral(getNutrient(food, NID.vitaminC)),
-      vitaminAMcg:   mineral(getNutrient(food, NID.vitaminA)),
+      fiberG:        mineral(getNutrient(food, NID.fiber) * nutritionFactor),
+      sugarG:        mineral(getNutrient(food, NID.sugar) * nutritionFactor),
+      sodiumMg:      mineral(getNutrient(food, NID.sodium) * nutritionFactor),
+      saturatedFatG: mineral(getNutrient(food, NID.saturatedFat) * nutritionFactor),
+      transFatG:     mineral(getNutrient(food, NID.transFat) * nutritionFactor),
+      cholesterolMg: mineral(getNutrient(food, NID.cholesterol) * nutritionFactor),
+      potassiumMg:   mineral(getNutrient(food, NID.potassium) * nutritionFactor),
+      calciumMg:     mineral(getNutrient(food, NID.calcium) * nutritionFactor),
+      ironMg:        mineral(getNutrient(food, NID.iron) * nutritionFactor),
+      vitaminDMcg:   mineral(getNutrient(food, NID.vitaminD) * nutritionFactor),
+      vitaminCMg:    mineral(getNutrient(food, NID.vitaminC) * nutritionFactor),
+      vitaminAMcg:   mineral(getNutrient(food, NID.vitaminA) * nutritionFactor),
     },
   }
 }

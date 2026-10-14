@@ -7,16 +7,33 @@ import type { ExternalFoodResult } from '@/lib/nutrition/providers/types'
 import { isSensitiveQuery, PRIVACY_REJECTION_MESSAGE } from '@/lib/nutrition/privacy-guard'
 
 // ── Supplement gate ───────────────────────────────────────────────────────────
+//
+// Controls whether DSLD (NIH Dietary Supplement Label Database) is included in
+// provider fan-out. DSLD is authoritative for supplements but returns zero-nutrition
+// stubs at search time — it should only fire for searches with clear supplement intent.
+//
+// Rules for adding keywords:
+//  ✓ Add compound forms that only appear in supplement context ("protein powder", "whey protein")
+//  ✗ Don't add bare nouns that appear in food names ("protein", "vitamin", "collagen",
+//    "magnesium", "probiotic") — these would surface DSLD stubs for "protein smoothie",
+//    "collagen broth", "probiotic yogurt", "magnesium-rich foods".
 
 const SUPPLEMENT_KEYWORDS = [
-  'protein', 'creatine', 'vitamin', 'supplement', 'pre workout', 'preworkout',
-  'bcaa', 'amino acid', 'whey', 'casein', 'isolate', 'mass gainer',
-  'multivitamin', 'fish oil', 'omega 3', 'magnesium', 'zinc supplement',
-  'collagen', 'greens powder', 'electrolyte', 'probiotic', 'gummy vitamin',
-  'post workout', 'beta alanine', 'glutamine', 'citrulline',
+  // Unambiguously supplement-intent queries:
+  'creatine', 'pre workout', 'preworkout', 'bcaa', 'amino acid', 'mass gainer',
+  'multivitamin', 'fish oil', 'omega 3', 'zinc supplement', 'magnesium supplement',
+  'greens powder', 'gummy vitamin', 'post workout', 'beta alanine', 'glutamine', 'citrulline',
+  'casein',
+  // Compound supplement forms (bare "protein", "vitamin", "whey" etc. are too common in food names):
+  'protein powder', 'protein shake', 'protein supplement',
+  'whey protein',
+  'protein isolate', 'soy isolate',
+  'collagen peptide', 'collagen supplement', 'collagen powder',
+  'electrolyte supplement', 'electrolyte powder', 'electrolyte tablet',
+  'probiotic supplement', 'probiotic capsule',
 ]
 
-function isSupplementQuery(query: string): boolean {
+export function isSupplementQuery(query: string): boolean {
   const lower = query.toLowerCase()
   return SUPPLEMENT_KEYWORDS.some(kw => lower.includes(kw))
 }
@@ -185,7 +202,11 @@ export async function GET(req: NextRequest) {
 
   const cachedResults = cached.map(f => ({
     provider: f.sourceProvider ?? 'library',
-    externalId: f.id,
+    // externalId: original provider ID (barcode, USDA FDC ID, etc.) for log-route deduplication.
+    // Falls back to the DB UUID only for foods with no original external ID (e.g. ai_vision).
+    externalId: f.externalId ?? f.id,
+    // internalId: the DB UUID — use this as foodItemId when linking recipe ingredients.
+    internalId: f.id,
     name: f.name,
     brand: f.brand ?? undefined,
     barcode: f.barcode ?? undefined,
@@ -225,9 +246,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 3. Drop zero-nutrition results (except DSLD stubs — their nutrition is detail-only)
+  // 3. Drop zero-nutrition results from non-DSLD providers.
+  //    DSLD search stubs always have placeholder-zero nutrition (incompleteData=true);
+  //    the UI enforces a detail fetch before logging them. Other providers that return
+  //    all-zero macros have genuinely incomplete data and should not be shown as loggable.
   const withNutrition = providerResults.filter(r => {
-    if (r.provider === 'nih_dsld') return true
+    if (r.provider === 'nih_dsld') return true   // handled via incompleteData flag in UI
     const n = r.coreNutrients
     return n.calories > 0 || n.proteinG > 0 || n.carbohydrateG > 0 || n.fatG > 0
   })

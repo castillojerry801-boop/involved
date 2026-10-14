@@ -7,8 +7,8 @@ import type { ExternalFoodResult } from '@/lib/nutrition/providers/types'
 import { computeIngredientFactor } from '@/lib/recipes/nutrition'
 
 // Shape returned by /api/nutrition/search.
-// Library results: externalId = DB FoodItem UUID, valid for use as foodItemId.
-// External results: externalId = provider's own ID, NOT a DB UUID.
+// Library results: externalId = original provider ID (for dedup); internalId = DB UUID (for recipe FK).
+// External results: externalId = provider's own ID, no internalId.
 type FoodSearchResult = ExternalFoodResult & {
   source: 'library' | 'external'
 }
@@ -206,7 +206,7 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
         onChange({
           ...ingredient,
           name: food.brand ? `${food.name} (${food.brand})` : food.name,
-          foodItemId: food.source === 'library' ? food.externalId : null,
+          foodItemId: food.source === 'library' ? (food.internalId ?? food.externalId) : null,
           unit: food.servingUnit,
           _baseFood: null,
           ...NULL_SNAPSHOTS,
@@ -237,7 +237,10 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
       onChange({
         ...ingredient,
         name: food.brand ? `${food.name} (${food.brand})` : food.name,
-        foodItemId: food.source === 'library' ? food.externalId : null,
+        // Use internalId (DB UUID) for recipe ingredient FK when available.
+        // Falls back to externalId for backward compatibility with cached results
+        // that predate the internalId field.
+        foodItemId: food.source === 'library' ? (food.internalId ?? food.externalId) : null,
         quantity: defaultQty,
         unit: defaultUnit,
         _baseFood: baseFood,

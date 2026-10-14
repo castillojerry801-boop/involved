@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Search, Barcode, Camera, X, Plus, Loader2, ChevronDown, ChevronUp, Minus, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Search, Barcode, Camera, X, Plus, Loader2, ChevronDown, ChevronUp, Minus, Clock, CheckCircle2, AlertCircle, FlaskConical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { BarcodeScanner } from './barcode-scanner'
@@ -14,6 +14,7 @@ type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 interface FoodResult {
   provider?: string
   externalId: string
+  internalId?: string
   name: string
   brand?: string
   barcode?: string
@@ -76,6 +77,8 @@ function NutriScoreBadge({ grade }: { grade?: string }) {
 
 // ─── Expanded food card ───────────────────────────────────────────────────────
 
+type DetailState = 'idle' | 'loading' | 'loaded' | 'failed'
+
 function FoodCard({
   food,
   onLog,
@@ -88,10 +91,46 @@ function FoodCard({
   const [expanded, setExpanded] = useState(false)
   const [servings, setServings] = useState(1)
 
-  const cal = Math.round(food.coreNutrients.calories * servings)
-  const pro = Math.round(food.coreNutrients.proteinG * servings * 10) / 10
-  const carb = Math.round(food.coreNutrients.carbohydrateG * servings * 10) / 10
-  const fat = Math.round(food.coreNutrients.fatG * servings * 10) / 10
+  // DSLD supplement detail fetch state
+  const [detailState, setDetailState] = useState<DetailState>('idle')
+  const [detailedFood, setDetailedFood] = useState<FoodResult | null>(null)
+
+  // The food record to use for display and logging — enriched from DSLD detail if available
+  const effectiveFood: FoodResult = detailedFood ?? food
+
+  // Auto-fetch DSLD detail when the card is first expanded
+  useEffect(() => {
+    if (!expanded || !food.incompleteData || food.provider !== 'nih_dsld') return
+    if (detailState !== 'idle') return
+
+    setDetailState('loading')
+    fetch(`/api/nutrition/food?provider=nih_dsld&id=${encodeURIComponent(food.externalId)}`)
+      .then(r => r.ok ? r.json() as Promise<{ food: FoodResult }> : Promise.reject(r.status))
+      .then(data => {
+        setDetailedFood(data.food)
+        setDetailState('loaded')
+      })
+      .catch(() => setDetailState('failed'))
+  }, [expanded, food.incompleteData, food.provider, food.externalId, detailState])
+
+  // True when there is trustworthy nutrition available (real values, not placeholder zeros).
+  // DSLD stubs start with placeholder zeros; after a successful detail fetch we check whether
+  // the label actually contains parseable caloric/macro data. Other providers are trusted.
+  // True when nutrition is trustworthy and logging is safe.
+  // For DSLD: effectiveFood starts as the stub (incompleteData=true → false).
+  // Once detail loads with real macros, detailedFood.incompleteData is undefined → true.
+  // If detail loads but has no parseable macros, incompleteData stays true → false (blocked).
+  // For non-DSLD: incompleteData is always undefined → true.
+  const hasVerifiedNutrition = !effectiveFood.incompleteData
+
+  const cal  = Math.round(effectiveFood.coreNutrients.calories * servings)
+  const pro  = Math.round(effectiveFood.coreNutrients.proteinG * servings * 10) / 10
+  const carb = Math.round(effectiveFood.coreNutrients.carbohydrateG * servings * 10) / 10
+  const fat  = Math.round(effectiveFood.coreNutrients.fatG * servings * 10) / 10
+
+  const displayServing = effectiveFood.householdServingText
+    ? `${effectiveFood.householdServingText} (${effectiveFood.servingSize}${effectiveFood.servingUnit})`
+    : `${effectiveFood.servingSize}${effectiveFood.servingUnit}`
 
   return (
     <div className="flex flex-col border-b border-zinc-100 dark:border-zinc-800 last:border-0">
@@ -107,14 +146,18 @@ function FoodCard({
             {food.nutriScore && <NutriScoreBadge grade={food.nutriScore} />}
           </div>
           {food.brand && <p className="text-xs text-zinc-400 truncate">{food.brand}</p>}
-          <p className="text-xs text-zinc-500 mt-0.5">
-            {food.coreNutrients.calories} cal ·{' '}
-            {food.householdServingText
-              ? `${food.householdServingText} (${food.servingSize}${food.servingUnit})`
-              : `${food.servingSize}${food.servingUnit}`
-            }
-            {' · '}P {food.coreNutrients.proteinG}g · C {food.coreNutrients.carbohydrateG}g · F {food.coreNutrients.fatG}g
-          </p>
+          {food.incompleteData && detailState !== 'loaded' ? (
+            // DSLD stub: don't display placeholder zeros as if they were real calories
+            <p className="text-xs text-zinc-500 mt-0.5 flex items-center gap-1">
+              <FlaskConical className="size-3 text-violet-400 shrink-0" />
+              Supplement · tap to view nutrition
+            </p>
+          ) : (
+            <p className="text-xs text-zinc-500 mt-0.5">
+              {effectiveFood.coreNutrients.calories} cal · {displayServing}
+              {' · '}P {effectiveFood.coreNutrients.proteinG}g · C {effectiveFood.coreNutrients.carbohydrateG}g · F {effectiveFood.coreNutrients.fatG}g
+            </p>
+          )}
         </div>
         {expanded
           ? <ChevronUp className="size-4 text-zinc-300 shrink-0" />
@@ -125,95 +168,125 @@ function FoodCard({
       {/* Expanded: serving editor + add button */}
       {expanded && (
         <div className="pb-3 pl-0">
-          {food.incompleteData && (
-            <p className="mb-2 text-[11px] text-amber-600 dark:text-amber-400">
-              Some nutrient data may be incomplete for this product.
-            </p>
+          {/* DSLD: loading state */}
+          {food.incompleteData && detailState === 'loading' && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg bg-violet-50 dark:bg-violet-900/20 px-3 py-2.5">
+              <Loader2 className="size-4 animate-spin text-violet-500 shrink-0" />
+              <p className="text-xs text-violet-700 dark:text-violet-300">Loading supplement nutrition info…</p>
+            </div>
           )}
 
-          {/* Serving multiplier */}
-          <div className="mb-3 flex items-center gap-3">
-            <span className="text-xs font-medium text-zinc-500">Servings</span>
-            <div className="flex items-center gap-2">
+          {/* DSLD: failed to fetch detail */}
+          {food.incompleteData && detailState === 'failed' && (
+            <div className="mb-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
+              <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">Could not load nutrition data.</p>
               <button
-                onClick={() => setServings(s => Math.max(0.5, Math.round((s - 0.5) * 10) / 10))}
-                className="flex size-7 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                onClick={() => setDetailState('idle')}
+                className="mt-1 text-xs text-amber-600 dark:text-amber-400 underline"
               >
-                <Minus className="size-3" />
-              </button>
-              <input
-                type="number"
-                min={0.5}
-                max={20}
-                step={0.5}
-                value={servings}
-                onChange={e => {
-                  const v = parseFloat(e.target.value)
-                  if (!isNaN(v) && v > 0) setServings(Math.round(v * 10) / 10)
-                }}
-                className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1 text-center text-sm text-zinc-900 dark:text-white focus:outline-none"
-              />
-              <button
-                onClick={() => setServings(s => Math.round((s + 0.5) * 10) / 10)}
-                className="flex size-7 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-              >
-                <Plus className="size-3" />
+                Tap to retry
               </button>
             </div>
-            <span className="text-xs text-zinc-400">
-              = {Math.round(servings * food.servingSize * 10) / 10}{food.servingUnit}
-              {food.householdServingText && servings === 1 && (
-                <> · {food.householdServingText}</>
-              )}
-            </span>
-          </div>
+          )}
 
-          {/* Calculated macros */}
-          <div className="mb-3 flex items-center gap-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 px-3 py-2">
-            <div className="text-center">
-              <p className="text-base font-black text-zinc-900 dark:text-white">{cal}</p>
-              <p className="text-[10px] text-zinc-400">cal</p>
+          {/* DSLD: loaded but nutrition still unavailable on the label */}
+          {food.incompleteData && detailState === 'loaded' && effectiveFood.incompleteData && (
+            <div className="mb-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
+              <p className="text-xs text-amber-700 dark:text-amber-300 font-medium">Nutrition info not available</p>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                This supplement label does not include calorie or macro data.
+                Search for a similar product with complete nutrition info.
+              </p>
             </div>
-            <div className="text-center">
-              <p className="text-sm font-bold text-zinc-900 dark:text-white">{pro}g</p>
-              <p className="text-[10px] text-zinc-400">protein</p>
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-bold text-zinc-900 dark:text-white">{carb}g</p>
-              <p className="text-[10px] text-zinc-400">carbs</p>
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-bold text-zinc-900 dark:text-white">{fat}g</p>
-              <p className="text-[10px] text-zinc-400">fat</p>
-            </div>
-          </div>
+          )}
 
-          {/* Quick serving presets */}
-          <div className="mb-3 flex gap-1.5">
-            {[0.5, 1, 1.5, 2, 3].map(n => (
+          {/* Serving multiplier — only show when nutrition is verified */}
+          {hasVerifiedNutrition && (
+            <>
+              <div className="mb-3 flex items-center gap-3">
+                <span className="text-xs font-medium text-zinc-500">Servings</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setServings(s => Math.max(0.5, Math.round((s - 0.5) * 10) / 10))}
+                    className="flex size-7 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    <Minus className="size-3" />
+                  </button>
+                  <input
+                    type="number"
+                    min={0.5}
+                    max={20}
+                    step={0.5}
+                    value={servings}
+                    onChange={e => {
+                      const v = parseFloat(e.target.value)
+                      if (!isNaN(v) && v > 0) setServings(Math.round(v * 10) / 10)
+                    }}
+                    className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2 py-1 text-center text-sm text-zinc-900 dark:text-white focus:outline-none"
+                  />
+                  <button
+                    onClick={() => setServings(s => Math.round((s + 0.5) * 10) / 10)}
+                    className="flex size-7 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    <Plus className="size-3" />
+                  </button>
+                </div>
+                <span className="text-xs text-zinc-400">
+                  = {Math.round(servings * effectiveFood.servingSize * 10) / 10}{effectiveFood.servingUnit}
+                  {effectiveFood.householdServingText && servings === 1 && (
+                    <> · {effectiveFood.householdServingText}</>
+                  )}
+                </span>
+              </div>
+
+              {/* Calculated macros */}
+              <div className="mb-3 flex items-center gap-4 rounded-lg bg-zinc-50 dark:bg-zinc-800 px-3 py-2">
+                <div className="text-center">
+                  <p className="text-base font-black text-zinc-900 dark:text-white">{cal}</p>
+                  <p className="text-[10px] text-zinc-400">cal</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-bold text-zinc-900 dark:text-white">{pro}g</p>
+                  <p className="text-[10px] text-zinc-400">protein</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-bold text-zinc-900 dark:text-white">{carb}g</p>
+                  <p className="text-[10px] text-zinc-400">carbs</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-bold text-zinc-900 dark:text-white">{fat}g</p>
+                  <p className="text-[10px] text-zinc-400">fat</p>
+                </div>
+              </div>
+
+              {/* Quick serving presets */}
+              <div className="mb-3 flex gap-1.5">
+                {[0.5, 1, 1.5, 2, 3].map(n => (
+                  <button
+                    key={n}
+                    onClick={() => setServings(n)}
+                    className={cn(
+                      'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
+                      servings === n
+                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                    )}
+                  >
+                    {n}x
+                  </button>
+                ))}
+              </div>
+
               <button
-                key={n}
-                onClick={() => setServings(n)}
-                className={cn(
-                  'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
-                  servings === n
-                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                )}
+                onClick={() => onLog(effectiveFood, servings)}
+                disabled={logging}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
               >
-                {n}x
+                {logging ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                Add {cal} cal to meal
               </button>
-            ))}
-          </div>
-
-          <button
-            onClick={() => onLog(food, servings)}
-            disabled={logging}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50 transition-colors"
-          >
-            {logging ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-            Add {cal} cal to meal
-          </button>
+            </>
+          )}
         </div>
       )}
     </div>

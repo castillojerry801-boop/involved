@@ -30,6 +30,12 @@ export interface ExtendedNutrients {
 export interface ExternalFoodResult {
   provider: string
   externalId: string
+  /**
+   * Internal DB UUID. Present only on library/cached search results.
+   * Use this as foodItemId when linking recipe ingredients to a FoodItem.
+   * Distinct from externalId, which is the original provider's identifier used for dedup.
+   */
+  internalId?: string
   name: string
   brand?: string
   barcode?: string
@@ -42,6 +48,12 @@ export interface ExternalFoodResult {
   /** How many household units equal one DB serving (e.g. 1 for "1 large egg", 2 for "2 strips"). */
   unitsPerServing?: number
   coreNutrients: CoreNutrients
+  /**
+   * True when coreNutrients are placeholder zeros because the provider does not return
+   * nutrition in search stubs (e.g. NIH DSLD). A detail fetch is required before logging.
+   * Distinct from a food that genuinely has zero calories.
+   */
+  incompleteData?: boolean
 }
 
 export interface ExternalFoodDetail extends ExternalFoodResult {
@@ -51,7 +63,6 @@ export interface ExternalFoodDetail extends ExternalFoodResult {
   nutriScore?: string
   novaGroup?: number
   imageUrl?: string
-  incompleteData?: boolean
 }
 
 export interface AutocompleteResult {

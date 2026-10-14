@@ -132,6 +132,20 @@ function mapLabel(label: DsldLabel): ExternalFoodDetail {
     if (sz.notes?.trim()) householdServingText = sz.notes.trim()
   }
 
+  const coreNutrients = {
+    calories:      Math.round(nutrients?.calories ?? 0),
+    proteinG:      Math.round((nutrients?.proteinG ?? 0) * 10) / 10,
+    carbohydrateG: Math.round((nutrients?.carbohydrateG ?? 0) * 10) / 10,
+    fatG:          Math.round((nutrients?.fatG ?? 0) * 10) / 10,
+  }
+
+  // Mark as incomplete if the label has no parseable macros. Some DSLD products
+  // (herbal supplements, single-ingredient capsules) legitimately have no caloric content,
+  // but the DSLD API may also return labels where ingredient rows are missing or
+  // don't map to our nutrient keys. We distinguish "known zero" from "missing data"
+  // by checking whether extractNutrients found any entries at all.
+  const hasAnyNutrition = nutrients !== null
+
   return {
     provider: 'nih_dsld',
     externalId: String(label.id),
@@ -141,12 +155,8 @@ function mapLabel(label: DsldLabel): ExternalFoodDetail {
     servingUnit,
     householdServingText,
     servingsPerContainer: label.servingsPerContainer ?? undefined,
-    coreNutrients: {
-      calories:      Math.round(nutrients?.calories ?? 0),
-      proteinG:      Math.round((nutrients?.proteinG ?? 0) * 10) / 10,
-      carbohydrateG: Math.round((nutrients?.carbohydrateG ?? 0) * 10) / 10,
-      fatG:          Math.round((nutrients?.fatG ?? 0) * 10) / 10,
-    },
+    coreNutrients,
+    incompleteData: !hasAnyNutrition ? true : undefined,
     extendedNutrients: nutrients ? {
       fiberG:        nutrients.fiberG        || undefined,
       sugarG:        nutrients.sugarG        || undefined,
@@ -178,8 +188,11 @@ export class NihDsldProvider implements FoodProvider {
         brand: hit._source.brandName ?? undefined,
         servingSize: 1,
         servingUnit: 'serving',
-        // Nutrition not available in search stubs — fetched on detail view
+        // DSLD search stubs contain no nutrition. Zeros here are placeholder values —
+        // not verified nutritional data. incompleteData signals to the UI that a detail
+        // fetch is required before the result can be logged.
         coreNutrients: { calories: 0, proteinG: 0, carbohydrateG: 0, fatG: 0 },
+        incompleteData: true as const,
       }))
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

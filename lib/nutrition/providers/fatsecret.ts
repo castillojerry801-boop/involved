@@ -4,6 +4,7 @@
 // that include FatSecret-sourced foods per their Terms of Service.
 
 import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail, AutocompleteResult } from './types'
+import { parseHouseholdText } from './household-parser'
 
 const BASE_URL = 'https://platform.fatsecret.com/rest/server.api'
 const TOKEN_URL = 'https://oauth.fatsecret.com/connect/token'
@@ -162,15 +163,6 @@ function pickServing(servings: FatSecretServing | FatSecretServing[]): FatSecret
   return arr[0]
 }
 
-// Parse a household text like "1 large egg" or "2 strips" into a countable unit noun + count.
-function parseHouseholdText(text: string): { householdUnit: string; unitsPerServing: number } | null {
-  const m = text.trim().match(/^(\d+(?:\.\d+)?)\s+(.+)$/)
-  if (!m) return null
-  const n = parseFloat(m[1])
-  const noun = m[2].trim()
-  if (!(n > 0) || !noun) return null
-  return { householdUnit: noun, unitsPerServing: n }
-}
 
 function mapSearchResult(item: FatSecretSearchResult): ExternalFoodResult {
   const parsed = item.food_description ? parseDescription(item.food_description) : null

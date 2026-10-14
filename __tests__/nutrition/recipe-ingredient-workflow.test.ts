@@ -14,10 +14,12 @@ import type { ExternalFoodResult } from '../../lib/nutrition/providers/types'
 
 type FoodSearchResult = ExternalFoodResult & { source: 'library' | 'external' }
 
-// Library result: comes from the local DB — externalId IS a valid FoodItem UUID
+// Library result: comes from the local DB.
+// externalId = original provider ID (for dedup); internalId = DB UUID (for recipe FK).
 const OAKDELL_EGGS: FoodSearchResult = {
   provider: 'fatsecret',
-  externalId: 'a1b2c3d4-0000-0000-0000-000000000001',  // DB UUID
+  externalId: '12345678',                                 // FatSecret food ID
+  internalId: 'a1b2c3d4-0000-0000-0000-000000000001',   // DB UUID
   name: 'Grade A Large Eggs',
   brand: 'Oakdell',
   servingSize: 50,
@@ -37,7 +39,8 @@ const OAKDELL_EGGS_WITH_HOUSEHOLD: FoodSearchResult = {
 // Library result with household unit where multiple units = 1 serving (2 strips = 46g)
 const HICKORY_BACON: FoodSearchResult = {
   provider: 'fatsecret',
-  externalId: 'a1b2c3d4-0000-0000-0000-000000000005',
+  externalId: '99887766',                                // FatSecret food ID
+  internalId: 'a1b2c3d4-0000-0000-0000-000000000005',  // DB UUID
   name: 'Hickory Smoked Bacon',
   brand: 'Oscar Mayer',
   servingSize: 46,
@@ -50,8 +53,9 @@ const HICKORY_BACON: FoodSearchResult = {
 }
 
 const KROGER_EGG_WHITES: FoodSearchResult = {
-  provider: 'fatsecret',
-  externalId: 'a1b2c3d4-0000-0000-0000-000000000002',  // DB UUID
+  provider: 'open_food_facts',
+  externalId: '0011110041647',                            // barcode
+  internalId: 'a1b2c3d4-0000-0000-0000-000000000002',   // DB UUID
   name: 'Liquid Egg Whites',
   brand: 'Kroger',
   servingSize: 46,
@@ -107,6 +111,21 @@ type BaseFood = {
   householdUnit?: string; unitsPerServing?: number
 }
 
+// Mirrors the null-macro path in selectFood() (when provider returns invalid nutrition).
+function simulateSelectFoodNullMacro(food: FoodSearchResult, existing: IngredientDraft = makeBlankIngredient()): IngredientDraft {
+  return {
+    ...existing,
+    name: food.brand ? `${food.name} (${food.brand})` : food.name,
+    foodItemId: food.source === 'library' ? (food.internalId ?? food.externalId) : null,
+    unit: food.servingUnit,
+    _baseFood: null,
+    snapshotCalories: null,
+    snapshotProteinG: null,
+    snapshotCarbG: null,
+    snapshotFatG: null,
+  }
+}
+
 function simulateSelectFood(food: FoodSearchResult, existing: IngredientDraft = makeBlankIngredient()): IngredientDraft {
   const { calories, proteinG, carbohydrateG, fatG } = food.coreNutrients
   const servingSize = food.servingSize > 0 ? food.servingSize : 1
@@ -123,7 +142,8 @@ function simulateSelectFood(food: FoodSearchResult, existing: IngredientDraft = 
   return {
     ...existing,
     name: food.brand ? `${food.name} (${food.brand})` : food.name,
-    foodItemId: food.source === 'library' ? food.externalId : null,
+    // Use internalId (DB UUID) for recipe ingredient FK when available.
+    foodItemId: food.source === 'library' ? (food.internalId ?? food.externalId) : null,
     quantity: defaultQty,
     unit: defaultUnit,
     _baseFood,
@@ -215,8 +235,9 @@ describe('search result display — no NaN', () => {
 describe('selecting Oakdell eggs (library result)', () => {
   const selected = simulateSelectFood(OAKDELL_EGGS)
 
-  it('links to the DB FoodItem UUID', () => {
-    expect(selected.foodItemId).toBe('a1b2c3d4-0000-0000-0000-000000000001')
+  it('links to internalId (DB UUID), not externalId (provider ID)', () => {
+    expect(selected.foodItemId).toBe('a1b2c3d4-0000-0000-0000-000000000001')  // internalId
+    expect(selected.foodItemId).not.toBe('12345678')                           // not externalId
   })
 
   it('initializes quantity to the serving size (50g)', () => {
@@ -287,6 +308,28 @@ describe('selecting external-provider result (Kirkland ground beef)', () => {
     // Simulates how computeRecipeNutrition treats this ingredient
     expect(selected.snapshotCalories).not.toBeNull()
     expect(Number.isFinite(selected.snapshotCalories!)).toBe(true)
+  })
+})
+
+// ── Null-macro path (library food with invalid/missing provider nutrition) ────
+
+describe('null-macro path still uses internalId for recipe FK', () => {
+  it('library food with invalid macros still links to DB UUID via internalId', () => {
+    const selected = simulateSelectFoodNullMacro(OAKDELL_EGGS)
+    // internalId should be used for FK — not externalId (barcode/provider ID)
+    expect(selected.foodItemId).toBe('a1b2c3d4-0000-0000-0000-000000000001')
+    expect(selected.foodItemId).not.toBe('12345678')  // not the externalId
+  })
+
+  it('external food with invalid macros has null foodItemId', () => {
+    const selected = simulateSelectFoodNullMacro(KIRKLAND_BEEF)
+    expect(selected.foodItemId).toBeNull()
+  })
+
+  it('null-macro ingredient is not resolved (hasValidNutrition = false)', () => {
+    const selected = simulateSelectFoodNullMacro(OAKDELL_EGGS)
+    expect(hasValidNutrition(selected)).toBe(false)
+    expect(selected.snapshotCalories).toBeNull()
   })
 })
 
