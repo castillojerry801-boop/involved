@@ -251,6 +251,10 @@ model FoodItem {
   ingredientsText String? @map("ingredients_text") @db.Text
   isDraft Boolean @default(false) @map("is_draft")
 
+  isGeneric     Boolean  @default(false) @map("is_generic")
+  canonicalName String?  @map("canonical_name") @db.VarChar(300)
+  fdcDataType   String?  @map("fdc_data_type")  @db.VarChar(50)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -261,12 +265,30 @@ model FoodItem {
   foodFavorites     FoodFavorite[]
   savedMealItems    SavedMealItem[]
   recipeIngredients RecipeIngredient[]
+  portions          FoodItemPortion[]
 
   @@index([name])
   @@index([barcode])
   @@index([sourceCategory, sourceProvider, externalId])
   @@index([visibility, createdById])
   @@map("food_items")
+}
+
+model FoodItemPortion {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  foodItemId         String                  @map("food_item_id") @db.Uuid
+  portionDescription String                  @map("portion_description") @db.VarChar(200)
+  quantity           Decimal                 @db.Decimal(8, 4)
+  unit               String                  @db.VarChar(50)
+  gramWeight         Decimal                 @map("gram_weight") @db.Decimal(8, 3)
+  fdcPortionId       Int?                    @map("fdc_portion_id")
+  sourceConfidence   PortionSourceConfidence @map("source_confidence")
+  preparationState   String?                 @map("preparation_state") @db.VarChar(100)
+
+  food FoodItem @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+
+  @@index([foodItemId, unit])
+  @@map("food_item_portions")
 }
 
 model FoodLogEntry {
@@ -296,6 +318,10 @@ model FoodLogEntry {
 
   // Client-generated key for idempotent log submissions (prevents accidental double-logging).
   idempotencyKey String? @unique @map("idempotency_key")
+
+  optionalIngredientOverrides Json?          @map("optional_ingredient_overrides")
+  recipeLogMode               RecipeLogMode? @map("recipe_log_mode")
+  estimateSourceNote          String?        @map("estimate_source_note") @db.VarChar(500)
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -425,6 +451,17 @@ model Recipe {
 
   isAiGenerated Boolean @default(false) @map("is_ai_generated")
 
+  logMode                         RecipeLogMode @default(ingredient_calculated) @map("log_mode")
+  importedCalPerServing           Decimal?  @map("imported_cal_per_serving")           @db.Decimal(8, 2)
+  importedProteinGPerServing      Decimal?  @map("imported_protein_g_per_serving")     @db.Decimal(8, 2)
+  importedCarbGPerServing         Decimal?  @map("imported_carb_g_per_serving")        @db.Decimal(8, 2)
+  importedFatGPerServing          Decimal?  @map("imported_fat_g_per_serving")         @db.Decimal(8, 2)
+  userConfirmedCalPerServing      Decimal?  @map("user_confirmed_cal_per_serving")     @db.Decimal(8, 2)
+  userConfirmedProteinGPerServing Decimal?  @map("user_confirmed_protein_g_per_serving") @db.Decimal(8, 2)
+  userConfirmedCarbGPerServing    Decimal?  @map("user_confirmed_carb_g_per_serving")  @db.Decimal(8, 2)
+  userConfirmedFatGPerServing     Decimal?  @map("user_confirmed_fat_g_per_serving")   @db.Decimal(8, 2)
+  estimateSourceNote              String?   @map("estimate_source_note") @db.VarChar(500)
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt      @map("updated_at")
 
@@ -456,6 +493,13 @@ model RecipeIngredient {
   snapshotProteinG Decimal? @map("snapshot_protein_g") @db.Decimal(8, 3)
   snapshotCarbG    Decimal? @map("snapshot_carb_g")    @db.Decimal(8, 3)
   snapshotFatG     Decimal? @map("snapshot_fat_g")     @db.Decimal(8, 3)
+
+  isOptional                 Boolean           @default(false) @map("is_optional")
+  isToTaste                  Boolean           @default(false) @map("is_to_taste")
+  conversionSource           ConversionSource? @map("conversion_source")
+  preparationState           String?           @map("preparation_state") @db.VarChar(100)
+  userSuppliedGramEquivalent Decimal?          @map("user_supplied_gram_equivalent") @db.Decimal(8, 3)
+  userSuppliedUnit           String?           @map("user_supplied_unit") @db.VarChar(50)
 
   recipe   Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   foodItem FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
@@ -1406,6 +1450,29 @@ enum RecipeStatus {
   published // approved; visible in Discover to all authenticated users
   rejected  // submission rejected; owner sees rejection reason
   archived  // removed from Discover by moderation; preserved for owner
+}
+
+enum RecipeLogMode {
+  ingredient_calculated
+  user_confirmed_estimate
+  imported_source
+}
+
+enum PortionSourceConfidence {
+  usda_measured
+  manufacturer_declared
+  density_derived
+  reference_table
+}
+
+enum ConversionSource {
+  same_unit
+  manufacturer_declared
+  usda_measured
+  density_derived
+  reference_table
+  user_supplied
+  unresolved
 }
 
 // ─── Nutrition ────────────────────────────────────────────────────────

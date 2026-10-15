@@ -46,7 +46,7 @@ export function RecipeCard({ recipe, currentUserId, onSave, savePending, href }:
   const isOwner = recipe.userId === currentUserId
   const totalMinutes = (recipe.prepMinutes ?? 0) + (recipe.cookMinutes ?? 0)
   const badge = STATUS_BADGE[recipe.status]
-  const detailHref = href ?? `/nutrition/recipes/${recipe.id}`
+  const detailHref = href ?? `/recipes/${recipe.id}`
 
   return (
     <div className="group relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
