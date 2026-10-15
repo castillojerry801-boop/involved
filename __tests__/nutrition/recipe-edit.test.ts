@@ -26,6 +26,7 @@ const { mockSupabase, mockPrisma } = vi.hoisted(() => {
     recipeIngredient: { deleteMany: vi.fn(), createMany: vi.fn() },
     recipeStep: { deleteMany: vi.fn(), createMany: vi.fn() },
     foodItem: { findMany: vi.fn().mockResolvedValue([]) },
+    foodItemPortion: { findMany: vi.fn().mockResolvedValue([]) },
     $transaction: vi.fn(),
   }
   return { mockSupabase, mockPrisma }
@@ -99,6 +100,7 @@ beforeEach(() => {
   mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'owner-id' } } })
   mockPrisma.recipe.findUnique.mockResolvedValue(makeRecipe())
   mockPrisma.foodItem.findMany.mockResolvedValue([])
+  mockPrisma.foodItemPortion.findMany.mockResolvedValue([])
   setupTransaction()
 })
 

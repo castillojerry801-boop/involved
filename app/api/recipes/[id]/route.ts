@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { generateSignedUrl } from '@/lib/recipes/image'
-import { computeRecipeNutrition, ingredientNutritionFromFood } from '@/lib/recipes/nutrition'
+import { computeRecipeNutrition } from '@/lib/recipes/nutrition'
+import { resolveIngredientFactor, isConversionError } from '@/lib/nutrition/conversion'
 import {
   canReadRecipe,
   canMutateRecipe,
@@ -219,6 +220,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     snapshotProteinG: number | null
     snapshotCarbG: number | null
     snapshotFatG: number | null
+    conversionSource: import('@prisma/client').ConversionSource | null
   }
 
   let ingredientData: ComputedIngredient[] | null = null
@@ -232,6 +234,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     ]
 
     const foodMap = new Map<string, {
+      id: string
       calories: import('@prisma/client/runtime/library').Decimal
       proteinG: import('@prisma/client/runtime/library').Decimal
       carbohydrateG: import('@prisma/client/runtime/library').Decimal
@@ -240,59 +243,104 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       servingUnit: string
       householdUnit: string | null
       unitsPerServing: import('@prisma/client/runtime/library').Decimal | null
+      sourceProvider: string | null
+      externalId: string | null
+      fdcDataType: string | null
+      name: string
     }>()
+
+    // Pre-fetch portions for all library food items
+    const portionsMap = new Map<string, import('@/lib/nutrition/conversion').StoredPortion[]>()
 
     if (libraryIds.length > 0) {
       const foods = await prisma.foodItem.findMany({
         where: { id: { in: libraryIds } },
-        select: { id: true, calories: true, proteinG: true, carbohydrateG: true, fatG: true, servingSize: true, servingUnit: true, householdUnit: true, unitsPerServing: true },
+        select: { id: true, name: true, calories: true, proteinG: true, carbohydrateG: true, fatG: true, servingSize: true, servingUnit: true, householdUnit: true, unitsPerServing: true, sourceProvider: true, externalId: true, fdcDataType: true },
       })
       for (const f of foods) foodMap.set(f.id, f)
+
+      // Fetch all portions in one query
+      const allPortions = await prisma.foodItemPortion.findMany({
+        where: { foodItemId: { in: libraryIds } },
+      })
+      for (const p of allPortions) {
+        const list = portionsMap.get(p.foodItemId) ?? []
+        list.push({
+          id: p.id,
+          portionDescription: p.portionDescription,
+          quantity: Number(p.quantity),
+          unit: p.unit,
+          gramWeight: Number(p.gramWeight),
+          fdcPortionId: p.fdcPortionId,
+          sourceConfidence: p.sourceConfidence,
+          preparationState: p.preparationState,
+        })
+        portionsMap.set(p.foodItemId, list)
+      }
     }
 
-    ingredientData = body.ingredients.map((ing, idx) => {
-      let foodItemId = ing.foodItemId ?? null
-      let snapshotCalories: number | null = null
-      let snapshotProteinG: number | null = null
-      let snapshotCarbG: number | null = null
-      let snapshotFatG: number | null = null
+    const resolvedIngredients = await Promise.all(
+      body.ingredients.map(async (ing, idx) => {
+        let foodItemId = ing.foodItemId ?? null
+        let snapshotCalories: number | null = null
+        let snapshotProteinG: number | null = null
+        let snapshotCarbG: number | null = null
+        let snapshotFatG: number | null = null
+        let conversionSource: import('@prisma/client').ConversionSource | null = null
 
-      if (foodItemId && foodMap.has(foodItemId)) {
-        // Library item: recompute from DB, ignoring what the client sent.
-        const food = foodMap.get(foodItemId)!
-        const computed = ingredientNutritionFromFood(food, ing.quantity, ing.unit)
-        if (computed) {
-          snapshotCalories = computed.calories
-          snapshotProteinG = computed.proteinG
-          snapshotCarbG    = computed.carbG
-          snapshotFatG     = computed.fatG
+        if (foodItemId && foodMap.has(foodItemId)) {
+          // Library item: recompute from DB using the new conversion engine.
+          const food = foodMap.get(foodItemId)!
+          const result = await resolveIngredientFactor(
+            {
+              ...food,
+              portions: portionsMap.get(foodItemId) ?? [],
+            },
+            ing.quantity,
+            ing.unit,
+            ing.notes ? { preparationState: undefined } : undefined,
+          )
+          if (!isConversionError(result)) {
+            const factor = result.factor
+            const round2 = (n: number) => Math.round(n * 100) / 100
+            const round3 = (n: number) => Math.round(n * 1000) / 1000
+            snapshotCalories = round2(Number(food.calories)       * factor)
+            snapshotProteinG = round3(Number(food.proteinG)        * factor)
+            snapshotCarbG    = round3(Number(food.carbohydrateG)   * factor)
+            snapshotFatG     = round3(Number(food.fatG)            * factor)
+            conversionSource = result.conversionSource
+          } else {
+            // Unit incompatible → snapshots stay null, mark as unresolved
+            conversionSource = 'unresolved'
+          }
+        } else if (foodItemId) {
+          // foodItemId was provided but the food is no longer in the DB — clear the stale link.
+          foodItemId = null
+        } else {
+          // External provider item: use validated client-supplied snapshot values.
+          snapshotCalories = ing.snapshotCalories ?? null
+          snapshotProteinG = ing.snapshotProteinG ?? null
+          snapshotCarbG    = ing.snapshotCarbG    ?? null
+          snapshotFatG     = ing.snapshotFatG     ?? null
         }
-        // Unit incompatible with food's serving unit → snapshots stay null (unresolved).
-      } else if (foodItemId) {
-        // foodItemId was provided but the food is no longer in the DB — clear the stale link.
-        foodItemId = null
-      } else {
-        // External provider item: use validated client-supplied snapshot values.
-        snapshotCalories = ing.snapshotCalories ?? null
-        snapshotProteinG = ing.snapshotProteinG ?? null
-        snapshotCarbG    = ing.snapshotCarbG    ?? null
-        snapshotFatG     = ing.snapshotFatG     ?? null
-      }
 
-      return {
-        recipeId: id,
-        foodItemId,
-        name: ing.name.trim(),
-        quantity: ing.quantity,
-        unit: ing.unit.trim(),
-        sortOrder: ing.sortOrder ?? idx,
-        notes: ing.notes ?? null,
-        snapshotCalories,
-        snapshotProteinG,
-        snapshotCarbG,
-        snapshotFatG,
-      }
-    })
+        return {
+          recipeId: id,
+          foodItemId,
+          name: ing.name.trim(),
+          quantity: ing.quantity,
+          unit: ing.unit.trim(),
+          sortOrder: ing.sortOrder ?? idx,
+          notes: ing.notes ?? null,
+          snapshotCalories,
+          snapshotProteinG,
+          snapshotCarbG,
+          snapshotFatG,
+          conversionSource,
+        }
+      })
+    )
+    ingredientData = resolvedIngredients
   }
 
   const newStatus: RecipeStatus = requiresReviseOnEdit(status)

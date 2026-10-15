@@ -1,0 +1,6 @@
+export { resolveIngredientFactor } from './factor'
+export type { FoodForConversion } from './factor'
+export { fetchAndStoreUsdaPortions, lookupPortions } from './portions'
+export type { StoredPortion } from './portions'
+export * from './types'
+export * from './units'
