@@ -66,13 +66,16 @@ export function hasValidNutrition(ing: Pick<IngredientDraft, 'snapshotCalories' 
 }
 
 // ── Unit sets (mirrored from lib/recipes/nutrition.ts for client-side chip logic) ──
+// Keep in sync with lib/recipes/nutrition.ts
 
-const GRAM_UNITS      = new Set(['g', 'gram', 'grams'])
+const GRAM_UNITS      = new Set(['g', 'gram', 'grams', 'grm'])
 const ML_UNITS        = new Set(['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'])
 const OZ_UNITS        = new Set(['oz', 'ounce', 'ounces'])
+const LB_UNITS        = new Set(['lb', 'lbs', 'pound', 'pounds'])
 const CUP_UNITS       = new Set(['cup', 'cups'])
 const TBSP_UNITS      = new Set(['tbsp', 'tablespoon', 'tablespoons'])
 const TSP_UNITS       = new Set(['tsp', 'teaspoon', 'teaspoons'])
+const FL_OZ_UNITS     = new Set(['fl oz', 'floz', 'fl_oz', 'fluid oz', 'fluid ounce', 'fluid ounces'])
 const SERVING_ALIASES = new Set(['serving', 'servings', 'portion', 'portions'])
 
 // Build the ordered list of unit options for a given food's base data.
@@ -88,13 +91,18 @@ export function getUnitOptions(baseFood: BaseFoodData): { label: string; value: 
 
   // Standard units based on the food's metric serving type
   if (GRAM_UNITS.has(fu) || OZ_UNITS.has(fu)) {
-    options.push({ label: 'g', value: 'g' }, { label: 'oz', value: 'oz' })
-  } else if (ML_UNITS.has(fu) || CUP_UNITS.has(fu) || TBSP_UNITS.has(fu) || TSP_UNITS.has(fu)) {
+    options.push(
+      { label: 'g', value: 'g' },
+      { label: 'oz', value: 'oz' },
+      { label: 'lb', value: 'lb' },
+    )
+  } else if (ML_UNITS.has(fu) || CUP_UNITS.has(fu) || TBSP_UNITS.has(fu) || TSP_UNITS.has(fu) || FL_OZ_UNITS.has(fu)) {
     options.push(
       { label: 'ml', value: 'ml' },
       { label: 'cup', value: 'cup' },
       { label: 'tbsp', value: 'tbsp' },
       { label: 'tsp', value: 'tsp' },
+      { label: 'fl oz', value: 'fl oz' },
     )
   } else if (!SERVING_ALIASES.has(fu) && !baseFood.householdUnit) {
     // Unknown / synthesized unit (e.g. "large egg" stored as servingUnit on reopen)
@@ -173,7 +181,7 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
         searchRef.current = setTimeout(async () => {
           setSearching(true)
           try {
-            const res = await fetch(`/api/nutrition/search?q=${encodeURIComponent(name.trim())}&limit=5`)
+            const res = await fetch(`/api/nutrition/search?q=${encodeURIComponent(name.trim())}&limit=5&context=recipe`)
             if (res.ok) {
               const data = await res.json() as { results: FoodSearchResult[] }
               const list = data.results ?? []
@@ -449,8 +457,14 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
         <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400">
           ≈ {Math.round(ingredient.snapshotCalories!)} cal · P {ingredient.snapshotProteinG!.toFixed(1)}g · C {ingredient.snapshotCarbG!.toFixed(1)}g · F {ingredient.snapshotFatG!.toFixed(1)}g
         </p>
-      ) : ingredient.name.trim() && (ingredient.foodItemId != null || ingredient._baseFood != null) ? (
-        <p className="mt-1.5 text-xs text-zinc-400">Nutrition unavailable — try a different unit</p>
+      ) : ingredient.name.trim() && ingredient._baseFood != null ? (
+        // _baseFood is set but factor was null — the selected unit is incompatible with this food's base unit.
+        // Show amber so the user knows why and can pick a compatible unit.
+        <p className="mt-1.5 text-xs text-amber-500 dark:text-amber-400">
+          Unit not convertible for this food — try g, oz, or serving
+        </p>
+      ) : ingredient.name.trim() && ingredient.foodItemId != null ? (
+        <p className="mt-1.5 text-xs text-zinc-400">Nutrition unavailable for this food</p>
       ) : null}
     </div>
   )

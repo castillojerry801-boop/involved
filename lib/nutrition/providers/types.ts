@@ -54,6 +54,11 @@ export interface ExternalFoodResult {
    * Distinct from a food that genuinely has zero calories.
    */
   incompleteData?: boolean
+  /**
+   * True for FatSecret items with food_type='Generic' (non-branded whole foods).
+   * Used to boost generic results in recipe ingredient searches.
+   */
+  isGeneric?: boolean
 }
 
 export interface ExternalFoodDetail extends ExternalFoodResult {

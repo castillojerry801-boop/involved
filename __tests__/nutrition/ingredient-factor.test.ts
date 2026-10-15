@@ -167,3 +167,62 @@ describe('household unit — no householdUnit provided → no match', () => {
     expect(computeIngredientFactor(50, 'g', 2, 'large egg')).toBeNull()
   })
 })
+
+// ── 'grm' servingUnit normalization ───────────────────────────────────────────
+// USDA-branded records occasionally use 'grm' as a non-standard gram abbreviation.
+// These records previously returned null for ALL units (including 'g').
+
+describe("'grm' servingUnit normalization", () => {
+  it("food with servingUnit='grm' accepts input in 'g'", () => {
+    // 90g serving = 270 kcal (Tyson-like record). User enters 90 g → factor 1
+    expect(computeIngredientFactor(90, 'grm', 90, 'g')).toBeCloseTo(1)
+  })
+
+  it("food with servingUnit='grm' accepts oz input", () => {
+    // 3.17 oz ≈ 90g → factor ≈ 1
+    const factor = computeIngredientFactor(90, 'grm', 1, 'oz')
+    expect(factor).toBeCloseTo(28.3495 / 90, 3)
+  })
+
+  it("food with servingUnit='grm' accepts lb input", () => {
+    const factor = computeIngredientFactor(90, 'grm', 1, 'lb')
+    expect(factor).toBeCloseTo(453.592 / 90, 2)
+  })
+
+  it("input in 'grm' against food stored as 'g' is treated as grams", () => {
+    expect(computeIngredientFactor(100, 'g', 100, 'grm')).toBeCloseTo(1)
+  })
+
+  it("'grm' serving unit with serving input → factor 1", () => {
+    expect(computeIngredientFactor(90, 'grm', 1, 'serving')).toBe(1)
+  })
+})
+
+// ── fl oz conversions (volume unit for ml-base foods) ─────────────────────────
+
+describe('fl oz conversions', () => {
+  it('1 fl oz of a 240ml-base food', () => {
+    const factor = computeIngredientFactor(240, 'ml', 1, 'fl oz')
+    expect(factor).toBeCloseTo(29.5735 / 240, 4)
+  })
+
+  it('8 fl oz (≈ 1 cup) of a 240ml-base food ≈ factor 1', () => {
+    const factor = computeIngredientFactor(240, 'ml', 8, 'fl oz')
+    // 8 fl oz × 29.5735 ml = 236.588 ml ≈ 1 cup
+    expect(factor).toBeCloseTo((8 * 29.5735) / 240, 3)
+  })
+
+  it('"floz" alias works', () => {
+    const factor = computeIngredientFactor(240, 'ml', 1, 'floz')
+    expect(factor).toBeCloseTo(29.5735 / 240, 4)
+  })
+
+  it('"fluid ounce" alias works', () => {
+    const factor = computeIngredientFactor(240, 'ml', 1, 'fluid ounce')
+    expect(factor).toBeCloseTo(29.5735 / 240, 4)
+  })
+
+  it('fl oz is incompatible with g-base food (cross-dimension requires density) → null', () => {
+    expect(computeIngredientFactor(100, 'g', 1, 'fl oz')).toBeNull()
+  })
+})

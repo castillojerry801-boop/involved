@@ -176,6 +176,11 @@ export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get('q')?.trim()
   if (!query || query.length < 2) return NextResponse.json({ results: [] })
 
+  // Recipe ingredient searches pass context=recipe to boost generic whole-food results
+  // (USDA SR Legacy / FatSecret Generic) over branded products. Diary searches omit this
+  // param and use unmodified scoring to avoid changing existing diary search behavior.
+  const isRecipeContext = req.nextUrl.searchParams.get('context') === 'recipe'
+
   if (isSensitiveQuery(query)) {
     return NextResponse.json({ results: [], warning: PRIVACY_REJECTION_MESSAGE })
   }
@@ -257,8 +262,18 @@ export async function GET(req: NextRequest) {
   })
 
   // 4. Score and sort
+  // In recipe context: boost unbranded USDA SR Legacy/Foundation (+8) and FatSecret
+  // Generic results (+6) so whole-food generics surface above branded variants.
+  // This boost is intentionally scoped to recipe search only — diary search is unchanged.
   const scored = withNutrition
-    .map(r => ({ r, score: scoreResult(r, query) }))
+    .map(r => {
+      let score = scoreResult(r, query)
+      if (isRecipeContext) {
+        if (r.provider === 'usda_fooddata' && !r.brand) score += 8
+        if (r.isGeneric) score += 6
+      }
+      return { r, score }
+    })
     .sort((a, b) => b.score - a.score)
 
   // 5. Deduplicate: barcode-first, then normalized name+brand

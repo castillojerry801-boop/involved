@@ -89,13 +89,17 @@ function round3(n: number) { return Math.round(n * 1000) / 1000 }
 // ── Unit conversion sets (shared between server and client helpers) ────────────
 
 const SERVING_ALIASES = new Set(['serving', 'servings', 'portion', 'portions'])
-const GRAM_UNITS      = new Set(['g', 'gram', 'grams'])
+// 'grm' is USDA's non-standard gram abbreviation used on some branded food records.
+const GRAM_UNITS      = new Set(['g', 'gram', 'grams', 'grm'])
 const ML_UNITS        = new Set(['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'])
 const OZ_UNITS        = new Set(['oz', 'ounce', 'ounces'])
 const LB_UNITS        = new Set(['lb', 'lbs', 'pound', 'pounds'])
 const CUP_UNITS       = new Set(['cup', 'cups'])
 const TBSP_UNITS      = new Set(['tbsp', 'tablespoon', 'tablespoons'])
 const TSP_UNITS       = new Set(['tsp', 'teaspoon', 'teaspoons'])
+// Fluid ounces: volume unit for liquid-base (ml) foods only.
+// Distinct from OZ_UNITS (weight) — cross-dimension conversion (fl oz ↔ g) requires density.
+const FL_OZ_UNITS     = new Set(['fl oz', 'floz', 'fl_oz', 'fluid oz', 'fluid ounce', 'fluid ounces'])
 
 // Computes the multiplicative factor to scale a food's per-serving nutrition
 // by the given ingredient quantity and unit. Returns null for unsupported
@@ -139,6 +143,7 @@ export function computeIngredientFactor(
   if (CUP_UNITS.has(iu)  && ML_UNITS.has(fu))      return (quantity * 236.588)  / servingSize
   if (TBSP_UNITS.has(iu) && ML_UNITS.has(fu))      return (quantity * 14.7868)  / servingSize
   if (TSP_UNITS.has(iu)  && ML_UNITS.has(fu))      return (quantity * 4.92892)  / servingSize
+  if (FL_OZ_UNITS.has(iu) && ML_UNITS.has(fu))     return (quantity * 29.5735)  / servingSize
 
   return null
 }
