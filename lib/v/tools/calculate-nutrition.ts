@@ -3,6 +3,17 @@ import { matchIngredient } from '@/lib/nutrition/matching/matcher'
 import { resolveIngredientFactor } from '@/lib/nutrition/conversion/factor'
 import { isConversionError } from '@/lib/nutrition/conversion/types'
 import type { Decimal } from '@prisma/client/runtime/library'
+import { FatSecretProvider } from '@/lib/nutrition/providers/fatsecret'
+import {
+  PIECE_UNITS,
+  SLICE_UNITS,
+  FOOD_COUNT_NOUNS,
+} from '@/lib/nutrition/conversion/units'
+import { prisma } from '@/lib/prisma'
+import type { FoodMatch } from '@/lib/nutrition/matching/types'
+
+// Singleton provider for enrichment calls — avoids re-constructing per call.
+const _fatsecretProvider = new FatSecretProvider()
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -57,6 +68,123 @@ export interface CalculateNutritionArgs {
   ingredients: IngredientInput[]
   servings?: number
   context?: string
+}
+
+// ── Helper: is the input unit a count-based unit? ─────────────────────────────
+// Returns true for units like 'piece', 'strip', 'egg', 'tortilla', etc.
+// Used to decide whether to call FatSecret getById() for enrichment.
+
+function isCountUnit(unit: string): boolean {
+  const u = unit.toLowerCase().trim()
+  return PIECE_UNITS.has(u) || SLICE_UNITS.has(u) || FOOD_COUNT_NOUNS.has(u)
+}
+
+// ── Helper: is a household unit from a FatSecret search result "usable"? ──────
+// Returns false for generic non-count words that offer no unit resolution
+// ('serving', 'portion', 'g', 'ml', etc.). Returns true for count units (strip,
+// piece, egg, tortilla) AND for size qualifiers (large, medium) that FatSecret
+// uses as count-noun proxies (e.g. "1 large" egg = 1 egg).
+//
+// When this returns false, enrichFatSecretMatch() will still be called to fetch
+// a better serving description from the FatSecret detail API.
+
+const NON_COUNT_HOUSEHOLD_WORDS = new Set([
+  'serving', 'servings', 'portion', 'portions',
+  'g', 'gram', 'grams', 'ml', 'milliliter', 'milliliters',
+  'oz', 'ounce', 'ounces', 'lb', 'lbs', 'pound', 'pounds',
+  'cup', 'cups', 'tbsp', 'tablespoon', 'tablespoons',
+  'tsp', 'teaspoon', 'teaspoons',
+])
+
+function isUsableHouseholdUnit(unit: string): boolean {
+  return !NON_COUNT_HOUSEHOLD_WORDS.has(unit.toLowerCase().trim())
+}
+
+// ── Helper: enrich a FatSecret match that lacks household serving data ─────────
+// Called when a FatSecret search result has no householdUnit/householdServingText
+// and the user requested a count-based unit (piece/strip/egg/etc.).
+//
+// Hard timeout: 4000ms — don't let a slow detail fetch block the tool call.
+// Returns the enriched FoodMatch on success, or null on failure (caller uses original).
+//
+// After a successful enrichment that yields count-based serving data, this function
+// also tries to cache the portion in FoodItemPortion (if a FoodItem row exists for
+// this externalId). Caching is best-effort — failure does not block the result.
+
+const ENRICH_TIMEOUT_MS = 4000
+
+async function enrichFatSecretMatch(topMatch: FoodMatch, inputUnit?: string): Promise<FoodMatch | null> {
+  let detail: Awaited<ReturnType<typeof _fatsecretProvider.getById>>
+  try {
+    detail = await Promise.race([
+      inputUnit
+        ? _fatsecretProvider.getByIdForEnrichment(topMatch.externalId, inputUnit)
+        : _fatsecretProvider.getById(topMatch.externalId),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), ENRICH_TIMEOUT_MS)),
+    ])
+  } catch {
+    return null
+  }
+
+  if (!detail) return null
+  if (!detail.householdUnit && !detail.householdServingText) return null
+
+  const enriched: FoodMatch = {
+    ...topMatch,
+    householdUnit: detail.householdUnit ?? topMatch.householdUnit,
+    unitsPerServing: detail.unitsPerServing ?? topMatch.unitsPerServing,
+    householdServingText: detail.householdServingText ?? topMatch.householdServingText,
+    // Update macros from the canonical serving returned by the detail API
+    calories: detail.coreNutrients.calories,
+    proteinG: detail.coreNutrients.proteinG,
+    carbohydrateG: detail.coreNutrients.carbohydrateG,
+    fatG: detail.coreNutrients.fatG,
+    // Update serving size from the detail (it's per the canonical serving, not per 100g)
+    servingSize: detail.servingSize,
+    servingUnit: detail.servingUnit,
+  }
+
+  // ── Best-effort portion cache ────────────────────────────────────────────────
+  // Only if this food is already in the library (has a FoodItem row); never create
+  // a FoodItem just to store a portion — that would be scope creep.
+  if (detail.householdUnit && detail.unitsPerServing != null) {
+    try {
+      const foodItem = await prisma.foodItem.findFirst({
+        where: { externalId: topMatch.externalId, sourceProvider: 'fatsecret' },
+        select: { id: true },
+      })
+      if (foodItem) {
+        // Idempotent: skip if a portion with the same unit+description already exists
+        const existing = await prisma.foodItemPortion.findFirst({
+          where: {
+            foodItemId: foodItem.id,
+            unit: detail.householdUnit,
+            portionDescription: detail.householdServingText ?? detail.householdUnit,
+          },
+        })
+        if (!existing) {
+          await prisma.foodItemPortion.create({
+            data: {
+              foodItemId: foodItem.id,
+              portionDescription: detail.householdServingText ?? `1 ${detail.householdUnit}`,
+              quantity: detail.unitsPerServing,
+              unit: detail.householdUnit,
+              gramWeight: detail.servingSize / (detail.unitsPerServing || 1),
+              fdcPortionId: null,
+              sourceConfidence: 'manufacturer_declared',
+              preparationState: null,
+            },
+          })
+        }
+      }
+    } catch (err) {
+      // Caching failure is non-fatal — log and continue
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn('[V-nutrition] portion cache write failed (non-fatal):', msg)
+    }
+  }
+
+  return enriched
 }
 
 // ── Helper: build a user-readable description string ─────────────────────────
@@ -138,6 +266,8 @@ export async function calculateNutrition(
   // ── 2. Resolve factor for each matched ingredient (sequential to avoid DB load) ─
   const ingredientResults: IngredientResult[] = []
   const unresolvedIngredients: UnresolvedIngredient[] = []
+  // Assumptions are accumulated through the loop (enrichment notes) and finalized in step 6.
+  const assumptions: string[] = []
 
   for (const { ing, match, error } of matchResults) {
     const userDesc = describeIngredient(ing)
@@ -199,7 +329,38 @@ export async function calculateNutrition(
       continue
     }
 
-    const topMatch = match.topMatch
+    let topMatch = match.topMatch
+
+    // ── Part B: FatSecret detail enrichment ───────────────────────────────────
+    // When the search result lacks a usable household unit and the user wants a
+    // count-based unit (piece/strip/egg/tortilla/etc.), fetch the FatSecret detail
+    // API to get the canonical serving description (e.g. "1 strip", "1 large", "1 tortilla").
+    //
+    // Skip condition: householdUnit is already a usable (non-generic) serving unit.
+    // "1 large" (size qualifier) and "1 strip" (count noun) are both usable.
+    // Do NOT skip when householdUnit is a generic non-count word like "serving" —
+    // e.g. "1 serving" from the search result is useless for count resolution and the
+    // detail API may return a more specific "1 strip" or "1 tortilla" serving.
+    const resolvedUnitForEnrichCheck = normalizeIngredientUnit(ing.unit)
+    const hasUsableHouseholdUnit =
+      !!topMatch.householdUnit && isUsableHouseholdUnit(topMatch.householdUnit)
+    if (
+      topMatch.provider === 'fatsecret' &&
+      !hasUsableHouseholdUnit &&
+      isCountUnit(resolvedUnitForEnrichCheck)
+    ) {
+      const enriched = await enrichFatSecretMatch(topMatch, resolvedUnitForEnrichCheck)
+      if (enriched) {
+        topMatch = enriched
+        console.log('[V-nutrition] fatsecret-enriched', {
+          externalId: topMatch.externalId,
+          householdUnit: topMatch.householdUnit,
+          householdServingText: topMatch.householdServingText,
+          servingSize: topMatch.servingSize,
+        })
+        assumptions.push(`Food ID details fetched from FatSecret for "${ing.name}" (id ${topMatch.externalId})`)
+      }
+    }
 
     // Build FoodForConversion from FoodMatch
     // FoodForConversion.id must be the internal DB id if we have it; otherwise use externalId
@@ -374,7 +535,6 @@ export async function calculateNutrition(
   }
 
   // ── 6. Cooking/context assumptions ────────────────────────────────────────────
-  const assumptions: string[] = []
 
   if (context) {
     const rawPatterns = /\braw\b/i

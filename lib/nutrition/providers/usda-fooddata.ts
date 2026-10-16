@@ -208,6 +208,16 @@ export class UsdaFoodDataProvider implements FoodProvider {
       const res = await fetchWithTimeout(url, { next: { revalidate: 3600 } })
       if (!res.ok) {
         console.error(`[usda] search failed: HTTP ${res.status} for query "${normalized}"`)
+        if (res.status === 400) {
+          const sanitizedUrl = url.replace(/api_key=[^&]*/g, 'api_key=REDACTED')
+          console.warn('[usda] HTTP 400', { url: sanitizedUrl, query: normalized })
+          try {
+            const body = await res.text()
+            console.warn('[usda] 400 body', body.slice(0, 200))
+          } catch {
+            // body read failure is non-fatal
+          }
+        }
         return []
       }
       const data = await res.json() as { foods?: UsdaFood[] }

@@ -139,28 +139,78 @@ function parseDescription(desc: string): {
   }
 }
 
-// Pick the most useful serving for display.
-// Preference: first serving that represents a real consumer portion (not 100g).
-// Fallback: 100g metric serving. Final fallback: first serving.
-function pickServing(servings: FatSecretServing | FatSecretServing[]): FatSecretServing {
+// Candidate scoring for pickServing().
+// Scores a single serving against the caller's requested inputUnit.
+//   +100  exact unit match (measurement_description === inputUnit)
+//   +50   semantic unit match — both are in a common synonym group
+//           (e.g. 'strip' ≈ 'slice' ≈ 'piece'; 'large' ≈ 'piece')
+//   +10   any non-100g count serving (natural consumer portion)
+//     0   100g/ml metric baseline
+function scoreServing(s: FatSecretServing, inputUnit?: string): number {
+  const amount = parseFloat(s.metric_serving_amount ?? '0')
+  const isMetric100 =
+    amount === 100 &&
+    (s.metric_serving_unit === 'g' || s.metric_serving_unit === 'ml')
+
+  if (isMetric100) return 0
+
+  let score = 10 // non-100g serving baseline
+
+  if (!inputUnit) return score
+
+  const iu = inputUnit.toLowerCase().trim()
+  const desc = (s.measurement_description ?? '').toLowerCase().trim()
+  const servDesc = (s.serving_description ?? '').toLowerCase().trim()
+
+  // Exact match against measurement_description or serving_description word
+  if (desc === iu || servDesc.includes(iu)) {
+    return score + 100
+  }
+
+  // Semantic synonym groups: strip/slice/piece/rasher all refer to a single flat unit
+  const countSynonyms = new Set(['strip', 'strips', 'slice', 'slices', 'rasher', 'rashers', 'piece', 'pieces', 'each'])
+  const sizeQualifiers = new Set(['large', 'medium', 'small', 'xl', 'jumbo', 'mini', 'regular', 'standard'])
+
+  if (
+    (countSynonyms.has(iu) && (countSynonyms.has(desc) || sizeQualifiers.has(desc))) ||
+    (sizeQualifiers.has(iu) && sizeQualifiers.has(desc)) ||
+    (iu === 'piece' && (countSynonyms.has(desc) || sizeQualifiers.has(desc)))
+  ) {
+    return score + 50
+  }
+
+  return score
+}
+
+// Pick the most useful serving for display, optionally guided by the caller's inputUnit.
+//
+// Scoring:
+//   +100  exact unit match against measurement_description / serving_description
+//   +50   semantic synonym match (strip ≈ slice ≈ piece; large/medium ≈ piece)
+//   +10   any non-100g natural consumer portion
+//     0   100g/ml metric baseline (never preferred when a count serving exists)
+//
+// When no inputUnit is provided, the function falls back to the original behaviour:
+// first non-100g serving, then 100g, then arr[0].
+function pickServing(servings: FatSecretServing | FatSecretServing[], inputUnit?: string): FatSecretServing {
   const arr = Array.isArray(servings) ? servings : [servings]
   if (arr.length === 0) return { serving_id: '', serving_description: '100g' }
 
-  // Prefer a natural serving (not the 100g metric one) when available
-  const natural = arr.find(s => {
-    const amount = parseFloat(s.metric_serving_amount ?? '0')
-    return amount > 0 && amount !== 100
-  })
-  if (natural) return natural
+  if (arr.length === 1) return arr[0]
 
-  // Fall back to 100g metric serving
-  const per100 = arr.find(s =>
-    s.metric_serving_unit === 'g' &&
-    parseFloat(s.metric_serving_amount ?? '0') === 100
-  )
-  if (per100) return per100
+  // Score all candidates and pick the highest scorer.
+  let best = arr[0]
+  let bestScore = scoreServing(arr[0], inputUnit)
 
-  return arr[0]
+  for (let i = 1; i < arr.length; i++) {
+    const s = scoreServing(arr[i], inputUnit)
+    if (s > bestScore) {
+      bestScore = s
+      best = arr[i]
+    }
+  }
+
+  return best
 }
 
 
@@ -197,9 +247,9 @@ function mapSearchResult(item: FatSecretSearchResult): ExternalFoodResult {
   }
 }
 
-function mapFoodDetail(food: FatSecretFood): ExternalFoodDetail {
+function mapFoodDetail(food: FatSecretFood, inputUnit?: string): ExternalFoodDetail {
   const serving = food.servings?.serving
-    ? pickServing(food.servings.serving)
+    ? pickServing(food.servings.serving, inputUnit)
     : null
 
   const servingSize = serving?.metric_serving_amount
@@ -343,6 +393,18 @@ export class FatSecretProvider implements FoodProvider {
     })
     if (!data?.food) return null
     return mapFoodDetail(data.food)
+  }
+
+  // Like getById but passes inputUnit to pickServing() for semantically-aware
+  // serving selection. Used by enrichFatSecretMatch() so that e.g. "3 strips"
+  // prefers the "1 strip" serving over other count servings.
+  async getByIdForEnrichment(externalId: string, inputUnit: string): Promise<ExternalFoodDetail | null> {
+    const data = await this.request<{ food?: FatSecretFood }>({
+      method: 'food.get.v4',
+      food_id: externalId,
+    })
+    if (!data?.food) return null
+    return mapFoodDetail(data.food, inputUnit)
   }
 
   async searchByBarcode(barcode: string): Promise<ExternalFoodDetail | null> {
