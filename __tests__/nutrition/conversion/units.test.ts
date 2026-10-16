@@ -4,6 +4,9 @@ import {
   volumeToMl,
   normalizeUnit,
   isHouseholdUnit,
+  SLICE_UNITS,
+  PIECE_UNITS,
+  FOOD_COUNT_NOUNS,
 } from '../../../lib/nutrition/conversion/units'
 
 describe('weightToGrams', () => {
@@ -136,5 +139,71 @@ describe('isHouseholdUnit', () => {
 
   it('serving → false (serving aliases are not household units)', () => {
     expect(isHouseholdUnit('serving')).toBe(false)
+  })
+
+  // Regression: strip/rasher are now in SLICE_UNITS for bacon
+  it('strip/strips/rasher/rashers → true (slice synonyms for bacon)', () => {
+    expect(isHouseholdUnit('strip')).toBe(true)
+    expect(isHouseholdUnit('strips')).toBe(true)
+    expect(isHouseholdUnit('rasher')).toBe(true)
+    expect(isHouseholdUnit('rashers')).toBe(true)
+  })
+})
+
+// ── SLICE_UNITS includes bacon synonyms ──────────────────────────────────────
+// Regression guard: USDA stores bacon portions as unit='strip'. When a user
+// types unit='slice', the engine must recognise both as equivalent slice units.
+
+describe('SLICE_UNITS — bacon synonym coverage', () => {
+  it('contains slice and slices', () => {
+    expect(SLICE_UNITS.has('slice')).toBe(true)
+    expect(SLICE_UNITS.has('slices')).toBe(true)
+  })
+
+  it('contains strip and strips (USDA bacon unit)', () => {
+    expect(SLICE_UNITS.has('strip')).toBe(true)
+    expect(SLICE_UNITS.has('strips')).toBe(true)
+  })
+
+  it('contains rasher and rashers (British English for bacon slice)', () => {
+    expect(SLICE_UNITS.has('rasher')).toBe(true)
+    expect(SLICE_UNITS.has('rashers')).toBe(true)
+  })
+})
+
+// ── PIECE_UNITS is unchanged ──────────────────────────────────────────────────
+describe('PIECE_UNITS', () => {
+  it('contains piece and pieces', () => {
+    expect(PIECE_UNITS.has('piece')).toBe(true)
+    expect(PIECE_UNITS.has('pieces')).toBe(true)
+  })
+})
+
+// ── FOOD_COUNT_NOUNS — common food-specific count unit names ─────────────────
+// These are the unit strings USDA stores for whole-food portions (e.g. 'egg',
+// 'tortilla'). The broadened count-unit match in factor.ts uses this set to
+// resolve 'piece' input to a food-specific portion.
+
+describe('FOOD_COUNT_NOUNS', () => {
+  it('contains egg/eggs (USDA stores egg portions as unit="egg")', () => {
+    expect(FOOD_COUNT_NOUNS.has('egg')).toBe(true)
+    expect(FOOD_COUNT_NOUNS.has('eggs')).toBe(true)
+  })
+
+  it('contains tortilla/tortillas (USDA stores tortilla portions as unit="tortilla")', () => {
+    expect(FOOD_COUNT_NOUNS.has('tortilla')).toBe(true)
+    expect(FOOD_COUNT_NOUNS.has('tortillas')).toBe(true)
+  })
+
+  it('contains common produce nouns', () => {
+    expect(FOOD_COUNT_NOUNS.has('apple')).toBe(true)
+    expect(FOOD_COUNT_NOUNS.has('banana')).toBe(true)
+    expect(FOOD_COUNT_NOUNS.has('avocado')).toBe(true)
+  })
+
+  it('contains protein food nouns', () => {
+    expect(FOOD_COUNT_NOUNS.has('patty')).toBe(true)
+    expect(FOOD_COUNT_NOUNS.has('nugget')).toBe(true)
+    expect(FOOD_COUNT_NOUNS.has('sausage')).toBe(true)
   })
 })

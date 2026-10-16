@@ -65,6 +65,35 @@ function describeIngredient(ing: IngredientInput): string {
   return `${ing.quantity} ${ing.unit} ${ing.name}`
 }
 
+// ── Helper: normalize size qualifiers and common plural units ─────────────────
+// When V parses "3 large eggs", it may pass unit='large' — a size qualifier, not
+// a quantity unit. The conversion engine does not recognize size qualifiers, so
+// they must be remapped before entering the factor pipeline.
+//
+// Strategy:
+//   - Size qualifiers (large, medium, small, xl, etc.) → 'piece'
+//     The factor engine's Step 6b broadened count-unit fallback then finds the
+//     food-specific USDA portion (e.g. 'large egg', 'egg') automatically.
+//   - All plural normalizations are already in SLICE_UNITS / PIECE_UNITS in
+//     units.ts, so no extra work is needed there — this guard only covers the
+//     size-qualifier case that would otherwise hit unit_unknown.
+//
+// The original unit string is preserved in userDescription (via describeIngredient)
+// so the user-facing output still reads "3 large eggs" not "3 piece eggs".
+
+const SIZE_QUALIFIERS = new Set([
+  'large', 'medium', 'small',
+  'extra large', 'extra-large', 'x-large',
+  'xl', 'lg', 'md', 'sm',
+  'jumbo', 'mini',
+])
+
+function normalizeIngredientUnit(unit: string): string {
+  const u = unit.toLowerCase().trim()
+  if (SIZE_QUALIFIERS.has(u)) return 'piece'
+  return unit
+}
+
 // ── Helper: safe number coercion for Decimal fields ───────────────────────────
 
 function toNum(v: Decimal | number): number {
@@ -187,13 +216,16 @@ export async function calculateNutrition(
       name: topMatch.name,
     }
 
-    // Resolve factor
+    // Resolve factor — normalize size qualifiers (large/medium/small/xl) to
+    // 'piece' so the factor engine's broadened count-unit fallback can find
+    // the food-specific USDA portion (e.g. 'large egg', 'egg', 'strip').
+    const resolvedUnit = normalizeIngredientUnit(ing.unit)
     let conversionResult: Awaited<ReturnType<typeof resolveIngredientFactor>>
     try {
       conversionResult = await resolveIngredientFactor(
         foodForConversion,
         ing.quantity,
-        ing.unit,
+        resolvedUnit,
       )
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Conversion error'

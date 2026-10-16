@@ -100,3 +100,45 @@ describe('existing tool exports still present', () => {
     expect(PROPOSE_PROGRAM_TOOL.function.name).toBe('propose_program')
   })
 })
+
+// ── System prompt brand-request audit ────────────────────────────────────────
+// Regression guard: V must NOT instruct the model to ask for brand names when
+// generic whole foods (eggs, bacon, tortillas) fail to convert. The tool
+// description and system prompt must explicitly restrict brand-asking to
+// branded/packaged foods only.
+
+import { SYSTEM_PROMPT } from '../../app/api/coach/constants'
+
+describe('SYSTEM_PROMPT and CALCULATE_NUTRITION_TOOL brand-ask policy', () => {
+  it('CALCULATE_NUTRITION_TOOL description does NOT instruct asking for brands generically', () => {
+    const desc = CALCULATE_NUTRITION_TOOL.function.description
+    // Must not have the old generic "ask for clarification" pattern that caused brand-asking
+    // (the old text was: "ask for clarification if it would meaningfully change the result")
+    expect(desc).not.toMatch(/ask for clarification if it would meaningfully change the result/)
+  })
+
+  it('CALCULATE_NUTRITION_TOOL description explicitly says not to ask brands for generic whole foods', () => {
+    const desc = CALCULATE_NUTRITION_TOOL.function.description
+    // Must contain explicit guidance about not asking brands for generic foods
+    expect(desc.toLowerCase()).toMatch(/do not ask.*brand|not.*brand.*generic|generic.*whole.*food/i)
+  })
+
+  it('CALCULATE_NUTRITION_TOOL description says to report partial results when ingredients fail', () => {
+    const desc = CALCULATE_NUTRITION_TOOL.function.description
+    // Must instruct V to report what resolved, not silently fail everything
+    expect(desc.toLowerCase()).toMatch(/resolve|partial|did resolve|calculate and present/i)
+  })
+
+  it('SYSTEM_PROMPT nutrition section instructs V to report partial results', () => {
+    // The nutrition calculations section should mention partial results
+    const relevant = SYSTEM_PROMPT.slice(SYSTEM_PROMPT.indexOf('NUTRITION CALCULATIONS'))
+    expect(relevant.toLowerCase()).toMatch(/unresolved|failed|couldn.*t find/i)
+  })
+
+  it('SYSTEM_PROMPT nutrition section says NOT to ask for brands for generic whole foods', () => {
+    const relevant = SYSTEM_PROMPT.slice(SYSTEM_PROMPT.indexOf('NUTRITION CALCULATIONS'))
+    // The updated prompt must explicitly say "Do NOT ask for brands for generic whole foods"
+    // (or equivalent wording) to prevent V from asking brand questions for eggs, bacon, etc.
+    expect(relevant.toLowerCase()).toMatch(/do not ask.*brand.*generic|not.*ask.*brand.*generic|do not ask for brands.*generic/i)
+  })
+})

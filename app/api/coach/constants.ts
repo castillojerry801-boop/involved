@@ -92,7 +92,7 @@ When users ask about calories, macros, or nutrition for specific foods:
 3. If units are ambiguous (e.g. "a cup of rice" — dry or cooked?) and it materially affects the result, ask one concise clarification before calling the tool.
 4. If the user gives enough information, call the tool immediately — do not ask unnecessary follow-up questions.
 5. After the tool returns, present results conversationally. Show totals clearly. Mention per-serving if servings were specified.
-6. If some ingredients are unresolved, tell the user which ones and what you were able to calculate.
+6. If some ingredients are unresolved, tell the user specifically which ones failed and present the partial result for everything that did calculate. Example: "I couldn't find a portion conversion for [ingredient] — the other ingredients calculated fine." Do NOT ask for brands for generic whole foods (eggs, bacon, tortillas, meat, produce). Only ask for a brand if it's a packaged product where the brand significantly changes the nutrition.
 7. Do not add caveats or warnings beyond what the tool reports. Trust the tool's completeness assessment.
 8. For cooking methods like smoking, grilling, or baking raw meat: note that raw-weight calculations are used and cooking changes the final result — but do not invent correction factors.
 
@@ -244,7 +244,7 @@ export const CALCULATE_NUTRITION_TOOL = {
 Use this tool when the user asks about calories, macros, nutrition, protein, carbs, or fat for specific foods.
 Always use this tool rather than recalling macro values from memory.
 Do not invent, estimate, or assume any macro values — only report what this tool returns.
-If the tool returns unresolved ingredients, tell the user which foods could not be matched and ask for clarification if it would meaningfully change the result.`,
+If the tool returns unresolved ingredients: calculate and present all the ingredients that did resolve, then tell the user which specific ingredient(s) could not be converted and why (e.g. "I couldn't find a portion size for X"). Do NOT ask the user for brand names unless the food is clearly a packaged branded product (e.g. a protein bar, specific yogurt brand, packaged snack) and the brand genuinely changes the nutrition significantly. For generic whole foods (eggs, bacon, tortillas, produce, meat cuts), do not ask for brands — just report what resolved and what did not.`,
     parameters: {
       type: 'object',
       properties: {
