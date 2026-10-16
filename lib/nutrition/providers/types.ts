@@ -59,6 +59,12 @@ export interface ExternalFoodResult {
    * Used to boost generic results in recipe ingredient searches.
    */
   isGeneric?: boolean
+  /**
+   * USDA FDC data type, e.g. 'Foundation', 'SR Legacy', 'Survey (FNDDS)', 'Branded'.
+   * Required by resolveIngredientFactor Step 7 to decide whether to fetch USDA household
+   * portions for count-unit resolution (e.g. "3 piece eggs"). Only present on USDA results.
+   */
+  fdcDataType?: string
 }
 
 export interface ExternalFoodDetail extends ExternalFoodResult {

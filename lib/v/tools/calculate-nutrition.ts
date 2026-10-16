@@ -108,6 +108,12 @@ export async function calculateNutrition(
   const { ingredients, servings, context } = args
   const safeServings = servings && servings > 0 ? servings : 1
 
+  console.log('[V-nutrition] tool called', {
+    ingredientCount: ingredients.length,
+    servings: safeServings,
+    units: ingredients.map(i => ({ unit: i.unit, normalized: normalizeIngredientUnit(i.unit) })),
+  })
+
   // ── 1. Match all ingredients in parallel ─────────────────────────────────────
   const matchResults = await Promise.all(
     ingredients.map(async (ing) => {
@@ -216,6 +222,15 @@ export async function calculateNutrition(
       name: topMatch.name,
     }
 
+    console.log('[V-nutrition] match-result', {
+      index: ingredientResults.length,
+      confidence: match.confidence,
+      topMatchProvider: topMatch.provider,
+      topMatchId: topMatch.externalId,
+      fdcDataType: topMatch.fdcDataType ?? null,
+      hasHouseholdUnit: !!topMatch.householdUnit,
+    })
+
     // Resolve factor — normalize size qualifiers (large/medium/small/xl) to
     // 'piece' so the factor engine's broadened count-unit fallback can find
     // the food-specific USDA portion (e.g. 'large egg', 'egg', 'strip').
@@ -249,6 +264,14 @@ export async function calculateNutrition(
     }
 
     if (isConversionError(conversionResult)) {
+      console.log('[V-nutrition] conversion-error', {
+        index: ingredientResults.length,
+        errorCode: conversionResult.errorCode,
+        resolvedUnit,
+        originalUnit: ing.unit,
+        fdcDataType: topMatch.fdcDataType ?? null,
+        provider: topMatch.provider,
+      })
       ingredientResults.push({
         userDescription: userDesc,
         matchedFoodName: topMatch.name,
@@ -382,6 +405,13 @@ export async function calculateNutrition(
       break // one note is enough for the batch
     }
   }
+
+  console.log('[V-nutrition] result', {
+    completeness,
+    resolvedCount: resolved.length,
+    unresolvedCount: unresolved.length,
+    unresolvedReasons: unresolvedIngredients.map(u => u.reason),
+  })
 
   return {
     ingredients: ingredientResults,

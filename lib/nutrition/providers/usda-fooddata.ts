@@ -117,6 +117,7 @@ function mapFood(food: UsdaFood): ExternalFoodDetail {
     householdServingText: rawHousehold || undefined,
     householdUnit,
     unitsPerServing,
+    fdcDataType: food.dataType,
     coreNutrients: {
       calories:      Math.round(getNutrient(food, NID.calories) * nutritionFactor),
       proteinG:      Math.round(getNutrient(food, NID.protein) * nutritionFactor * 10) / 10,

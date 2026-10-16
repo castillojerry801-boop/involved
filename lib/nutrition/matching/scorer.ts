@@ -188,6 +188,7 @@ export function scoreForIngredient(
       carbohydrateG: r.coreNutrients.carbohydrateG,
       fatG: r.coreNutrients.fatG,
       isGeneric: r.isGeneric ?? false,
+      fdcDataType: r.fdcDataType,
       matchScore: score,
       matchReasons: reasons,
     }
