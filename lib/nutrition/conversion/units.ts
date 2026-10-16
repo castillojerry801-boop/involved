@@ -17,8 +17,63 @@ export const CUP_UNITS       = new Set(['cup', 'cups'])
 export const TBSP_UNITS      = new Set(['tbsp', 'tablespoon', 'tablespoons'])
 export const TSP_UNITS       = new Set(['tsp', 'teaspoon', 'teaspoons'])
 export const CLOVE_UNITS     = new Set(['clove', 'cloves'])
-export const SLICE_UNITS     = new Set(['slice', 'slices'])
+// 'strip' and 'rasher' are common bacon/meat slice synonyms used by USDA and FatSecret.
+export const SLICE_UNITS     = new Set(['slice', 'slices', 'strip', 'strips', 'rasher', 'rashers'])
 export const PIECE_UNITS     = new Set(['piece', 'pieces'])
+
+// Food-specific count nouns recognized as equivalent to 'piece' for household portion lookup.
+// These are the unit strings USDA FoodData Central stores for common whole-food portions.
+// Used by resolveIngredientFactor step 7 to broaden the piece-unit match.
+export const FOOD_COUNT_NOUNS = new Set([
+  'egg', 'eggs',
+  'tortilla', 'tortillas',
+  'taco', 'tacos',
+  'biscuit', 'biscuits',
+  'muffin', 'muffins',
+  'cracker', 'crackers',
+  'cookie', 'cookies',
+  'waffle', 'waffles',
+  'pancake', 'pancakes',
+  'patty', 'patties',
+  'nugget', 'nuggets',
+  'wing', 'wings',
+  'drumstick', 'drumsticks',
+  'thigh', 'thighs',
+  'breast', 'breasts',
+  'fillet', 'fillets',
+  'shrimp', 'shrimps',
+  'scallop', 'scallops',
+  'sausage', 'sausages',
+  'link', 'links',
+  'frank', 'franks',
+  'hotdog', 'hotdogs',
+  'burger', 'burgers',
+  'sandwich', 'sandwiches',
+  'wrap', 'wraps',
+  'roll', 'rolls',
+  'bun', 'buns',
+  'bagel', 'bagels',
+  'english muffin', 'english muffins',
+  'croissant', 'croissants',
+  'donut', 'donuts',
+  'brownie', 'brownies',
+  'cupcake', 'cupcakes',
+  'apple', 'apples',
+  'banana', 'bananas',
+  'orange', 'oranges',
+  'pear', 'pears',
+  'peach', 'peaches',
+  'plum', 'plums',
+  'kiwi', 'kiwis',
+  'fig', 'figs',
+  'date', 'dates',
+  'avocado', 'avocados',
+  'tomato', 'tomatoes',
+  'pepper', 'peppers',
+  'onion', 'onions',
+  'potato', 'potatoes',
+  'mushroom', 'mushrooms',
+])
 
 // All recognized household count units (not volume, not weight).
 const HOUSEHOLD_UNITS = new Set([
