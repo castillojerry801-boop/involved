@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { RecipeStatus } from '@prisma/client'
+import { RecipeNutritionPanel } from './recipe-nutrition-panel'
+import { computeRecipeNutritionTotals, computeServingNutrition } from '@/lib/recipes/serving-calc'
 
 export interface RecipeDetail {
   id: string
@@ -24,6 +26,11 @@ export interface RecipeDetail {
   cachedCarbGPerServing: number | null
   cachedFatGPerServing: number | null
   nutritionComplete: boolean
+  // Imported per-serving macros from Phase 0 — shown when ingredient calc is incomplete
+  importedCalPerServing?: number | null
+  importedProteinGPerServing?: number | null
+  importedCarbGPerServing?: number | null
+  importedFatGPerServing?: number | null
   sharingConsent: boolean
   creatorName: string | null
   rejectionReason: string | null
@@ -73,6 +80,10 @@ function LogModal({ recipe, onClose, onLogged }: LogModalProps) {
   const [manualPro, setManualPro] = useState('')
   const [manualCarb, setManualCarb] = useState('')
   const [manualFat, setManualFat] = useState('')
+  // 'manual' | 'imported' — which source to use for incomplete recipes
+  const [estimateSource, setEstimateSource] = useState<'manual' | 'imported'>(() =>
+    recipe.importedCalPerServing != null ? 'imported' : 'manual'
+  )
   const [logging, setLogging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const submittingRef = useRef(false)
@@ -80,16 +91,43 @@ function LogModal({ recipe, onClose, onLogged }: LogModalProps) {
     typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(36)
   )
 
-  const incomplete = !recipe.nutritionComplete
+  // Optional ingredient toggles: track which optional IDs are included (default: all)
+  const optionalIngredients = recipe.ingredients.filter((i) => i.isOptional)
+  const [includedOptionals, setIncludedOptionals] = useState<Set<string>>(
+    () => new Set(optionalIngredients.map((i) => i.id))
+  )
 
-  const preview = recipe.nutritionComplete && recipe.cachedCalPerServing != null
-    ? {
-        cal:  Math.round(recipe.cachedCalPerServing * servings),
-        pro:  Math.round((recipe.cachedProteinGPerServing ?? 0) * servings * 10) / 10,
-        carb: Math.round((recipe.cachedCarbGPerServing ?? 0) * servings * 10) / 10,
-        fat:  Math.round((recipe.cachedFatGPerServing ?? 0) * servings * 10) / 10,
-      }
-    : null
+  const toggleOptional = useCallback((id: string) => {
+    setIncludedOptionals((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  // Compute real-time macros using serving-calc engine
+  const totals = computeRecipeNutritionTotals(
+    recipe.ingredients.map((i) => ({
+      id: i.id,
+      name: i.name,
+      quantity: i.quantity,
+      unit: i.unit,
+      isOptional: i.isOptional,
+      isToTaste: i.isToTaste,
+      snapshotCalories: i.snapshotCalories,
+      snapshotProteinG: i.snapshotProteinG,
+      snapshotCarbG: i.snapshotCarbG,
+      snapshotFatG: i.snapshotFatG,
+    })),
+    recipe.servings,
+    includedOptionals,
+  )
+
+  const incomplete = totals.completeness === 'incomplete'
+
+  // Preview: per-serving × selected servings amount
+  const perServingPreview = computeServingNutrition(totals, servings)
 
   const handleLog = useCallback(async () => {
     if (submittingRef.current) return
@@ -97,23 +135,34 @@ function LogModal({ recipe, onClose, onLogged }: LogModalProps) {
     setLogging(true)
     setError(null)
 
+    // Collect excluded optional ingredient IDs (optional ingredients the user unchecked)
+    const excludedIngredientIds = optionalIngredients
+      .filter((i) => !includedOptionals.has(i.id))
+      .map((i) => i.id)
+
     const body: Record<string, unknown> = {
       mealType,
       logDate,
       servingMultiplier: servings,
       idempotencyKey: idempotencyKey.current,
+      excludedIngredientIds,
     }
 
     if (incomplete) {
-      const cal = parseFloat(manualCal), pro = parseFloat(manualPro)
-      const carb = parseFloat(manualCarb), fat = parseFloat(manualFat)
-      if (isNaN(cal) || isNaN(pro) || isNaN(carb) || isNaN(fat)) {
-        setError('Please fill in all nutrition values')
-        submittingRef.current = false
-        setLogging(false)
-        return
+      if (estimateSource === 'imported' && recipe.importedCalPerServing != null) {
+        body.useImported = true
+      } else {
+        const cal = parseFloat(manualCal), pro = parseFloat(manualPro)
+        const carb = parseFloat(manualCarb), fat = parseFloat(manualFat)
+        if (isNaN(cal) || isNaN(pro) || isNaN(carb) || isNaN(fat)) {
+          setError('Please fill in all nutrition values')
+          submittingRef.current = false
+          setLogging(false)
+          return
+        }
+        body.confirmedEstimate = true
+        body.manualNutrition = { calories: cal, proteinG: pro, carbG: carb, fatG: fat }
       }
-      body.manualNutrition = { calories: cal, proteinG: pro, carbG: carb, fatG: fat }
     }
 
     const res = await fetch(`/api/recipes/${recipe.id}/log`, {
@@ -131,19 +180,29 @@ function LogModal({ recipe, onClose, onLogged }: LogModalProps) {
     }
 
     onLogged()
-  }, [mealType, logDate, servings, incomplete, manualCal, manualPro, manualCarb, manualFat, recipe.id, onLogged])
+  }, [mealType, logDate, servings, incomplete, estimateSource, manualCal, manualPro, manualCarb, manualFat, recipe.id, recipe.importedCalPerServing, optionalIngredients, includedOptionals, onLogged])
+
+  // Button label: show calorie preview when available
+  const buttonLabel = incomplete
+    ? 'Log (estimated)'
+    : perServingPreview.calories > 0
+    ? `Log ${Math.round(perServingPreview.calories)} cal`
+    : 'Log This Meal'
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl bg-white dark:bg-zinc-900 shadow-xl px-5 py-5 space-y-4">
+      <div className="relative z-10 w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl bg-white dark:bg-zinc-900 shadow-xl px-5 py-5 space-y-4 max-h-[90vh] overflow-y-auto">
         <h3 className="font-bold text-zinc-900 dark:text-white">Log {recipe.name}</h3>
 
         {/* Incomplete nutrition warning */}
         {incomplete && (
           <div className="flex gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/20 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
             <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-            <span>Some ingredients are unmatched. Enter nutrition manually to continue.</span>
+            <span>
+              {totals.unresolvedCount} ingredient{totals.unresolvedCount > 1 ? 's' : ''} unmatched.
+              Enter nutrition manually or use the imported estimate.
+            </span>
           </div>
         )}
 
@@ -201,15 +260,51 @@ function LogModal({ recipe, onClose, onLogged }: LogModalProps) {
           </div>
         </div>
 
-        {/* Nutrition preview or manual entry */}
-        {preview && (
+        {/* Optional ingredient toggles */}
+        {optionalIngredients.length > 0 && (
+          <div>
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Optional Ingredients</label>
+            <p className="text-xs text-zinc-400 mt-0.5 mb-2">Uncheck to exclude from this log</p>
+            <div className="space-y-1">
+              {optionalIngredients.map((ing) => (
+                <label key={ing.id} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includedOptionals.has(ing.id)}
+                    onChange={() => toggleOptional(ing.id)}
+                    className="size-4 rounded"
+                  />
+                  <span className="text-sm text-zinc-700 dark:text-zinc-300">
+                    {ing.quantity} {ing.unit} {ing.name}
+                    {ing.snapshotCalories != null && (
+                      <span className="text-zinc-400 ml-1">({Math.round(ing.snapshotCalories)} cal)</span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Nutrition preview */}
+        {!incomplete && perServingPreview.calories > 0 && (
           <p className="text-sm text-zinc-500">
-            <span className="font-semibold text-zinc-900 dark:text-white">{preview.cal} cal</span>
-            {' · '}P {preview.pro}g · C {preview.carb}g · F {preview.fat}g
+            <span className="font-semibold text-zinc-900 dark:text-white">
+              {Math.round(perServingPreview.calories)} cal
+            </span>
+            {' · '}P {perServingPreview.proteinG.toFixed(1)}g · C {perServingPreview.carbG.toFixed(1)}g · F {perServingPreview.fatG.toFixed(1)}g
           </p>
         )}
 
+        {totals.completeness === 'estimated' && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Estimated — optional/to-taste ingredients may not be included
+          </p>
+        )}
+
+        {/* Nutrition entry for incomplete recipes */}
         {incomplete && (() => {
+          const hasImported = recipe.importedCalPerServing != null
           const cal = parseFloat(manualCal), pro = parseFloat(manualPro)
           const carb = parseFloat(manualCarb), fat = parseFloat(manualFat)
           const manualPreview = (!isNaN(cal) && !isNaN(pro) && !isNaN(carb) && !isNaN(fat))
@@ -222,33 +317,83 @@ function LogModal({ recipe, onClose, onLogged }: LogModalProps) {
             : null
           return (
             <div className="space-y-2">
-              <p className="text-xs text-zinc-500">
-                Enter nutrition for 1 serving. Your logged total will be multiplied by the number of servings.
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: 'Calories / serving', value: manualCal, set: setManualCal },
-                  { label: 'Protein / serving (g)', value: manualPro, set: setManualPro },
-                  { label: 'Carbs / serving (g)', value: manualCarb, set: setManualCarb },
-                  { label: 'Fat / serving (g)', value: manualFat, set: setManualFat },
-                ].map(({ label, value, set }) => (
-                  <div key={label}>
-                    <label className="text-xs text-zinc-400">{label}</label>
-                    <input
-                      type="number" min={0} step={1}
-                      value={value}
-                      onChange={(e) => set(e.target.value)}
-                      placeholder="0"
-                      className="mt-0.5 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-1.5 text-sm text-zinc-900 dark:text-white focus:outline-none"
-                    />
+              {/* Source selector — only shown when imported estimate is available */}
+              {hasImported && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEstimateSource('imported')}
+                    className={cn(
+                      'flex-1 rounded-xl py-2 text-xs font-semibold transition-colors',
+                      estimateSource === 'imported'
+                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                    )}
+                  >
+                    Use imported estimate
+                  </button>
+                  <button
+                    onClick={() => setEstimateSource('manual')}
+                    className={cn(
+                      'flex-1 rounded-xl py-2 text-xs font-semibold transition-colors',
+                      estimateSource === 'manual'
+                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                    )}
+                  >
+                    Enter my own
+                  </button>
+                </div>
+              )}
+
+              {/* Imported estimate preview */}
+              {hasImported && estimateSource === 'imported' && (
+                <div className="rounded-xl bg-zinc-50 dark:bg-zinc-800 px-3 py-2.5 space-y-1">
+                  <p className="text-sm text-zinc-500">
+                    <span className="font-semibold text-zinc-900 dark:text-white">
+                      {Math.round((recipe.importedCalPerServing ?? 0) * servings)} cal
+                    </span>
+                    {' · '}P {((recipe.importedProteinGPerServing ?? 0) * servings).toFixed(1)}g
+                    {' · '}C {((recipe.importedCarbGPerServing ?? 0) * servings).toFixed(1)}g
+                    {' · '}F {((recipe.importedFatGPerServing ?? 0) * servings).toFixed(1)}g
+                  </p>
+                  <p className="text-xs text-zinc-400">
+                    These values were imported from the recipe source — not independently verified.
+                  </p>
+                </div>
+              )}
+
+              {/* Manual entry fields */}
+              {(!hasImported || estimateSource === 'manual') && (
+                <>
+                  <p className="text-xs text-zinc-500">
+                    Enter nutrition for 1 serving. Your logged total will be multiplied by the number of servings.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Calories / serving', value: manualCal, set: setManualCal },
+                      { label: 'Protein / serving (g)', value: manualPro, set: setManualPro },
+                      { label: 'Carbs / serving (g)', value: manualCarb, set: setManualCarb },
+                      { label: 'Fat / serving (g)', value: manualFat, set: setManualFat },
+                    ].map(({ label, value, set }) => (
+                      <div key={label}>
+                        <label className="text-xs text-zinc-400">{label}</label>
+                        <input
+                          type="number" min={0} step={1}
+                          value={value}
+                          onChange={(e) => set(e.target.value)}
+                          placeholder="0"
+                          className="mt-0.5 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-1.5 text-sm text-zinc-900 dark:text-white focus:outline-none"
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              {manualPreview && (
-                <p className="text-sm text-zinc-500">
-                  Total: <span className="font-semibold text-zinc-900 dark:text-white">{manualPreview.cal} cal</span>
-                  {' · '}P {manualPreview.pro}g · C {manualPreview.carb}g · F {manualPreview.fat}g
-                </p>
+                  {manualPreview && (
+                    <p className="text-sm text-zinc-500">
+                      Total: <span className="font-semibold text-zinc-900 dark:text-white">{manualPreview.cal} cal</span>
+                      {' · '}P {manualPreview.pro}g · C {manualPreview.carb}g · F {manualPreview.fat}g
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )
@@ -262,7 +407,7 @@ function LogModal({ recipe, onClose, onLogged }: LogModalProps) {
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-3 text-sm font-bold hover:opacity-90 disabled:opacity-50"
         >
           {logging && <Loader2 className="size-4 animate-spin" />}
-          Log This Meal
+          {buttonLabel}
         </button>
       </div>
     </div>
@@ -359,6 +504,8 @@ export function RecipeDetailView({ recipe, currentUserId, onBack, onDeleted, onE
   const [deleting, setDeleting] = useState(false)
   // Yield multiplier: how many servings to prepare (scales ingredient display only — original recipe unchanged)
   const [prepServings, setPrepServings] = useState(recipe.servings)
+  // Panel serving count: used for real-time per-serving recalculation in nutrition panel
+  const [panelServings, setPanelServings] = useState(recipe.servings)
   const yieldMultiplier = recipe.servings > 0 ? prepServings / recipe.servings : 1
   const isOwner = recipe.userId === currentUserId
   const totalMinutes = (recipe.prepMinutes ?? 0) + (recipe.cookMinutes ?? 0)
@@ -469,37 +616,19 @@ export function RecipeDetailView({ recipe, currentUserId, onBack, onDeleted, onE
         </div>
       )}
 
-      {/* Nutrition */}
-      {recipe.nutritionComplete && recipe.cachedCalPerServing != null ? (
-        <div className="mb-6 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 p-4">
-          <p className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-2">Per Serving</p>
-          <div className="flex gap-5">
-            <div>
-              <p className="text-2xl font-black text-zinc-900 dark:text-white">{Math.round(recipe.cachedCalPerServing)}</p>
-              <p className="text-xs text-zinc-400">cal</p>
-            </div>
-            {[
-              { label: 'Protein', value: recipe.cachedProteinGPerServing, color: 'text-sky-500' },
-              { label: 'Carbs',   value: recipe.cachedCarbGPerServing,    color: 'text-amber-500' },
-              { label: 'Fat',     value: recipe.cachedFatGPerServing,     color: 'text-orange-500' },
-            ].map(({ label, value, color }) => (
-              <div key={label}>
-                <p className={`text-base font-black ${color}`}>{value?.toFixed(1)}g</p>
-                <p className="text-xs text-zinc-400">{label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="mb-6 flex items-start gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-          <AlertTriangle className="size-4 shrink-0 mt-0.5" />
-          <span>
-            {unresolvedCount > 0
-              ? `${unresolvedCount} ingredient${unresolvedCount > 1 ? 's' : ''} not yet matched to the food database — nutrition cannot be calculated.`
-              : 'Nutrition information is not yet complete for this recipe.'}
-          </span>
-        </div>
-      )}
+      {/* Nutrition — Phase 4 panel with completeness badge and optional serving adjuster */}
+      <div className="mb-6">
+        <RecipeNutritionPanel
+          ingredients={recipe.ingredients}
+          servings={recipe.servings}
+          importedCalPerServing={recipe.importedCalPerServing}
+          importedProteinGPerServing={recipe.importedProteinGPerServing}
+          importedCarbGPerServing={recipe.importedCarbGPerServing}
+          importedFatGPerServing={recipe.importedFatGPerServing}
+          displayServings={panelServings}
+          onServingsChange={setPanelServings}
+        />
+      </div>
 
       {/* Ingredients */}
       {recipe.ingredients.length > 0 && (

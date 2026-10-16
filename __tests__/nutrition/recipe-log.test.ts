@@ -54,6 +54,8 @@ function makeLogReq(body: unknown) {
   })
 }
 
+// Full-detail ingredient shape required by the new server-authoritative compute path.
+// servings=2, totalCalories=600 → perServing=300
 const completeRecipe = {
   id: 'test-id',
   userId: 'user-owner',
@@ -65,7 +67,37 @@ const completeRecipe = {
   cachedProteinGPerServing: 25,
   cachedCarbGPerServing: 30,
   cachedFatGPerServing: 10,
-  ingredients: [],
+  importedCalPerServing: null,
+  importedProteinGPerServing: null,
+  importedCarbGPerServing: null,
+  importedFatGPerServing: null,
+  // Two resolved required ingredients totalling 600 cal / 2 servings = 300 per serving
+  ingredients: [
+    {
+      id: 'ing-a',
+      name: 'Chicken',
+      quantity: 1,
+      unit: 'g',
+      isOptional: false,
+      isToTaste: false,
+      snapshotCalories: 400,
+      snapshotProteinG: 30,
+      snapshotCarbG: 30,
+      snapshotFatG: 10,
+    },
+    {
+      id: 'ing-b',
+      name: 'Rice',
+      quantity: 1,
+      unit: 'g',
+      isOptional: false,
+      isToTaste: false,
+      snapshotCalories: 200,
+      snapshotProteinG: 20,
+      snapshotCarbG: 30,
+      snapshotFatG: 10,
+    },
+  ],
 }
 
 const incompleteRecipe = {
@@ -75,7 +107,33 @@ const incompleteRecipe = {
   cachedProteinGPerServing: null,
   cachedCarbGPerServing: null,
   cachedFatGPerServing: null,
-  ingredients: [{ id: 'ing-1' }, { id: 'ing-2' }],
+  // Two unresolved required ingredients
+  ingredients: [
+    {
+      id: 'ing-1',
+      name: 'Ingredient 1',
+      quantity: 1,
+      unit: 'g',
+      isOptional: false,
+      isToTaste: false,
+      snapshotCalories: null,
+      snapshotProteinG: null,
+      snapshotCarbG: null,
+      snapshotFatG: null,
+    },
+    {
+      id: 'ing-2',
+      name: 'Ingredient 2',
+      quantity: 1,
+      unit: 'g',
+      isOptional: false,
+      isToTaste: false,
+      snapshotCalories: null,
+      snapshotProteinG: null,
+      snapshotCarbG: null,
+      snapshotFatG: null,
+    },
+  ],
 }
 
 beforeEach(() => {
@@ -100,11 +158,24 @@ describe('log route — incomplete nutrition gate', () => {
     expect(body.unresolvedCount).toBe(2)
   })
 
-  it('unresolvedCount reflects ingredients filtered by null foodItemId OR null snapshot macros', async () => {
-    // Recipe is marked incomplete; DB query returns one ingredient with snapshot gap
+  it('unresolvedCount reflects ingredients with null snapshot macros', async () => {
+    // Recipe has exactly one unresolved required ingredient
     const recipeWithSnapshotGap = {
       ...incompleteRecipe,
-      ingredients: [{ id: 'ing-snap-null' }],
+      ingredients: [
+        {
+          id: 'ing-snap-null',
+          name: 'Mystery ingredient',
+          quantity: 1,
+          unit: 'g',
+          isOptional: false,
+          isToTaste: false,
+          snapshotCalories: null,
+          snapshotProteinG: null,
+          snapshotCarbG: null,
+          snapshotFatG: null,
+        },
+      ],
     }
     mockPrisma.foodLogEntry.findUnique.mockResolvedValue(null)
     mockPrisma.recipe.findUnique.mockResolvedValue(recipeWithSnapshotGap)
