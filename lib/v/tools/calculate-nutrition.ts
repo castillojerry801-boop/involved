@@ -216,6 +216,7 @@ export async function calculateNutrition(
         topMatch.unitsPerServing != null
           ? (topMatch.unitsPerServing as unknown as Decimal)
           : null,
+      householdServingText: topMatch.householdServingText ?? null,
       sourceProvider: topMatch.provider,
       externalId: topMatch.externalId,
       fdcDataType: topMatch.fdcDataType ?? null,

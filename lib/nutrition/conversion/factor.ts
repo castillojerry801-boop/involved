@@ -35,6 +35,8 @@ export interface FoodForConversion {
   fatG: Decimal
   householdUnit?: string | null
   unitsPerServing?: Decimal | null
+  /** Human-readable serving description from the provider (e.g. "1 strip", "3 slices", "1 large"). */
+  householdServingText?: string | null
   sourceProvider?: string | null
   externalId?: string | null
   fdcDataType?: string | null
@@ -182,6 +184,30 @@ export async function resolveIngredientFactor(
         notes,
       }
     }
+  }
+
+  // ── Step 5b: householdServingText count-unit resolution (FatSecret fallback) ──
+  // Fires when:
+  //   - food.householdServingText is populated (typically from FatSecret detail fetch)
+  //   - inputUnit is a count unit (piece/slice/strip/egg/tortilla/etc.)
+  //   - the serving text contains a count word that semantically matches the input unit
+  //
+  // FatSecret serving descriptions look like "1 strip", "1 large", "3 slices", "2 tortillas".
+  // We parse the leading "N word" and match word against the input unit.
+  //
+  // IMPORTANT: "1 serving" alone does NOT count as a match — the description must
+  // contain a count noun so we never universally assume 1 piece = 1 serving.
+  const isCountUnitInput =
+    PIECE_UNITS.has(iu) || SLICE_UNITS.has(iu) || FOOD_COUNT_NOUNS.has(iu)
+
+  if (isCountUnitInput && food.householdServingText) {
+    const servingTextResult = resolveFromServingText(
+      food as FoodForConversion & { householdServingText: string },
+      quantity,
+      iu,
+      notes,
+    )
+    if (servingTextResult) return servingTextResult
   }
 
   // ── Step 6: FoodItemPortion lookup in DB ─────────────────────────────────────
@@ -410,6 +436,161 @@ export async function resolveIngredientFactor(
     errorCode: 'portion_not_found',
     message: `No portion data found for unit "${unit}" and food`,
     suggestions: ['Add a portion entry for this food, or use a weight/volume unit'],
+  }
+}
+
+// Size qualifiers that appear in FatSecret's serving_description but are not count nouns.
+// e.g. "1 large" means 1 unit (where the size is baked into the serving size).
+const SIZE_QUALIFIER_WORDS = new Set([
+  'large', 'medium', 'small', 'xl', 'jumbo', 'extra large', 'extra-large',
+  'mini', 'regular', 'standard',
+])
+
+// Blacklisted non-count serving words that must not be treated as count units.
+// e.g. "1 serving" → cannot infer unit type.
+const NON_COUNT_WORDS = new Set([
+  'serving', 'servings', 'portion', 'portions',
+  'cup', 'cups', 'tbsp', 'tablespoon', 'tablespoons',
+  'tsp', 'teaspoon', 'teaspoons', 'oz', 'ounce', 'ounces',
+  'g', 'gram', 'grams', 'ml', 'milliliter', 'milliliters',
+  'lb', 'lbs', 'pound', 'pounds',
+])
+
+/**
+ * Normalize a unit string for serving-description matching.
+ * Strips trailing 's' for plural handling: "strips" → "strip", "slices" → "slice".
+ * Only strips if the result is still >= 3 chars (prevents "eggs" → "egg" → "eg" etc.).
+ * Final step is normalizeUnit (lowercase + trim).
+ */
+function normForServingMatch(w: string): string {
+  const lower = w.toLowerCase().trim()
+  // Strip trailing 's' for common plurals if result stays >= 3 chars
+  if (lower.endsWith('s') && lower.length > 3) {
+    return normalizeUnit(lower.slice(0, -1))
+  }
+  return normalizeUnit(lower)
+}
+
+/**
+ * Resolve a count unit from a FatSecret-style householdServingText.
+ *
+ * Returns a ConversionResult when:
+ *   1. servingText starts with "N word" or "N words"
+ *   2. `word` (after plural-stripping) matches `iu` (after plural-stripping), OR
+ *      `word` is a size qualifier (large/medium/small/etc.) AND `iu` is a
+ *      generic count unit (piece/pieces or a FOOD_COUNT_NOUNS member), OR
+ *      `iu` is a generic count unit (piece/each) AND the serving word is a food
+ *      count noun in FOOD_COUNT_NOUNS (e.g. "piece" + "tortilla" → match).
+ *
+ * Returns null when the serving text cannot be matched — e.g. "1 serving",
+ * "100g", "1/4 cup" — allowing the pipeline to continue to Step 6.
+ */
+function resolveFromServingText(
+  food: FoodForConversion & { householdServingText: string },
+  quantity: number,
+  iu: string,
+  notes: string[],
+): ConversionResult | null {
+  const servingText = food.householdServingText.trim()
+
+  // Parse leading "N word" pattern (integer or decimal, including fractions like 1/4)
+  const match = servingText.match(/^(\d+(?:[./]\d+)?)\s+(.+)$/)
+  if (!match) return null
+
+  const servingCountStr = match[1]
+  const servingWordRaw = match[2].toLowerCase().trim()
+
+  // Resolve fractional notation like "1/4"
+  let servingCount: number
+  if (servingCountStr.includes('/')) {
+    const [num, den] = servingCountStr.split('/')
+    servingCount = parseFloat(num) / parseFloat(den)
+  } else {
+    servingCount = parseFloat(servingCountStr)
+  }
+  if (!servingCount || servingCount <= 0) return null
+
+  // For multi-word descriptions, check if the FIRST word is blacklisted.
+  // e.g. "serving of oats" → first word "serving" is blacklisted → reject.
+  // Single-word check is done below as before.
+  const words = servingWordRaw.split(/\s+/)
+  const firstWord = words[0]
+  const lastWord  = words[words.length - 1]
+  if (NON_COUNT_WORDS.has(firstWord)) return null
+
+  // Reject non-count words immediately (single-word case)
+  if (NON_COUNT_WORDS.has(servingWordRaw)) return null
+
+  // Normalize both sides using the same plural-aware normalizer
+  const normWord     = normForServingMatch(servingWordRaw)
+  const normIu       = normForServingMatch(iu)
+  const normFirstWord = normForServingMatch(firstWord)
+  const normLastWord  = normForServingMatch(lastWord)
+  const isSizeQualifier = SIZE_QUALIFIER_WORDS.has(servingWordRaw)
+
+  // Match condition 1: direct unit match (e.g. "strip" input vs "1 strip" description)
+  const isDirectMatch = normIu === normWord
+
+  // Match condition 2: size qualifier + generic count input (single-word)
+  // e.g. "1 large" + inputUnit='piece' → treat as 1 piece = 1 serving
+  const isPieceUnit = PIECE_UNITS.has(normIu) || normIu === 'piece'
+  const isSizeMatch = isSizeQualifier && (isPieceUnit || FOOD_COUNT_NOUNS.has(normIu))
+
+  // Match condition 3: generic count input (piece) + serving word is a food count noun (single-word)
+  // e.g. 'piece' + "2 tortillas" → piece matches because 'tortilla' ∈ FOOD_COUNT_NOUNS
+  // This enables "1 piece tortilla" to resolve via "2 tortillas" serving description.
+  const isFoodNounServing =
+    (FOOD_COUNT_NOUNS.has(normWord) || FOOD_COUNT_NOUNS.has(servingWordRaw)) &&
+    (isPieceUnit || SLICE_UNITS.has(normIu))
+
+  // Match condition 4 (multi-word): last word is a food count noun, and either:
+  //   a) last word matches input unit (e.g. "2 flour tortillas" + iu='tortilla')
+  //   b) input is a generic count unit (piece/each) + last word is any food noun
+  //      (e.g. "1 large egg" + iu='piece')
+  const lastWordMatchesIu = normLastWord === normIu || lastWord === iu.toLowerCase().trim()
+  const isMultiWordFoodNoun = words.length > 1 && (
+    FOOD_COUNT_NOUNS.has(normLastWord) || FOOD_COUNT_NOUNS.has(lastWord)
+  ) && (lastWordMatchesIu || isPieceUnit || SLICE_UNITS.has(normIu))
+
+  // Match condition 5 (multi-word with "of"): first word of phrase matches input unit
+  // e.g. "3 slices of bacon" + inputUnit='slice' → "slice" matches first word "slices"
+  const isFirstWordMatch = words.length > 1 && normIu === normFirstWord
+
+  if (!isDirectMatch && !isSizeMatch && !isFoodNounServing && !isMultiWordFoodNoun && !isFirstWordMatch) return null
+
+  // For match-reason labeling
+  const isMultiWordMatch = isMultiWordFoodNoun || isFirstWordMatch
+
+  const servingSize = Number(food.servingSize)
+  if (servingSize <= 0) return null
+
+  // servingCount units = 1 serving
+  // inputQuantity units = (inputQuantity / servingCount) servings
+  const factor = quantity / servingCount
+  const grams = factor * servingSize
+
+  let matchReason: string
+  if (isDirectMatch) {
+    matchReason = `"${servingWordRaw}" matches input unit "${iu}"`
+  } else if (isSizeMatch) {
+    matchReason = `size qualifier "${servingWordRaw}" matched to count unit "${iu}"`
+  } else if (isFirstWordMatch) {
+    matchReason = `first word "${firstWord}" of "${servingWordRaw}" matches input unit "${iu}"`
+  } else if (isMultiWordMatch) {
+    matchReason = `food noun "${lastWord}" (in "${servingWordRaw}") matched to generic count unit "${iu}"`
+  } else {
+    matchReason = `food noun "${servingWordRaw}" matched to generic count unit "${iu}"`
+  }
+
+  notes.push(`Resolved via serving description: "${servingText}" (${matchReason})`)
+
+  return {
+    grams,
+    factor,
+    conversionSource: 'manufacturer_declared',
+    portionDescription: `${quantity} ${iu} via "${servingText}"`,
+    confidence: 'medium',
+    notes,
   }
 }
 

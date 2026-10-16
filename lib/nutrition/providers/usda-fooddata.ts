@@ -185,16 +185,27 @@ export class UsdaFoodDataProvider implements FoodProvider {
 
     // Fetch extra so we can filter and rank before slicing
     const fetchSize = Math.min((options?.limit ?? 20) * 3, 100)
-    const url = new URL(`${BASE_URL}/foods/search`)
-    url.searchParams.set('query', normalized)
-    url.searchParams.set('api_key', this.apiKey)
-    url.searchParams.set('dataType', ALL_DATA_TYPES)
-    url.searchParams.set('pageSize', String(fetchSize))
-    url.searchParams.set('sortBy', 'score')
-    url.searchParams.set('sortOrder', 'desc')
+
+    // Build URL manually instead of via URLSearchParams.set() for the dataType param.
+    // URLSearchParams encodes commas as %2C and spaces as +, producing
+    // "Foundation%2CSR+Legacy%2CSurvey+%28FNDDS%29%2CBranded" — USDA's nginx rejects
+    // that with HTTP 400. The API requires literal commas and %20-encoded spaces.
+    const safeParams = new URLSearchParams({
+      query:     normalized,
+      api_key:   this.apiKey,
+      pageSize:  String(fetchSize),
+      sortBy:    'score',
+      sortOrder: 'desc',
+    })
+    // Append dataType raw — commas must be literal, spaces encoded as %20.
+    const rawDataType = ALL_DATA_TYPES
+      .split(',')
+      .map(t => encodeURIComponent(t.trim()))
+      .join(',')
+    const url = `${BASE_URL}/foods/search?${safeParams.toString()}&dataType=${rawDataType}`
 
     try {
-      const res = await fetchWithTimeout(url.toString(), { next: { revalidate: 3600 } })
+      const res = await fetchWithTimeout(url, { next: { revalidate: 3600 } })
       if (!res.ok) {
         console.error(`[usda] search failed: HTTP ${res.status} for query "${normalized}"`)
         return []
