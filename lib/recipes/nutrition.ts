@@ -5,6 +5,8 @@ import {
   ML_UNITS,
   OZ_UNITS,
   LB_UNITS,
+  KG_UNITS,
+  L_UNITS,
   CUP_UNITS,
   TBSP_UNITS,
   TSP_UNITS,
@@ -136,10 +138,12 @@ export function computeIngredientFactor(
   if (ML_UNITS.has(iu)   && ML_UNITS.has(fu))      return quantity / servingSize
   if (OZ_UNITS.has(iu)   && GRAM_UNITS.has(fu))    return (quantity * 28.3495)  / servingSize
   if (LB_UNITS.has(iu)   && GRAM_UNITS.has(fu))    return (quantity * 453.592)  / servingSize
+  if (KG_UNITS.has(iu)   && GRAM_UNITS.has(fu))    return (quantity * 1000)     / servingSize
   if (CUP_UNITS.has(iu)  && ML_UNITS.has(fu))      return (quantity * 236.588)  / servingSize
   if (TBSP_UNITS.has(iu) && ML_UNITS.has(fu))      return (quantity * 14.7868)  / servingSize
   if (TSP_UNITS.has(iu)  && ML_UNITS.has(fu))      return (quantity * 4.92892)  / servingSize
   if (FL_OZ_UNITS.has(iu) && ML_UNITS.has(fu))     return (quantity * 29.5735)  / servingSize
+  if (L_UNITS.has(iu)    && ML_UNITS.has(fu))      return (quantity * 1000)     / servingSize
 
   return null
 }

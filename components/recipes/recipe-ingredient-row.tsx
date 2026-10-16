@@ -5,6 +5,8 @@ import { Trash2, CheckCircle2, AlertCircle, Link2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ExternalFoodResult } from '@/lib/nutrition/providers/types'
 import { computeIngredientFactor } from '@/lib/recipes/nutrition'
+import { parseQuantity, formatQuantity } from '@/lib/utils/fractions'
+import { KG_UNITS, L_UNITS } from '@/lib/nutrition/conversion/units'
 
 // Shape returned by /api/nutrition/search.
 // Library results: externalId = original provider ID (for dedup); internalId = DB UUID (for recipe FK).
@@ -30,22 +32,31 @@ export interface IngredientDraft {
   key: string
   foodItemId: string | null
   name: string
-  quantity: number
+  quantityText: string      // raw input string, e.g. "1½", "2/3", "100"
+  quantity: number          // parsed numeric value for calculations
   unit: string
   notes: string
+  isOptional: boolean
+  isToTaste: boolean
   snapshotCalories: number | null
   snapshotProteinG: number | null
   snapshotCarbG: number | null
   snapshotFatG: number | null
   // Client-only: retained so quantity/unit edits can recalculate nutrition.
   _baseFood?: BaseFoodData | null
+  // Cook's name (what the user typed) — separate from the nutrition reference name
+  _displayName?: string     // user's typed name — if set, shown instead of auto-resolved name
+  // Secondary label shown below name input after food is selected from search
+  _matchedFoodName?: string
 }
 
 // Returns the ingredient without client-only fields, ready for API submission.
 export function toApiIngredient(
   ing: IngredientDraft,
-): Omit<IngredientDraft, '_baseFood' | 'key'> & { key?: never; _baseFood?: never } {
-  const { _baseFood: _bf, key: _k, ...rest } = ing
+): Omit<IngredientDraft, '_baseFood' | 'key' | 'quantityText' | '_displayName' | '_matchedFoodName'> & {
+  key?: never; _baseFood?: never; quantityText?: never; _displayName?: never; _matchedFoodName?: never
+} {
+  const { _baseFood: _bf, key: _k, quantityText: _qt, _displayName: _dn, _matchedFoodName: _mfn, ...rest } = ing
   return rest
 }
 
@@ -65,59 +76,48 @@ export function hasValidNutrition(ing: Pick<IngredientDraft, 'snapshotCalories' 
   )
 }
 
-// ── Unit sets (mirrored from lib/recipes/nutrition.ts for client-side chip logic) ──
-// Keep in sync with lib/recipes/nutrition.ts
+// Units that are negligible — treated same as to-taste for nutrition purposes.
+const NEGLIGIBLE_UNITS = new Set(['pinch', 'dash'])
 
-const GRAM_UNITS      = new Set(['g', 'gram', 'grams', 'grm'])
-const ML_UNITS        = new Set(['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'])
-const OZ_UNITS        = new Set(['oz', 'ounce', 'ounces'])
-const LB_UNITS        = new Set(['lb', 'lbs', 'pound', 'pounds'])
-const CUP_UNITS       = new Set(['cup', 'cups'])
-const TBSP_UNITS      = new Set(['tbsp', 'tablespoon', 'tablespoons'])
-const TSP_UNITS       = new Set(['tsp', 'teaspoon', 'teaspoons'])
-const FL_OZ_UNITS     = new Set(['fl oz', 'floz', 'fl_oz', 'fluid oz', 'fluid ounce', 'fluid ounces'])
-const SERVING_ALIASES = new Set(['serving', 'servings', 'portion', 'portions'])
+// Grouped unit picker definition.
+const UNIT_GROUPS = [
+  {
+    label: 'Weight',
+    units: ['g', 'oz', 'lb', 'kg'],
+  },
+  {
+    label: 'Volume',
+    units: ['tsp', 'tbsp', 'cup', 'fl oz', 'ml', 'L'],
+  },
+  {
+    label: 'Count',
+    units: ['whole', 'piece', 'slice', 'clove', 'egg', 'tortilla', 'leaf', 'bunch'],
+  },
+  {
+    label: 'Small',
+    units: ['pinch', 'dash', 'scoop'],
+  },
+  {
+    label: 'Other',
+    units: ['serving'],
+  },
+] as const
 
-// Build the ordered list of unit options for a given food's base data.
-// Used to populate the unit dropdown.
+// Legacy export kept for backward compatibility — the component now always uses
+// the grouped picker, but external callers that imported getUnitOptions won't break.
 export function getUnitOptions(baseFood: BaseFoodData): { label: string; value: string }[] {
   const options: { label: string; value: string }[] = []
-  const fu = baseFood.servingUnit.toLowerCase().trim()
-
-  // Household countable unit is always the top option when available
   if (baseFood.householdUnit) {
     options.push({ label: baseFood.householdUnit, value: baseFood.householdUnit })
   }
-
-  // Standard units based on the food's metric serving type
-  if (GRAM_UNITS.has(fu) || OZ_UNITS.has(fu)) {
-    options.push(
-      { label: 'g', value: 'g' },
-      { label: 'oz', value: 'oz' },
-      { label: 'lb', value: 'lb' },
-    )
-  } else if (ML_UNITS.has(fu) || CUP_UNITS.has(fu) || TBSP_UNITS.has(fu) || TSP_UNITS.has(fu) || FL_OZ_UNITS.has(fu)) {
-    options.push(
-      { label: 'ml', value: 'ml' },
-      { label: 'cup', value: 'cup' },
-      { label: 'tbsp', value: 'tbsp' },
-      { label: 'tsp', value: 'tsp' },
-      { label: 'fl oz', value: 'fl oz' },
-    )
-  } else if (!SERVING_ALIASES.has(fu) && !baseFood.householdUnit) {
-    // Unknown / synthesized unit (e.g. "large egg" stored as servingUnit on reopen)
-    options.push({ label: baseFood.servingUnit, value: baseFood.servingUnit })
-  }
-
-  // Serving is always available
-  options.push({ label: 'serving', value: 'serving' })
-
-  // Deduplicate preserving order
+  UNIT_GROUPS.forEach((group) =>
+    group.units.forEach((u) => options.push({ label: u, value: u })),
+  )
   const seen = new Set<string>()
-  return options.filter(o => {
-    const key = o.value.toLowerCase()
-    if (seen.has(key)) return false
-    seen.add(key)
+  return options.filter((o) => {
+    const k = o.value.toLowerCase()
+    if (seen.has(k)) return false
+    seen.add(k)
     return true
   })
 }
@@ -165,6 +165,11 @@ function synthesizeBaseFood(ing: IngredientDraft): BaseFoodData | null {
   }
 }
 
+// Determine all units in UNIT_GROUPS as a flat set
+const ALL_GROUP_UNITS = new Set(
+  UNIT_GROUPS.flatMap((g) => g.units.map((u) => u.toLowerCase())),
+)
+
 export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIngredientRowProps) {
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState<FoodSearchResult[]>([])
@@ -175,7 +180,14 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
   const handleNameChange = useCallback(
     (name: string) => {
       // Clear match when the user edits the name manually
-      onChange({ ...ingredient, name, foodItemId: null, _baseFood: null, ...NULL_SNAPSHOTS })
+      onChange({
+        ...ingredient,
+        name,
+        foodItemId: null,
+        _baseFood: null,
+        _matchedFoodName: undefined,
+        ...NULL_SNAPSHOTS,
+      })
       if (name.trim().length >= 2) {
         if (searchRef.current) clearTimeout(searchRef.current)
         searchRef.current = setTimeout(async () => {
@@ -210,13 +222,16 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
         !isValidSnapshot(carbohydrateG) ||
         !isValidSnapshot(fatG)
       ) {
-        // Name and link food but mark nutrition as unavailable
+        // Link food but mark nutrition as unavailable
+        // Preserve the user's typed name — only use food.name if name field is empty
+        const preservedName = ingredient.name.trim() || (food.brand ? `${food.name} (${food.brand})` : food.name)
         onChange({
           ...ingredient,
-          name: food.brand ? `${food.name} (${food.brand})` : food.name,
+          name: preservedName,
           foodItemId: food.source === 'library' ? (food.internalId ?? food.externalId) : null,
           unit: food.servingUnit,
           _baseFood: null,
+          _matchedFoodName: food.brand ? `${food.name} (${food.brand})` : food.name,
           ...NULL_SNAPSHOTS,
         })
         setShowDropdown(false)
@@ -242,16 +257,24 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
         ? food.unitsPerServing
         : servingSize
 
+      // Preserve the user's typed name — only populate from food.name if name field is empty
+      const userTypedName = ingredient.name.trim()
+      const nameToUse = userTypedName || (food.brand ? `${food.name} (${food.brand})` : food.name)
+      const matchedFoodName = food.brand ? `${food.name} (${food.brand})` : food.name
+
       onChange({
         ...ingredient,
-        name: food.brand ? `${food.name} (${food.brand})` : food.name,
+        name: nameToUse,
         // Use internalId (DB UUID) for recipe ingredient FK when available.
         // Falls back to externalId for backward compatibility with cached results
         // that predate the internalId field.
         foodItemId: food.source === 'library' ? (food.internalId ?? food.externalId) : null,
         quantity: defaultQty,
+        quantityText: formatQuantity(defaultQty),
         unit: defaultUnit,
         _baseFood: baseFood,
+        _displayName: userTypedName || undefined,
+        _matchedFoodName: matchedFoodName,
         ...applyFactor(baseFood, 1),
       })
       setShowDropdown(false)
@@ -260,15 +283,16 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
     [ingredient, onChange],
   )
 
-  const handleQuantityChange = useCallback(
+  const handleQuantityTextChange = useCallback(
     (raw: string) => {
-      const qty = parseFloat(raw)
-      if (!Number.isFinite(qty) || qty <= 0) {
-        onChange({ ...ingredient, quantity: isNaN(qty) ? 0 : qty, ...NULL_SNAPSHOTS })
+      const parsed = parseQuantity(raw)
+      if (parsed === null) {
+        // Invalid input: update display text but keep the last valid quantity for calculations
+        onChange({ ...ingredient, quantityText: raw })
         return
       }
+      const qty = parsed
       // Use explicit _baseFood when available; otherwise synthesize from persisted snapshot.
-      // Store the resolved baseFood back so subsequent changes chain off the same reference.
       const baseFood = ingredient._baseFood ?? synthesizeBaseFood(ingredient)
       if (baseFood) {
         const factor = computeIngredientFactor(
@@ -276,16 +300,26 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
           baseFood.householdUnit, baseFood.unitsPerServing,
         )
         if (factor !== null) {
-          onChange({ ...ingredient, quantity: qty, _baseFood: baseFood, ...applyFactor(baseFood, factor) })
+          onChange({ ...ingredient, quantityText: raw, quantity: qty, _baseFood: baseFood, ...applyFactor(baseFood, factor) })
         } else {
-          onChange({ ...ingredient, quantity: qty, _baseFood: baseFood, ...NULL_SNAPSHOTS })
+          onChange({ ...ingredient, quantityText: raw, quantity: qty, _baseFood: baseFood, ...NULL_SNAPSHOTS })
         }
       } else {
-        onChange({ ...ingredient, quantity: qty })
+        onChange({ ...ingredient, quantityText: raw, quantity: qty })
       }
     },
     [ingredient, onChange],
   )
+
+  const handleQuantityBlur = useCallback(() => {
+    // On blur: if the current quantityText is valid, optionally normalize it
+    const parsed = parseQuantity(ingredient.quantityText)
+    if (parsed !== null) {
+      // Normalize: keep the user's text if it's already clean; don't force unicode fractions
+      // on them — just ensure we're in sync with the numeric value
+      onChange({ ...ingredient, quantity: parsed })
+    }
+  }, [ingredient, onChange])
 
   const handleUnitChange = useCallback(
     (unit: string) => {
@@ -323,11 +357,56 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
 
   const nutritionOk = hasValidNutrition(ingredient)
   const isLinked    = ingredient.foodItemId != null
+  const isNegligibleUnit = NEGLIGIBLE_UNITS.has(ingredient.unit.toLowerCase().trim())
+  const isToTaste   = ingredient.isToTaste || isNegligibleUnit
 
-  // Unit dropdown: show when _baseFood is available; fall back to text input.
+  // Build unit picker options
+  // Check if the current unit is in any group
+  const currentUnitLower = ingredient.unit.toLowerCase().trim()
+  const currentUnitInGroups = ALL_GROUP_UNITS.has(currentUnitLower)
+  // Check if household unit is in the groups
   const baseFood = ingredient._baseFood
-  const unitOptions = baseFood ? getUnitOptions(baseFood) : []
-  const hasUnitOptions = unitOptions.length > 0
+  const householdUnit = baseFood?.householdUnit
+  const householdUnitLower = householdUnit ? householdUnit.toLowerCase().trim() : null
+  const householdInGroups = householdUnitLower ? ALL_GROUP_UNITS.has(householdUnitLower) : false
+
+  // Build nutrition status message
+  function getNutritionStatus() {
+    if (isToTaste && !isNegligibleUnit) {
+      return { type: 'totaste' as const, message: 'To taste — not counted in nutrition total' }
+    }
+    if (isNegligibleUnit) {
+      return { type: 'negligible' as const, message: 'Negligible amount — not counted in nutrition total' }
+    }
+    if (!ingredient.name.trim()) {
+      return null
+    }
+    if (ingredient.isOptional && nutritionOk) {
+      return { type: 'optional' as const, message: 'Optional — included in nutrition unless excluded at log time' }
+    }
+    if (nutritionOk) {
+      return {
+        type: 'ok' as const,
+        message: `≈ ${Math.round(ingredient.snapshotCalories!)} cal · P ${ingredient.snapshotProteinG!.toFixed(1)}g · C ${ingredient.snapshotCarbG!.toFixed(1)}g · F ${ingredient.snapshotFatG!.toFixed(1)}g`,
+      }
+    }
+    if (ingredient._baseFood != null) {
+      // _baseFood is set but factor was null — unit is valid but needs server-side lookup
+      const iu = ingredient.unit.toLowerCase().trim()
+      const isKnownUnit = ALL_GROUP_UNITS.has(iu) || (KG_UNITS.has(iu)) || (L_UNITS.has(iu))
+      if (isKnownUnit) {
+        return { type: 'pending' as const, message: `Nutrition calculated on save — ${ingredient.unit} needs portion data` }
+      }
+      return { type: 'incompatible' as const, message: 'Unit not convertible for this food — try g, oz, or serving' }
+    }
+    if (ingredient.foodItemId != null) {
+      return { type: 'unavailable' as const, message: 'Nutrition unavailable for this food' }
+    }
+    // Has name but no food linked
+    return { type: 'unlinked' as const, message: 'No food linked — search above to add nutrition' }
+  }
+
+  const nutritionStatus = getNutritionStatus()
 
   return (
     <div data-ingredient-row className="relative rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 p-3">
@@ -366,6 +445,13 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
               ) : null}
             </span>
           </div>
+
+          {/* Matched food label (shown when food linked but user preserved their own name) */}
+          {ingredient._matchedFoodName && ingredient._matchedFoodName !== ingredient.name && (
+            <span className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 block">
+              Matched: {ingredient._matchedFoodName}
+            </span>
+          )}
 
           {/* Search dropdown */}
           {showDropdown && (
@@ -406,42 +492,108 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
         </button>
       </div>
 
-      {/* Row 2: Quantity + unit */}
-      <div className="mt-2 flex items-center gap-2">
-        <input
-          type="number"
-          min={0.1}
-          step={0.1}
-          value={ingredient.quantity || ''}
-          onChange={(e) => handleQuantityChange(e.target.value)}
-          placeholder="Qty"
-          className="w-16 shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:ring-2 focus:ring-zinc-400"
-        />
+      {/* Row 2: Quantity + unit + optional/to-taste toggles */}
+      {isToTaste ? (
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-sm text-zinc-400 italic">to taste</span>
+          <button
+            type="button"
+            onClick={() => onChange({ ...ingredient, isToTaste: false })}
+            className={cn(
+              'rounded-full px-2 py-0.5 text-xs border transition-colors',
+              'border-sky-400 bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400',
+            )}
+          >
+            To taste
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={ingredient.quantityText}
+            onChange={(e) => handleQuantityTextChange(e.target.value)}
+            onBlur={handleQuantityBlur}
+            placeholder="Qty"
+            className="w-20 shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white text-center focus:outline-none focus:ring-2 focus:ring-zinc-400"
+          />
 
-        {hasUnitOptions ? (
+          {/* Grouped unit picker */}
           <select
             value={ingredient.unit}
             onChange={(e) => handleUnitChange(e.target.value)}
-            className="rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-400"
+            className="min-w-[4.5rem] rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-400"
           >
-            {unitOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-            {/* Preserve the current unit if it isn't in our options list */}
-            {ingredient.unit && !unitOptions.some(o => o.value.toLowerCase() === ingredient.unit.toLowerCase()) && (
-              <option value={ingredient.unit}>{ingredient.unit}</option>
+            {/* Household unit first (if set and not already in groups) */}
+            {householdUnit && !householdInGroups && (
+              <optgroup label="Food unit">
+                <option value={householdUnit}>{householdUnit}</option>
+              </optgroup>
             )}
+
+            {/* Current unit first (if not in any group and not the household unit) */}
+            {ingredient.unit && !currentUnitInGroups && !(householdUnitLower && householdUnitLower === currentUnitLower) && (
+              <optgroup label="Current">
+                <option value={ingredient.unit}>{ingredient.unit}</option>
+              </optgroup>
+            )}
+
+            {UNIT_GROUPS.map((group) => {
+              // Check if household unit is in this group — if so, surface it first within the group
+              const groupUnits = [...group.units]
+              const groupHouseholdIdx = householdUnit
+                ? groupUnits.findIndex((u) => u.toLowerCase() === householdUnitLower)
+                : -1
+              let orderedUnits: string[]
+              if (groupHouseholdIdx > 0) {
+                orderedUnits = [
+                  groupUnits[groupHouseholdIdx],
+                  ...groupUnits.slice(0, groupHouseholdIdx),
+                  ...groupUnits.slice(groupHouseholdIdx + 1),
+                ]
+              } else {
+                orderedUnits = groupUnits
+              }
+              return (
+                <optgroup key={group.label} label={group.label}>
+                  {orderedUnits.map((u) => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </optgroup>
+              )
+            })}
           </select>
-        ) : (
-          <input
-            type="text"
-            value={ingredient.unit}
-            onChange={(e) => handleUnitChange(e.target.value)}
-            placeholder="Unit"
-            className="w-20 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-400"
-          />
-        )}
-      </div>
+
+          {/* Optional toggle */}
+          <button
+            type="button"
+            onClick={() => onChange({ ...ingredient, isOptional: !ingredient.isOptional })}
+            className={cn(
+              'rounded-full px-2 py-0.5 text-xs border transition-colors',
+              ingredient.isOptional
+                ? 'border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+                : 'border-zinc-200 text-zinc-400 dark:border-zinc-600',
+            )}
+          >
+            Optional
+          </button>
+
+          {/* To taste toggle */}
+          <button
+            type="button"
+            onClick={() => onChange({ ...ingredient, isToTaste: !ingredient.isToTaste })}
+            className={cn(
+              'rounded-full px-2 py-0.5 text-xs border transition-colors',
+              ingredient.isToTaste
+                ? 'border-sky-400 bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400'
+                : 'border-zinc-200 text-zinc-400 dark:border-zinc-600',
+            )}
+          >
+            To taste
+          </button>
+        </div>
+      )}
 
       {/* Notes */}
       <input
@@ -452,20 +604,22 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
         className="mt-2 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-xs text-zinc-500 dark:text-zinc-400 placeholder-zinc-300 focus:outline-none"
       />
 
-      {/* Nutrition preview */}
-      {nutritionOk ? (
-        <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-          ≈ {Math.round(ingredient.snapshotCalories!)} cal · P {ingredient.snapshotProteinG!.toFixed(1)}g · C {ingredient.snapshotCarbG!.toFixed(1)}g · F {ingredient.snapshotFatG!.toFixed(1)}g
+      {/* Nutrition status */}
+      {nutritionStatus && (
+        <p className={cn(
+          'mt-1.5 text-xs',
+          nutritionStatus.type === 'ok' && 'text-emerald-600 dark:text-emerald-400',
+          nutritionStatus.type === 'optional' && 'text-zinc-400',
+          nutritionStatus.type === 'pending' && 'text-amber-500 dark:text-amber-400',
+          nutritionStatus.type === 'incompatible' && 'text-amber-500 dark:text-amber-400',
+          nutritionStatus.type === 'unavailable' && 'text-zinc-400',
+          nutritionStatus.type === 'unlinked' && 'text-zinc-400',
+          nutritionStatus.type === 'totaste' && 'text-sky-500 dark:text-sky-400',
+          nutritionStatus.type === 'negligible' && 'text-zinc-400',
+        )}>
+          {nutritionStatus.message}
         </p>
-      ) : ingredient.name.trim() && ingredient._baseFood != null ? (
-        // _baseFood is set but factor was null — the selected unit is incompatible with this food's base unit.
-        // Show amber so the user knows why and can pick a compatible unit.
-        <p className="mt-1.5 text-xs text-amber-500 dark:text-amber-400">
-          Unit not convertible for this food — try g, oz, or serving
-        </p>
-      ) : ingredient.name.trim() && ingredient.foodItemId != null ? (
-        <p className="mt-1.5 text-xs text-zinc-400">Nutrition unavailable for this food</p>
-      ) : null}
+      )}
     </div>
   )
 }

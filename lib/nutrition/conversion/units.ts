@@ -7,7 +7,9 @@ export const SERVING_ALIASES = new Set(['serving', 'servings', 'portion', 'porti
 export const GRAM_UNITS      = new Set(['g', 'gram', 'grams', 'grm'])
 export const OZ_UNITS        = new Set(['oz', 'ounce', 'ounces'])
 export const LB_UNITS        = new Set(['lb', 'lbs', 'pound', 'pounds'])
+export const KG_UNITS        = new Set(['kg', 'kilogram', 'kilograms'])
 export const ML_UNITS        = new Set(['ml', 'milliliter', 'milliliters', 'millilitre', 'millilitres'])
+export const L_UNITS         = new Set(['l', 'liter', 'liters', 'litre', 'litres'])
 // Fluid ounces: volume unit for liquid-base (ml) foods only.
 // Distinct from OZ_UNITS (weight) — cross-dimension conversion (fl oz ↔ g) requires density.
 export const FL_OZ_UNITS     = new Set(['fl oz', 'floz', 'fl_oz', 'fluid oz', 'fluid ounce', 'fluid ounces'])
@@ -31,6 +33,7 @@ export function weightToGrams(quantity: number, unit: string): number | null {
   if (GRAM_UNITS.has(u)) return quantity
   if (OZ_UNITS.has(u))   return quantity * 28.3495
   if (LB_UNITS.has(u))   return quantity * 453.592
+  if (KG_UNITS.has(u))   return quantity * 1000
   return null
 }
 
@@ -38,6 +41,7 @@ export function weightToGrams(quantity: number, unit: string): number | null {
 export function volumeToMl(quantity: number, unit: string): number | null {
   const u = unit.toLowerCase().trim()
   if (ML_UNITS.has(u))     return quantity
+  if (L_UNITS.has(u))      return quantity * 1000
   if (CUP_UNITS.has(u))    return quantity * 236.588
   if (TBSP_UNITS.has(u))   return quantity * 14.7868
   if (TSP_UNITS.has(u))    return quantity * 4.92892

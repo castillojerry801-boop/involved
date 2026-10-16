@@ -114,6 +114,8 @@ describe('ingredientToDraft — form pre-population', () => {
     quantity: 200,
     unit: 'g',
     notes: 'skinless',
+    isOptional: false,
+    isToTaste: false,
     snapshotCalories: 330,
     snapshotProteinG: 62,
     snapshotCarbG: 0,

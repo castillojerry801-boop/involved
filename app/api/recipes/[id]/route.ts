@@ -53,6 +53,8 @@ const DETAIL_SELECT = {
       unit: true,
       sortOrder: true,
       notes: true,
+      isOptional: true,
+      isToTaste: true,
       snapshotCalories: true,
       snapshotProteinG: true,
       snapshotCarbG: true,
@@ -95,6 +97,8 @@ function serializeRecipe(r: Awaited<ReturnType<typeof fetchRecipe>>, signedUrl: 
     ingredients: r.ingredients.map((i) => ({
       ...i,
       quantity: Number(i.quantity),
+      isOptional: i.isOptional,
+      isToTaste: i.isToTaste,
       snapshotCalories: i.snapshotCalories ? Number(i.snapshotCalories) : null,
       snapshotProteinG: i.snapshotProteinG ? Number(i.snapshotProteinG) : null,
       snapshotCarbG: i.snapshotCarbG ? Number(i.snapshotCarbG) : null,
@@ -159,6 +163,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       unit: string
       sortOrder?: number
       notes?: string | null
+      isOptional?: boolean
+      isToTaste?: boolean
       snapshotCalories?: number | null
       snapshotProteinG?: number | null
       snapshotCarbG?: number | null
@@ -216,6 +222,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     unit: string
     sortOrder: number
     notes: string | null
+    isOptional: boolean
+    isToTaste: boolean
     snapshotCalories: number | null
     snapshotProteinG: number | null
     snapshotCarbG: number | null
@@ -332,6 +340,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           unit: ing.unit.trim(),
           sortOrder: ing.sortOrder ?? idx,
           notes: ing.notes ?? null,
+          isOptional: ing.isOptional ?? false,
+          isToTaste: ing.isToTaste ?? false,
           snapshotCalories,
           snapshotProteinG,
           snapshotCarbG,

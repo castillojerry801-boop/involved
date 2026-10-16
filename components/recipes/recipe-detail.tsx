@@ -39,6 +39,8 @@ export interface RecipeDetail {
     quantity: number
     unit: string
     notes: string | null
+    isOptional: boolean
+    isToTaste: boolean
     snapshotCalories: number | null
     snapshotProteinG: number | null
     snapshotCarbG: number | null
@@ -548,7 +550,19 @@ export function RecipeDetailView({ recipe, currentUserId, onBack, onDeleted, onE
                       : <Link2 className="size-4 shrink-0 mt-0.5 text-amber-500" />
                     : <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber-400" />}
                   <span className="text-zinc-700 dark:text-zinc-300">
-                    <span className="font-medium">{displayQty} {ing.unit}</span> {ing.name}
+                    {ing.isToTaste ? (
+                      <>
+                        <span className="font-medium">{ing.name}</span>
+                        <span className="text-zinc-400 ml-1">to taste</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-medium">{displayQty} {ing.unit}</span> {ing.name}
+                      </>
+                    )}
+                    {ing.isOptional && (
+                      <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">(optional)</span>
+                    )}
                     {ing.notes && <span className="text-zinc-400 ml-1">({ing.notes})</span>}
                   </span>
                 </li>
