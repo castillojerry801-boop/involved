@@ -491,7 +491,9 @@ function resolveFromServingText(
   iu: string,
   notes: string[],
 ): ConversionResult | null {
-  const servingText = food.householdServingText.trim()
+  // Strip trailing parenthetical qualifiers like "(yield after cooking)" or "(approx 4\" dia)".
+  // These appear in FatSecret measurement_description fields and make the last word unrecognizable.
+  const servingText = food.householdServingText.trim().replace(/\s*\([^)]*\)/g, '').trim()
 
   // Parse leading "N word" pattern (integer or decimal, including fractions like 1/4)
   const match = servingText.match(/^(\d+(?:[./]\d+)?)\s+(.+)$/)
@@ -543,13 +545,17 @@ function resolveFromServingText(
     (FOOD_COUNT_NOUNS.has(normWord) || FOOD_COUNT_NOUNS.has(servingWordRaw)) &&
     (isPieceUnit || SLICE_UNITS.has(normIu))
 
-  // Match condition 4 (multi-word): last word is a food count noun, and either:
+  // Match condition 4 (multi-word): last word is a food count noun or slice unit, and either:
   //   a) last word matches input unit (e.g. "2 flour tortillas" + iu='tortilla')
   //   b) input is a generic count unit (piece/each) + last word is any food noun
   //      (e.g. "1 large egg" + iu='piece')
+  //   c) last word is a slice unit and input is also a slice unit
+  //      (e.g. "thin slice" + iu='strip' — both in SLICE_UNITS)
   const lastWordMatchesIu = normLastWord === normIu || lastWord === iu.toLowerCase().trim()
+  const lastWordIsSliceUnit = SLICE_UNITS.has(lastWord) || SLICE_UNITS.has(normLastWord)
   const isMultiWordFoodNoun = words.length > 1 && (
-    FOOD_COUNT_NOUNS.has(normLastWord) || FOOD_COUNT_NOUNS.has(lastWord)
+    FOOD_COUNT_NOUNS.has(normLastWord) || FOOD_COUNT_NOUNS.has(lastWord) ||
+    lastWordIsSliceUnit
   ) && (lastWordMatchesIu || isPieceUnit || SLICE_UNITS.has(normIu))
 
   // Match condition 5 (multi-word with "of"): first word of phrase matches input unit
@@ -582,13 +588,16 @@ function resolveFromServingText(
     matchReason = `food noun "${servingWordRaw}" matched to generic count unit "${iu}"`
   }
 
-  notes.push(`Resolved via serving description: "${servingText}" (${matchReason})`)
+  // Use the original (unstripped) text in notes and portionDescription so that
+  // preparation context like "(yield after cooking)" is visible to callers and Coach V.
+  const originalText = food.householdServingText.trim()
+  notes.push(`Resolved via serving description: "${originalText}" (${matchReason})`)
 
   return {
     grams,
     factor,
     conversionSource: 'manufacturer_declared',
-    portionDescription: `${quantity} ${iu} via "${servingText}"`,
+    portionDescription: `${quantity} ${iu} via "${originalText}"`,
     confidence: 'medium',
     notes,
   }

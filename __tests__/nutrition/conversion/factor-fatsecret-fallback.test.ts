@@ -431,4 +431,91 @@ describe('Step 5b: FatSecret serving description fallback', () => {
       expect(result.errorCode).toBe('portion_not_found')
     })
   })
+
+  describe('parenthetical qualifiers in FatSecret serving descriptions', () => {
+    // Regression: FatSecret detail for bacon 1517 returns
+    // measurement_description = "thin slice (yield after cooking)" (5g).
+    // The parenthetical made lastWord = "cooking)" which is not in any unit set,
+    // causing all match conditions to fail and bacon to always be unresolved.
+    const FATSECRET_BACON_PARENTHETICAL = {
+      id: 'fs-1517-detail',
+      servingSize: asDecimal(5),
+      servingUnit: 'g',
+      calories: asDecimal(27),
+      proteinG: asDecimal(2.1),
+      carbohydrateG: asDecimal(0.0),
+      fatG: asDecimal(2.1),
+      householdUnit: null,
+      unitsPerServing: null,
+      householdServingText: '1 thin slice (yield after cooking)',
+      sourceProvider: 'fatsecret',
+      externalId: '1517',
+      fdcDataType: null,
+    }
+
+    // FatSecret detail for tortilla 3742 returns "1 tortilla (approx 4" dia)" (13g).
+    const FATSECRET_TORTILLA_PARENTHETICAL = {
+      id: 'fs-3742-detail',
+      servingSize: asDecimal(13),
+      servingUnit: 'g',
+      calories: asDecimal(40),
+      proteinG: asDecimal(1.0),
+      carbohydrateG: asDecimal(7.5),
+      fatG: asDecimal(0.8),
+      householdUnit: null,
+      unitsPerServing: null,
+      householdServingText: '1 tortilla (approx 4" dia)',
+      sourceProvider: 'fatsecret',
+      externalId: '3742',
+      fdcDataType: null,
+    }
+
+    it('"1 thin slice (yield after cooking)" with strip → resolves factor = 3 for 3 strips', async () => {
+      const result = await resolveIngredientFactor(FATSECRET_BACON_PARENTHETICAL, 3, 'strip')
+      expect(isConversionError(result)).toBe(false)
+      if (isConversionError(result)) return
+      expect(result.factor).toBeCloseTo(3, 3)
+      expect(result.grams).toBeCloseTo(15, 1)
+    })
+
+    it('"1 thin slice (yield after cooking)" with slice → resolves factor = 3 for 3 slices', async () => {
+      const result = await resolveIngredientFactor(FATSECRET_BACON_PARENTHETICAL, 3, 'slice')
+      expect(isConversionError(result)).toBe(false)
+      if (isConversionError(result)) return
+      expect(result.factor).toBeCloseTo(3, 3)
+    })
+
+    it('"1 thin slice (yield after cooking)" with piece → resolves factor = 1 for 1 piece', async () => {
+      const result = await resolveIngredientFactor(FATSECRET_BACON_PARENTHETICAL, 1, 'piece')
+      expect(isConversionError(result)).toBe(false)
+      if (isConversionError(result)) return
+      expect(result.factor).toBeCloseTo(1, 3)
+    })
+
+    it('"1 tortilla (approx 4\\" dia)" with piece → resolves factor = 1 for 1 tortilla', async () => {
+      const result = await resolveIngredientFactor(FATSECRET_TORTILLA_PARENTHETICAL, 1, 'piece')
+      expect(isConversionError(result)).toBe(false)
+      if (isConversionError(result)) return
+      expect(result.factor).toBeCloseTo(1, 3)
+      expect(result.grams).toBeCloseTo(13, 1)
+    })
+
+    it('"1 tortilla (approx 4\\" dia)" with tortilla → resolves factor = 1', async () => {
+      const result = await resolveIngredientFactor(FATSECRET_TORTILLA_PARENTHETICAL, 1, 'tortilla')
+      expect(isConversionError(result)).toBe(false)
+      if (isConversionError(result)) return
+      expect(result.factor).toBeCloseTo(1, 3)
+    })
+
+    it('"1 serving (cooked)" must NOT resolve — "serving" is blacklisted even with parenthetical', async () => {
+      const food = {
+        ...FATSECRET_BACON_PARENTHETICAL,
+        householdServingText: '1 serving (cooked)',
+      }
+      const result = await resolveIngredientFactor(food, 1, 'piece')
+      expect(isConversionError(result)).toBe(true)
+      if (!isConversionError(result)) return
+      expect(result.errorCode).toBe('portion_not_found')
+    })
+  })
 })
