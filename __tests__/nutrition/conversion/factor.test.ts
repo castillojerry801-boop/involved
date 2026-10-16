@@ -677,3 +677,511 @@ describe('tri-taco compound test', () => {
     expect(perTaco).toBeCloseTo(283.5, 0)
   })
 })
+
+// ── Broadened count-unit matching (step 7 USDA fetch fallback) ────────────────
+// Regression tests for production failures:
+//   "3 piece eggs"   → USDA egg has measureUnit.name='egg'  → stored as unit='egg'
+//   "3 slice bacon"  → USDA bacon has measureUnit.name='strip' → stored as unit='strip'
+//   "1 piece tortilla" → USDA tortilla has measureUnit.name='tortilla' → stored as unit='tortilla'
+// When user types 'piece' or 'slice', the exact match fails (unit='piece' != 'egg'),
+// but the broadened fallback must pick up any non-weight/non-volume USDA portion.
+
+describe('broadened count-unit USDA fetch fallback (step 7)', () => {
+  it('3 piece eggs: USDA returns unit=egg portion (50g each) → factor=1.5, grams=150', async () => {
+    vi.mocked(lookupPortions).mockResolvedValue([])  // exact 'piece' match fails
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([
+      {
+        id: 'up1',
+        portionDescription: '1 large',
+        quantity: 1,
+        unit: 'egg',  // USDA measureUnit.name for eggs is 'egg', not 'piece'
+        gramWeight: 50,
+        fdcPortionId: 1001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+      },
+    ])
+
+    const food = makeFood({
+      servingSize: 100,
+      servingUnit: 'g',
+      calories: 155,
+      proteinG: 13,
+      carbohydrateG: 1.1,
+      fatG: 11,
+      sourceProvider: 'usda_fooddata',
+      externalId: '748967',
+      fdcDataType: 'Foundation',
+      name: 'Egg, whole, raw, fresh',
+    })
+
+    const result = await resolveIngredientFactor(food, 3, 'piece')
+    // Must resolve, not return portion_not_found
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+
+    // 3 piece × 50g/egg = 150g; factor = 150 / 100 = 1.5
+    expect(result.grams).toBeCloseTo(150, 1)
+    expect(result.factor).toBeCloseTo(1.5, 3)
+    expect(result.conversionSource).toBe('usda_measured')
+  })
+
+  it('3 slice bacon: USDA returns unit=strip portion (12g each) → factor=0.36, grams=36', async () => {
+    vi.mocked(lookupPortions).mockResolvedValue([])  // exact 'slice' match vs 'strip' fails
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([
+      {
+        id: 'up2',
+        portionDescription: '1 strip, cooked',
+        quantity: 1,
+        unit: 'strip',  // USDA stores bacon as 'strip'
+        gramWeight: 12,
+        fdcPortionId: 2001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+      },
+    ])
+
+    const food = makeFood({
+      servingSize: 100,
+      servingUnit: 'g',
+      calories: 541,
+      proteinG: 37,
+      carbohydrateG: 1.4,
+      fatG: 42,
+      sourceProvider: 'usda_fooddata',
+      externalId: '168262',
+      fdcDataType: 'SR Legacy',
+      name: 'Pork, cured, bacon, cooked, pan-fried',
+    })
+
+    // 'slice' is now in SLICE_UNITS, and 'strip' is also in SLICE_UNITS.
+    // The exact match for 'slice' still fails because the stored unit is 'strip' (not 'slice').
+    // The broadened fallback kicks in because 'strip' is non-weight/non-volume.
+    const result = await resolveIngredientFactor(food, 3, 'slice')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+
+    // 3 slice × 12g/strip = 36g; factor = 36 / 100 = 0.36
+    expect(result.grams).toBeCloseTo(36, 1)
+    expect(result.factor).toBeCloseTo(0.36, 3)
+  })
+
+  it('1 piece flour tortilla: USDA returns unit=tortilla (45g) → factor=0.45', async () => {
+    vi.mocked(lookupPortions).mockResolvedValue([])
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([
+      {
+        id: 'up3',
+        portionDescription: '1 tortilla (approx 10" dia)',
+        quantity: 1,
+        unit: 'tortilla',
+        gramWeight: 45,
+        fdcPortionId: 3001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+      },
+    ])
+
+    const food = makeFood({
+      servingSize: 100,
+      servingUnit: 'g',
+      calories: 290,
+      proteinG: 8,
+      carbohydrateG: 47,
+      fatG: 7,
+      sourceProvider: 'usda_fooddata',
+      externalId: '168409',
+      fdcDataType: 'SR Legacy',
+      name: 'Tortillas, ready-to-bake or fry, flour',
+    })
+
+    const result = await resolveIngredientFactor(food, 1, 'piece')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+
+    expect(result.grams).toBeCloseTo(45, 1)
+    expect(result.factor).toBeCloseTo(0.45, 3)
+  })
+
+  it('unit=piece on non-USDA food with no portions → ConversionError(portion_not_found)', async () => {
+    // Non-USDA food: step 7 never fires, no broadened fallback. Must error.
+    vi.mocked(lookupPortions).mockResolvedValue([])
+
+    const food = makeFood({
+      sourceProvider: 'fatsecret',
+      externalId: 'fs_egg123',
+      fdcDataType: null,
+      servingSize: 50,
+      servingUnit: 'g',
+    })
+
+    const result = await resolveIngredientFactor(food, 3, 'piece')
+    expect(isConversionError(result)).toBe(true)
+    if (!isConversionError(result)) return
+
+    expect(result.errorCode).toBe('portion_not_found')
+  })
+
+  it('step 7 broadened fallback — divergent count portions (breast 140g vs drumstick 52g) → ConversionError(unit_unknown) listing options', async () => {
+    vi.mocked(lookupPortions).mockResolvedValue([])
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([
+      {
+        id: 'up-chx-breast',
+        portionDescription: '1 breast',
+        quantity: 1,
+        unit: 'breast',
+        gramWeight: 140,
+        fdcPortionId: 11001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+      },
+      {
+        id: 'up-chx-drum',
+        portionDescription: '1 drumstick',
+        quantity: 1,
+        unit: 'drumstick',
+        gramWeight: 52,
+        fdcPortionId: 11002,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+      },
+    ])
+
+    const food = makeFood({
+      servingSize: 100,
+      servingUnit: 'g',
+      calories: 165,
+      sourceProvider: 'usda_fooddata',
+      externalId: '331960',
+      fdcDataType: 'Foundation',
+      name: 'Chicken, broilers or fryers, separable lean only, raw',
+    })
+
+    // ratio = 140/52 ≈ 2.69 → divergent → must NOT silently pick breast
+    const result = await resolveIngredientFactor(food, 1, 'piece')
+    expect(isConversionError(result)).toBe(true)
+    if (!isConversionError(result)) return
+
+    expect(result.errorCode).toBe('unit_unknown')
+    expect(result.message).toMatch(/breast/i)
+    expect(result.message).toMatch(/drumstick/i)
+  })
+
+  it('step 7 broadened fallback — similar count portions (large 50g, extra-large 56g, ratio 1.12) → resolves with note', async () => {
+    vi.mocked(lookupPortions).mockResolvedValue([])
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([
+      {
+        id: 'up-egg-lg',
+        portionDescription: '1 large',
+        quantity: 1,
+        unit: 'egg',
+        gramWeight: 50,
+        fdcPortionId: 12001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+      },
+      {
+        id: 'up-egg-xl',
+        portionDescription: '1 extra large',
+        quantity: 1,
+        unit: 'egg',
+        gramWeight: 56,
+        fdcPortionId: 12002,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+      },
+    ])
+
+    const food = makeFood({
+      servingSize: 100,
+      servingUnit: 'g',
+      calories: 155,
+      sourceProvider: 'usda_fooddata',
+      externalId: '748967',
+      fdcDataType: 'Foundation',
+      name: 'Egg, whole, raw, fresh',
+    })
+
+    // ratio = 56/50 = 1.12 → within 30% → resolves defensibly
+    const result = await resolveIngredientFactor(food, 3, 'piece')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+
+    // First portion (large, 50g): 3 × 50g = 150g, factor = 1.5
+    expect(result.grams).toBeCloseTo(150, 1)
+    expect(result.factor).toBeCloseTo(1.5, 3)
+    expect(result.notes.some(n => /Using.*1 large.*count portion/i.test(n))).toBe(true)
+  })
+
+  it('USDA fetch returns only weight/volume portions → portion_not_found (no false broad match)', async () => {
+    // USDA fetch succeeds but all portions are gram-weight-based.
+    // The broadened fallback must NOT match a gram-weight portion for a 'piece' query.
+    vi.mocked(lookupPortions).mockResolvedValue([])
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([
+      {
+        id: 'up4',
+        portionDescription: '100g',
+        quantity: 100,
+        unit: 'g',  // weight unit — must NOT be used for 'piece' query
+        gramWeight: 100,
+        fdcPortionId: 4001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+      },
+    ])
+
+    const food = makeFood({
+      servingSize: 100,
+      servingUnit: 'g',
+      sourceProvider: 'usda_fooddata',
+      externalId: '123456',
+      fdcDataType: 'Foundation',
+    })
+
+    const result = await resolveIngredientFactor(food, 1, 'piece')
+    expect(isConversionError(result)).toBe(true)
+    if (!isConversionError(result)) return
+
+    // Should be portion_not_found, NOT a false match on the 'g' portion
+    expect(result.errorCode).toBe('portion_not_found')
+  })
+})
+
+// ── Broadened count-unit DB lookup fallback (step 6b) ────────────────────────
+// After the first USDA fetch, portions are stored in DB with food-specific unit
+// names. On subsequent requests, step 6 (exact unit lookup) still fails because
+// unit='egg' != 'piece'. Step 6b (broadened DB lookup) must pick them up.
+
+describe('broadened count-unit DB lookup fallback (step 6b)', () => {
+  it('3 piece eggs: DB already has unit=egg portions → resolves via step 6b', async () => {
+    // Simulate: USDA fetch already ran, DB has unit='egg' portions.
+    // lookupPortions returns [] (exact 'piece' match fails).
+    // prisma.foodItemPortion.findMany returns the 'egg' portions.
+    vi.mocked(lookupPortions).mockResolvedValue([])
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([]) // USDA won't re-fetch
+
+    const { prisma } = await import('@/lib/prisma')
+    vi.mocked(prisma.foodItemPortion.findMany).mockResolvedValue([
+      {
+        id: 'db1',
+        foodItemId: 'food-id-123',
+        portionDescription: '1 large',
+        quantity: 1 as unknown as import('@prisma/client/runtime/library').Decimal,
+        unit: 'egg',
+        gramWeight: 50 as unknown as import('@prisma/client/runtime/library').Decimal,
+        fdcPortionId: 5001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.foodItemPortion.findMany>>)
+
+    const food = makeFood({
+      servingSize: 100,
+      servingUnit: 'g',
+      sourceProvider: 'usda_fooddata',
+      externalId: '748967',
+      fdcDataType: 'Foundation',
+      name: 'Egg, whole, raw, fresh',
+    })
+
+    const result = await resolveIngredientFactor(food, 3, 'piece')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+
+    expect(result.grams).toBeCloseTo(150, 1)
+    expect(result.factor).toBeCloseTo(1.5, 3)
+  })
+
+  // ── Step 6b safety: gramWeight divergence check ─────────────────────────────
+
+  it('step 6b single count portion (bacon strip 12g) → resolves, no ambiguity', async () => {
+    vi.mocked(lookupPortions).mockResolvedValue([])
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([])
+
+    const { prisma } = await import('@/lib/prisma')
+    vi.mocked(prisma.foodItemPortion.findMany).mockResolvedValue([
+      {
+        id: 'db-bacon1',
+        foodItemId: 'food-id-123',
+        portionDescription: '1 strip, cooked',
+        quantity: 1 as unknown as import('@prisma/client/runtime/library').Decimal,
+        unit: 'strip',
+        gramWeight: 12 as unknown as import('@prisma/client/runtime/library').Decimal,
+        fdcPortionId: 6001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.foodItemPortion.findMany>>)
+
+    const food = makeFood({ servingSize: 100, servingUnit: 'g', calories: 541 })
+    const result = await resolveIngredientFactor(food, 3, 'slice')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+
+    // 3 slices × 12g = 36g; factor = 36/100 = 0.36
+    expect(result.grams).toBeCloseTo(36, 1)
+    expect(result.factor).toBeCloseTo(0.36, 3)
+  })
+
+  it('step 6b multiple similar count portions (large egg 50g, extra-large egg 56g, ratio 1.12) → resolves with first, adds note', async () => {
+    vi.mocked(lookupPortions).mockResolvedValue([])
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([])
+
+    const { prisma } = await import('@/lib/prisma')
+    vi.mocked(prisma.foodItemPortion.findMany).mockResolvedValue([
+      {
+        id: 'db-egg-lg',
+        foodItemId: 'food-id-123',
+        portionDescription: '1 large',
+        quantity: 1 as unknown as import('@prisma/client/runtime/library').Decimal,
+        unit: 'egg',
+        gramWeight: 50 as unknown as import('@prisma/client/runtime/library').Decimal,
+        fdcPortionId: 7001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'db-egg-xl',
+        foodItemId: 'food-id-123',
+        portionDescription: '1 extra large',
+        quantity: 1 as unknown as import('@prisma/client/runtime/library').Decimal,
+        unit: 'egg',
+        gramWeight: 56 as unknown as import('@prisma/client/runtime/library').Decimal,
+        fdcPortionId: 7002,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.foodItemPortion.findMany>>)
+
+    // ratio = 56/50 = 1.12 → within 30% → should resolve, not error
+    const food = makeFood({ servingSize: 100, servingUnit: 'g', calories: 155 })
+    const result = await resolveIngredientFactor(food, 3, 'piece')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+
+    // Uses first (large, 50g): 3 × 50g = 150g, factor = 1.5
+    expect(result.grams).toBeCloseTo(150, 1)
+    expect(result.factor).toBeCloseTo(1.5, 3)
+    // Note must be added
+    expect(result.notes.some(n => /Using.*1 large.*count portion/i.test(n))).toBe(true)
+  })
+
+  it('step 6b divergent count portions — chicken breast(140g) vs drumstick(52g) → ConversionError(unit_unknown) listing options', async () => {
+    vi.mocked(lookupPortions).mockResolvedValue([])
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([])
+
+    const { prisma } = await import('@/lib/prisma')
+    vi.mocked(prisma.foodItemPortion.findMany).mockResolvedValue([
+      {
+        id: 'db-chx-breast',
+        foodItemId: 'food-id-123',
+        portionDescription: '1 breast',
+        quantity: 1 as unknown as import('@prisma/client/runtime/library').Decimal,
+        unit: 'breast',
+        gramWeight: 140 as unknown as import('@prisma/client/runtime/library').Decimal,
+        fdcPortionId: 8001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'db-chx-drum',
+        foodItemId: 'food-id-123',
+        portionDescription: '1 drumstick',
+        quantity: 1 as unknown as import('@prisma/client/runtime/library').Decimal,
+        unit: 'drumstick',
+        gramWeight: 52 as unknown as import('@prisma/client/runtime/library').Decimal,
+        fdcPortionId: 8002,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.foodItemPortion.findMany>>)
+
+    // ratio = 140/52 ≈ 2.69 → divergent → must return ConversionError, NOT resolve to breast
+    const food = makeFood({ servingSize: 100, servingUnit: 'g', calories: 165 })
+    const result = await resolveIngredientFactor(food, 1, 'piece')
+    expect(isConversionError(result)).toBe(true)
+    if (!isConversionError(result)) return
+
+    expect(result.errorCode).toBe('unit_unknown')
+    expect(result.message).toMatch(/breast/i)
+    expect(result.message).toMatch(/drumstick/i)
+    expect(result.suggestions).toBeDefined()
+    expect(result.suggestions!.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('step 6b no count portions found → portion_not_found (no crash)', async () => {
+    vi.mocked(lookupPortions).mockResolvedValue([])
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([])
+
+    const { prisma } = await import('@/lib/prisma')
+    // DB has only gram-weight portions
+    vi.mocked(prisma.foodItemPortion.findMany).mockResolvedValue([
+      {
+        id: 'db-grams',
+        foodItemId: 'food-id-123',
+        portionDescription: '100g',
+        quantity: 100 as unknown as import('@prisma/client/runtime/library').Decimal,
+        unit: 'g',
+        gramWeight: 100 as unknown as import('@prisma/client/runtime/library').Decimal,
+        fdcPortionId: 9001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.foodItemPortion.findMany>>)
+
+    const food = makeFood({ servingSize: 100, servingUnit: 'g' })
+    const result = await resolveIngredientFactor(food, 1, 'piece')
+    expect(isConversionError(result)).toBe(true)
+    if (!isConversionError(result)) return
+
+    expect(result.errorCode).toBe('portion_not_found')
+  })
+
+  it('per-100g arithmetic: servingSize=100, servingUnit=g, calories=143; 3 eggs at 50g each → factor=1.5, contribution=214.5', async () => {
+    vi.mocked(lookupPortions).mockResolvedValue([])
+    vi.mocked(fetchAndStoreUsdaPortions).mockResolvedValue([])
+
+    const { prisma } = await import('@/lib/prisma')
+    vi.mocked(prisma.foodItemPortion.findMany).mockResolvedValue([
+      {
+        id: 'db-egg-per100',
+        foodItemId: 'food-id-123',
+        portionDescription: '1 large',
+        quantity: 1 as unknown as import('@prisma/client/runtime/library').Decimal,
+        unit: 'egg',
+        gramWeight: 50 as unknown as import('@prisma/client/runtime/library').Decimal,
+        fdcPortionId: 10001,
+        sourceConfidence: 'usda_measured',
+        preparationState: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ] as unknown as Awaited<ReturnType<typeof prisma.foodItemPortion.findMany>>)
+
+    // USDA egg: 143 cal/100g, servingSize=100, servingUnit='g'
+    const food = makeFood({ servingSize: 100, servingUnit: 'g', calories: 143 })
+    const result = await resolveIngredientFactor(food, 3, 'piece')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+
+    // 3 eggs × 50g/egg = 150g; factor = 150/100 = 1.5
+    expect(result.factor).toBeCloseTo(1.5, 3)
+    expect(result.grams).toBeCloseTo(150, 1)
+    // calories = 143 × 1.5 = 214.5
+    const calories = 143 * result.factor
+    expect(calories).toBeCloseTo(214.5, 0)
+  })
+})

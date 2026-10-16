@@ -343,6 +343,14 @@ export async function calculateNutrition(
     assumptions.push('Macros based on raw/uncooked weight where weight units were provided. Cooking changes the final result.')
   }
 
+  // Check matched food names for untrimmed references (lean and fat, or untrimmed)
+  for (const r of resolved) {
+    if (/lean and fat|untrimmed/i.test(r.matchedFoodName)) {
+      assumptions.push(`"${r.matchedFoodName}" is an untrimmed reference — actual fat may be lower if fat was trimmed before cooking.`)
+      break // one note is enough for the batch
+    }
+  }
+
   return {
     ingredients: ingredientResults,
     totals,

@@ -19,6 +19,7 @@ import {
   CLOVE_UNITS,
   SLICE_UNITS,
   PIECE_UNITS,
+  FOOD_COUNT_NOUNS,
   weightToGrams,
   volumeToMl,
   normalizeUnit,
@@ -57,6 +58,7 @@ const ALL_KNOWN_UNITS = new Set([
   ...CLOVE_UNITS,
   ...SLICE_UNITS,
   ...PIECE_UNITS,
+  ...FOOD_COUNT_NOUNS,
 ])
 
 function round3(n: number): number {
@@ -201,6 +203,74 @@ export async function resolveIngredientFactor(
     if (result) return result
   }
 
+  // ── Step 6b: Broadened count-unit DB lookup ──────────────────────────────────
+  // When iu is a generic count unit ('piece', 'slice', or a food-specific noun)
+  // and the exact-match DB lookup returned nothing, try fetching ALL portions for
+  // this food and use any non-weight/non-volume portion. This handles the case
+  // where portions are already stored in DB with food-specific unit names (e.g.
+  // 'egg', 'strip', 'tortilla') from a prior USDA fetch but the user typed 'piece'
+  // or 'slice'. Skipped when food.portions is pre-fetched (handled inline above).
+  //
+  // Safety: if multiple semantically distinct count portions exist (gramWeight
+  // spread > 30%), return ConversionError(unit_unknown) listing the options
+  // rather than silently picking the first.
+  const _isCountUnit6 = PIECE_UNITS.has(iu) || FOOD_COUNT_NOUNS.has(iu)
+  const _isSliceUnit6 = SLICE_UNITS.has(iu)
+  if ((_isCountUnit6 || _isSliceUnit6) && food.portions === undefined) {
+    const allPortions = await prisma.foodItemPortion.findMany({ where: { foodItemId: food.id } })
+    if (allPortions.length > 0) {
+      const weightUnitSet6 = new Set([...GRAM_UNITS, ...OZ_UNITS, ...LB_UNITS, ...KG_UNITS])
+      const volumeUnitSet6 = new Set([...ML_UNITS, ...L_UNITS, ...CUP_UNITS, ...TBSP_UNITS, ...TSP_UNITS, ...FL_OZ_UNITS])
+      const countPortions6 = allPortions.filter((p) => {
+        const pu = normalizeUnit(p.unit)
+        return !weightUnitSet6.has(pu) && !volumeUnitSet6.has(pu) && !SERVING_ALIASES.has(pu)
+      })
+      if (countPortions6.length > 0) {
+        const mapped6: StoredPortion[] = countPortions6.map((p) => ({
+          id: p.id,
+          portionDescription: p.portionDescription,
+          quantity: Number(p.quantity),
+          unit: p.unit,
+          gramWeight: Number(p.gramWeight),
+          fdcPortionId: p.fdcPortionId,
+          sourceConfidence: p.sourceConfidence,
+          preparationState: p.preparationState,
+        }))
+        const prepFiltered6 = opts?.preparationState
+          ? mapped6.filter((p) => p.preparationState === opts.preparationState)
+          : mapped6
+        const candidates6 = prepFiltered6.length > 0 ? prepFiltered6 : mapped6
+
+        // Safety check: if multiple count portions have divergent gramWeights (> 30%
+        // spread), they are semantically distinct and we must not silently pick one.
+        if (candidates6.length > 1) {
+          const gramWeights6 = candidates6.map((p) => p.gramWeight / (p.quantity || 1))
+          const maxGw6 = Math.max(...gramWeights6)
+          const minGw6 = Math.min(...gramWeights6)
+          if (maxGw6 / minGw6 > 1.30) {
+            const options6 = candidates6.map((p) => `"${p.portionDescription}" (${p.gramWeight}g)`).join(', ')
+            return {
+              kind: 'conversion_error',
+              errorCode: 'unit_unknown',
+              message: `Multiple different count portions found for "${unit}": ${options6}. Specify which you mean.`,
+              suggestions: candidates6.map((p) => p.portionDescription),
+            }
+          }
+          // All similar — use the first, add a note
+          notes.push(`Using "${candidates6[0].portionDescription}" as count portion`)
+        }
+
+        const result6 = resolveFromPortions(food, quantity, iu, candidates6, opts?.preparationState, notes)
+        if (result6) {
+          if (candidates6.length === 1) {
+            notes.push(`Matched "${unit}" to stored portion "${countPortions6[0].unit}"`)
+          }
+          return result6
+        }
+      }
+    }
+  }
+
   // ── Step 7: USDA Foundation/SR Legacy — fetch portions then retry ────────────
   if (
     food.sourceProvider === 'usda_fooddata' &&
@@ -220,6 +290,60 @@ export async function resolveIngredientFactor(
         : matching
       const result = resolveFromPortions(food, quantity, iu, filtered.length > 0 ? filtered : matching, opts?.preparationState, notes)
       if (result) return result
+
+      // ── Broadened count-unit fallback ──────────────────────────────────────
+      // USDA stores household portions with food-specific unit names (e.g. "egg",
+      // "tortilla", "strip") rather than the generic "piece" or "slice" the user
+      // types. When iu is a count unit (piece/pieces or a FOOD_COUNT_NOUNS member)
+      // or a slice unit, fall back to any non-weight/non-volume USDA portion.
+      // This covers: "3 piece eggs" → USDA egg has unit="egg" → use it.
+      //              "3 slice bacon" → USDA bacon has unit="strip" → use it.
+      //              "1 piece tortilla" → USDA tortilla has unit="tortilla" → use it.
+      //
+      // Safety: if multiple semantically distinct count portions exist (gramWeight
+      // spread > 30%), return ConversionError(unit_unknown) listing the options.
+      const isCountUnit = PIECE_UNITS.has(iu) || FOOD_COUNT_NOUNS.has(iu)
+      const isSliceUnit = SLICE_UNITS.has(iu)
+      if (isCountUnit || isSliceUnit) {
+        const weightUnitSet = new Set([...GRAM_UNITS, ...OZ_UNITS, ...LB_UNITS, ...KG_UNITS])
+        const volumeUnitSet = new Set([...ML_UNITS, ...L_UNITS, ...CUP_UNITS, ...TBSP_UNITS, ...TSP_UNITS, ...FL_OZ_UNITS])
+        const countPortions = fetched.filter((p) => {
+          const pu = normalizeUnit(p.unit)
+          return !weightUnitSet.has(pu) && !volumeUnitSet.has(pu) && !SERVING_ALIASES.has(pu)
+        })
+        if (countPortions.length > 0) {
+          const prepFiltered = opts?.preparationState
+            ? countPortions.filter((p) => p.preparationState === opts.preparationState)
+            : countPortions
+          const candidates = prepFiltered.length > 0 ? prepFiltered : countPortions
+
+          // Safety check: divergent gramWeights → ambiguous, refuse to silently pick
+          if (candidates.length > 1) {
+            const gramWeights = candidates.map((p) => p.gramWeight / (p.quantity || 1))
+            const maxGw = Math.max(...gramWeights)
+            const minGw = Math.min(...gramWeights)
+            if (maxGw / minGw > 1.30) {
+              const options = candidates.map((p) => `"${p.portionDescription}" (${p.gramWeight}g)`).join(', ')
+              return {
+                kind: 'conversion_error',
+                errorCode: 'unit_unknown',
+                message: `Multiple different count portions found for "${unit}": ${options}. Specify which you mean.`,
+                suggestions: candidates.map((p) => p.portionDescription),
+              }
+            }
+            // All similar — use the first, add a note
+            notes.push(`Using "${candidates[0].portionDescription}" as count portion`)
+          }
+
+          const broadResult = resolveFromPortions(food, quantity, iu, candidates, opts?.preparationState, notes)
+          if (broadResult) {
+            if (candidates.length === 1) {
+              notes.push(`Matched "${unit}" to USDA portion "${countPortions[0].unit}"`)
+            }
+            return broadResult
+          }
+        }
+      }
     }
   }
 
