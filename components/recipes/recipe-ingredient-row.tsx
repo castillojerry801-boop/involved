@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Trash2, CheckCircle2, AlertCircle, Link2, Loader2 } from 'lucide-react'
+import { Trash2, CheckCircle2, AlertCircle, Link2, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ExternalFoodResult } from '@/lib/nutrition/providers/types'
+import type { FoodMatch, MatchResult } from '@/lib/nutrition/matching/types'
 import { computeIngredientFactor } from '@/lib/recipes/nutrition'
 import { parseQuantity, formatQuantity } from '@/lib/utils/fractions'
 import { KG_UNITS, L_UNITS } from '@/lib/nutrition/conversion/units'
@@ -103,6 +104,31 @@ const UNIT_GROUPS = [
   },
 ] as const
 
+// ── FoodMatch → FoodSearchResult mapper ───────────────────────────────────────
+
+function foodMatchToSearchResult(m: FoodMatch): FoodSearchResult {
+  return {
+    provider: m.provider,
+    externalId: m.externalId,
+    internalId: m.internalId,
+    name: m.name,
+    brand: m.brand,
+    servingSize: m.servingSize,
+    servingUnit: m.servingUnit,
+    householdUnit: m.householdUnit,
+    unitsPerServing: m.unitsPerServing,
+    householdServingText: m.householdServingText,
+    coreNutrients: {
+      calories: m.calories,
+      proteinG: m.proteinG,
+      carbohydrateG: m.carbohydrateG,
+      fatG: m.fatG,
+    },
+    isGeneric: m.isGeneric,
+    source: m.internalId ? 'library' : 'external',
+  }
+}
+
 // Legacy export kept for backward compatibility — the component now always uses
 // the grouped picker, but external callers that imported getUnitOptions won't break.
 export function getUnitOptions(baseFood: BaseFoodData): { label: string; value: string }[] {
@@ -174,12 +200,20 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState<FoodSearchResult[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
+  const [autoMatch, setAutoMatch] = useState<{
+    confidence: 'confident' | 'plausible'
+    food: FoodMatch
+    clarificationQuestion?: string
+  } | null>(null)
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Race condition guard: track the current request; discard stale responses
+  const matchRequestRef = useRef(0)
 
   const handleNameChange = useCallback(
     (name: string) => {
       // Clear match when the user edits the name manually
+      setAutoMatch(null)
       onChange({
         ...ingredient,
         name,
@@ -191,29 +225,77 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
       if (name.trim().length >= 2) {
         if (searchRef.current) clearTimeout(searchRef.current)
         searchRef.current = setTimeout(async () => {
+          // Increment request counter for race condition guard
+          matchRequestRef.current++
+          const thisRequest = matchRequestRef.current
           setSearching(true)
           try {
-            const res = await fetch(`/api/nutrition/search?q=${encodeURIComponent(name.trim())}&limit=5&context=recipe`)
+            const res = await fetch('/api/nutrition/match', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ingredientName: name.trim() }),
+            })
+            // Discard stale responses
+            if (thisRequest !== matchRequestRef.current) return
             if (res.ok) {
-              const data = await res.json() as { results: FoodSearchResult[] }
-              const list = data.results ?? []
-              setResults(list)
-              setShowDropdown(list.length > 0)
+              const data = await res.json() as MatchResult
+              if (thisRequest !== matchRequestRef.current) return
+
+              if (data.confidence === 'confident' && data.topMatch) {
+                // Auto-link
+                setAutoMatch({ confidence: 'confident', food: data.topMatch })
+                selectFood(foodMatchToSearchResult(data.topMatch))
+              } else if (data.confidence === 'plausible' && data.topMatch) {
+                // Show suggestion
+                setAutoMatch({ confidence: 'plausible', food: data.topMatch })
+                setShowDropdown(false)
+                setResults([])
+              } else if (data.confidence === 'ambiguous') {
+                // Show clarification + dropdown
+                if (data.topMatch) {
+                  setAutoMatch({
+                    confidence: 'plausible',
+                    food: data.topMatch,
+                    clarificationQuestion: data.clarificationQuestion,
+                  })
+                }
+                // Populate dropdown with alternatives
+                const dropdownResults: FoodSearchResult[] = [
+                  ...(data.topMatch ? [foodMatchToSearchResult(data.topMatch)] : []),
+                  ...data.alternatives.map(foodMatchToSearchResult),
+                ]
+                setResults(dropdownResults)
+                setShowDropdown(dropdownResults.length > 0)
+              } else {
+                // no_match — use rawResults from the match response to populate the
+                // dropdown directly, avoiding a second network round-trip to /api/nutrition/search.
+                // rawResults contains up to 6 top scored candidates from the provider fan-out.
+                const list: FoodSearchResult[] = (data.rawResults ?? []).map(foodMatchToSearchResult)
+                setResults(list)
+                setShowDropdown(list.length > 0)
+              }
             }
           } finally {
-            setSearching(false)
+            if (thisRequest === matchRequestRef.current) {
+              setSearching(false)
+            }
           }
         }, 350)
       } else {
         setResults([])
         setShowDropdown(false)
+        setAutoMatch(null)
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [ingredient, onChange],
   )
 
   const selectFood = useCallback(
     (food: FoodSearchResult) => {
+      // Cancel any in-flight auto-match request so it cannot overwrite the
+      // manual selection. This is the "manual override wins" invariant.
+      matchRequestRef.current++
       const { calories, proteinG, carbohydrateG, fatG } = food.coreNutrients
       // Guard against malformed provider data
       if (
@@ -282,6 +364,37 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
     },
     [ingredient, onChange],
   )
+
+  // Dismiss auto-match chip and show manual search dropdown
+  const handleDismissAutoMatch = useCallback(() => {
+    setAutoMatch(null)
+    onChange({
+      ...ingredient,
+      foodItemId: null,
+      _baseFood: null,
+      _matchedFoodName: undefined,
+      ...NULL_SNAPSHOTS,
+    })
+    // Re-run search to populate dropdown
+    const name = ingredient.name.trim()
+    if (name.length >= 2) {
+      setSearching(true)
+      fetch(`/api/nutrition/search?q=${encodeURIComponent(name)}&limit=5&context=recipe`)
+        .then(r => r.ok ? r.json() : { results: [] })
+        .then((data: { results: FoodSearchResult[] }) => {
+          setResults(data.results ?? [])
+          setShowDropdown((data.results ?? []).length > 0)
+        })
+        .finally(() => setSearching(false))
+    }
+  }, [ingredient, onChange])
+
+  // Accept plausible suggestion
+  const handleAcceptSuggestion = useCallback(() => {
+    if (!autoMatch) return
+    setAutoMatch(null)
+    selectFood(foodMatchToSearchResult(autoMatch.food))
+  }, [autoMatch, selectFood])
 
   const handleQuantityTextChange = useCallback(
     (raw: string) => {
@@ -446,8 +559,70 @@ export function RecipeIngredientRow({ ingredient, onChange, onRemove }: RecipeIn
             </span>
           </div>
 
-          {/* Matched food label (shown when food linked but user preserved their own name) */}
-          {ingredient._matchedFoodName && ingredient._matchedFoodName !== ingredient.name && (
+          {/* Auto-match chip (confident) — shown when food is auto-linked */}
+          {autoMatch?.confidence === 'confident' && ingredient.foodItemId && (
+            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">
+                <CheckCircle2 className="size-3" />
+                Matched: {autoMatch.food.brand
+                  ? `${autoMatch.food.name} (${autoMatch.food.brand})`
+                  : autoMatch.food.name}
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); handleDismissAutoMatch() }}
+                  className="ml-0.5 hover:text-emerald-900 dark:hover:text-white"
+                  aria-label="Dismiss auto-match"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); handleDismissAutoMatch() }}
+                className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 underline"
+              >
+                Search instead
+              </button>
+            </div>
+          )}
+
+          {/* Plausible suggestion or clarification prompt */}
+          {autoMatch?.confidence === 'plausible' && !ingredient.foodItemId && (
+            <div className="mt-1 space-y-1">
+              {/* Clarification question (ambiguous case) */}
+              {autoMatch.clarificationQuestion && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  {autoMatch.clarificationQuestion}
+                </p>
+              )}
+              {/* Suggestion row */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Suggested: {autoMatch.food.brand
+                    ? `${autoMatch.food.name} (${autoMatch.food.brand})`
+                    : autoMatch.food.name}
+                  {autoMatch.food.calories > 0 ? ` · ${Math.round(autoMatch.food.calories)} cal` : ''}
+                </span>
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); handleAcceptSuggestion() }}
+                  className="text-xs rounded-full border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors"
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); handleDismissAutoMatch() }}
+                  className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 underline"
+                >
+                  Search instead
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Matched food label (shown when food linked but user preserved their own name, no auto-match chip) */}
+          {!autoMatch && ingredient._matchedFoodName && ingredient._matchedFoodName !== ingredient.name && (
             <span className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 block">
               Matched: {ingredient._matchedFoodName}
             </span>
