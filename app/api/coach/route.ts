@@ -22,7 +22,9 @@ import {
   type SearchPhase, type CandidatePool,
 } from '@/lib/v/search-orchestration'
 import type { QualityIssue } from '@/lib/v/program-quality'
-import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools } from './constants'
+import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools, CALCULATE_NUTRITION_TOOL } from './constants'
+import { calculateNutrition } from '@/lib/v/tools/calculate-nutrition'
+import type { CalculateNutritionArgs } from '@/lib/v/tools/calculate-nutrition'
 import type OpenAI from 'openai'
 
 // One Luna draft + one targeted Luna correction, then escalate to Sol (which also
@@ -151,7 +153,11 @@ export async function POST(req: NextRequest) {
   }
 
   void (async () => {
-    const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL, PROPOSE_PROGRAM_TOOL]
+    const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL, PROPOSE_PROGRAM_TOOL, CALCULATE_NUTRITION_TOOL]
+    // Per-turn loop guard for calculate_nutrition: if the model calls it more than
+    // 3 times within a single conversation turn it gets a hard stop, forcing V to
+    // respond with what it already has rather than looping indefinitely.
+    let nutritionToolCallCount = 0
     type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
 
     // Extract equipment from conversation first. Explicit user-stated equipment
@@ -789,6 +795,29 @@ export async function POST(req: NextRequest) {
                     message: 'Program validated and accepted. Now present it to the user with a brief summary of the program structure and how progression works.',
                   })
                 }
+              }
+            }
+
+          } else if (fn.name === 'calculate_nutrition') {
+            // Per-turn loop guard — cap at 3 calls per turn
+            nutritionToolCallCount++
+            if (nutritionToolCallCount > 3) {
+              result = JSON.stringify({
+                status: 'loop_limit_reached',
+                message: 'calculate_nutrition was called too many times in one turn. Respond to the user with the nutrition information you have already calculated. Do not call this tool again.',
+              })
+            } else {
+              try {
+                const nutritionArgs = JSON.parse(fn.arguments) as CalculateNutritionArgs
+                const nutritionResult = await calculateNutrition(nutritionArgs)
+                result = JSON.stringify(nutritionResult)
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : 'Nutrition calculation failed'
+                console.error('[V-nutrition-tool-error]', { userId: user.id, error: msg })
+                result = JSON.stringify({
+                  status: 'error',
+                  message: `Nutrition calculation failed: ${msg}. Tell the user you were unable to calculate macros right now.`,
+                })
               }
             }
 

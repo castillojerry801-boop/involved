@@ -81,6 +81,31 @@ TOOLS
 • search_exercises — find valid exercise IDs. Always search before building any workout or program.
 • propose_workout — single training session ("give me a workout", "I have 45 minutes").
 • propose_program — structured multi-day plan ("build me a program", "3-day split", "6-week plan").
+• calculate_nutrition — calculate real macros from a food database for any ingredient list. Always use this instead of recalling values from memory.
+
+════════════════════════════════════════
+NUTRITION CALCULATIONS
+════════════════════════════════════════
+When users ask about calories, macros, or nutrition for specific foods:
+1. Always use the calculate_nutrition tool. Never recall or invent macro values from memory.
+2. Parse the user's food description into structured ingredients with quantities and units.
+3. If units are ambiguous (e.g. "a cup of rice" — dry or cooked?) and it materially affects the result, ask one concise clarification before calling the tool.
+4. If the user gives enough information, call the tool immediately — do not ask unnecessary follow-up questions.
+5. After the tool returns, present results conversationally. Show totals clearly. Mention per-serving if servings were specified.
+6. If some ingredients are unresolved, tell the user which ones and what you were able to calculate.
+7. Do not add caveats or warnings beyond what the tool reports. Trust the tool's completeness assessment.
+8. For cooking methods like smoking, grilling, or baking raw meat: note that raw-weight calculations are used and cooking changes the final result — but do not invent correction factors.
+
+Format nutrition results like:
+"Based on [description], here's the estimated nutrition:
+• Calories: 650
+• Protein: 45g
+• Carbs: 38g
+• Fat: 32g
+
+Per taco (12 tacos): ~54 cal, ~4g protein, ~3g carbs, ~3g fat
+
+[Note any unresolved ingredients or assumptions]"
 
 ════════════════════════════════════════
 PROGRAM GENERATION — STRUCTURED PIPELINE REQUIRED
@@ -207,6 +232,47 @@ export function selectRoundTools<T extends { function: { name: string } }>(
     tools: allTools.filter(t => t.function.name === 'propose_program'),
     tool_choice: { type: 'function', function: { name: 'propose_program' } },
   }
+}
+
+// ── Tool definition for calculate_nutrition ───────────────────────────────────
+// Exported so the route can include it in the tools list and tests can inspect it.
+export const CALCULATE_NUTRITION_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: 'calculate_nutrition',
+    description: `Calculate macros for a list of ingredients using real food database references.
+Use this tool when the user asks about calories, macros, nutrition, protein, carbs, or fat for specific foods.
+Always use this tool rather than recalling macro values from memory.
+Do not invent, estimate, or assume any macro values — only report what this tool returns.
+If the tool returns unresolved ingredients, tell the user which foods could not be matched and ask for clarification if it would meaningfully change the result.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        ingredients: {
+          type: 'array',
+          description: 'List of ingredients with quantities',
+          items: {
+            type: 'object',
+            properties: {
+              name:     { type: 'string',  description: 'Food name as the user described it' },
+              quantity: { type: 'number',  description: "Amount (use your best parse of the user's description)" },
+              unit:     { type: 'string',  description: 'Unit: g, oz, lb, cup, tbsp, tsp, ml, serving, piece, slice, clove, etc.' },
+            },
+            required: ['name', 'quantity', 'unit'],
+          },
+        },
+        servings: {
+          type: 'number',
+          description: 'Number of servings to divide into for per-serving calculation. Omit or use 1 for whole-meal totals.',
+        },
+        context: {
+          type: 'string',
+          description: 'Optional: cooking method or preparation context (e.g. "smoking a tri-tip", "raw weight before cooking")',
+        },
+      },
+      required: ['ingredients'],
+    },
+  },
 }
 
 // Compact system prompt for quality-correction rounds. The full SYSTEM_PROMPT, the
