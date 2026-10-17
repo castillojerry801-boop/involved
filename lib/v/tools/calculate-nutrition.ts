@@ -143,6 +143,8 @@ async function enrichFatSecretMatch(topMatch: FoodMatch, inputUnit?: string): Pr
     // Update serving size from the detail (it's per the canonical serving, not per 100g)
     servingSize: detail.servingSize,
     servingUnit: detail.servingUnit,
+    // Serving size is now verified from the detail API — clear the estimated flag.
+    servingSizeIsEstimated: false,
   }
 
   // ── Best-effort portion cache ────────────────────────────────────────────────
@@ -368,13 +370,17 @@ export async function calculateNutrition(
     const resolvedUnitForEnrichCheck = normalizeIngredientUnit(ing.unit)
     const hasUsableHouseholdUnit =
       !!topMatch.householdUnit && isUsableHouseholdUnit(topMatch.householdUnit)
+    const hadEstimatedServingSize = topMatch.servingSizeIsEstimated === true
+    let enrichmentSucceeded = false
+
     if (
       topMatch.provider === 'fatsecret' &&
       !hasUsableHouseholdUnit &&
-      isCountUnit(resolvedUnitForEnrichCheck)
+      (isCountUnit(resolvedUnitForEnrichCheck) || hadEstimatedServingSize)
     ) {
       const enriched = await enrichFatSecretMatch(topMatch, resolvedUnitForEnrichCheck)
       if (enriched) {
+        enrichmentSucceeded = true
         topMatch = enriched
         console.log('[V-nutrition] fatsecret-enriched', {
           externalId: topMatch.externalId,
@@ -384,6 +390,27 @@ export async function calculateNutrition(
         })
         assumptions.push(`Food ID details fetched from FatSecret for "${ing.name}" (id ${topMatch.externalId})`)
       }
+    }
+
+    // When enrichment was triggered because the serving size was estimated (no gram
+    // parenthetical in the search description) but the detail API returned no usable
+    // serving data, the 100g default is fabricated. Do not return nutrition based on it.
+    // Weight-unit inputs fall through here; count-unit inputs already fail conversion below.
+    if (hadEstimatedServingSize && !enrichmentSucceeded && !isCountUnit(resolvedUnitForEnrichCheck)) {
+      ingredientResults.push({
+        userDescription: userDesc,
+        matchedFoodName: topMatch.name,
+        matchConfidence: match.confidence,
+        calories: 0, proteinG: 0, carbG: 0, fatG: 0,
+        resolved: false,
+        errorReason: `Serving weight unknown for "${topMatch.name}" — no gram measurement in product description.`,
+      })
+      unresolvedIngredients.push({
+        name: ing.name,
+        reason: 'conversion_error',
+        suggestion: `Try specifying the exact amount, e.g. "1.69 oz bag of ${ing.name}".`,
+      })
+      continue
     }
 
     const foodForConversion = buildFoodForConversion(topMatch)

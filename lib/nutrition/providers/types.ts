@@ -65,6 +65,14 @@ export interface ExternalFoodResult {
    * portions for count-unit resolution (e.g. "3 piece eggs"). Only present on USDA results.
    */
   fdcDataType?: string
+  /**
+   * True when the FatSecret search description had no gram/ml/oz parenthetical, so
+   * servingSize was left at the default 100 rather than parsed from the description.
+   * Signals that enrichment (detail API fetch) is needed to get the real gram weight —
+   * without it, weight-based conversions will be wrong for portion-control packs like
+   * "M&M's 100 Calories Pack" (~22.7g) that appear to weigh 100g.
+   */
+  servingSizeIsEstimated?: boolean
 }
 
 export interface ExternalFoodDetail extends ExternalFoodResult {

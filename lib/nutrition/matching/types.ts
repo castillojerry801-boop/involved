@@ -17,6 +17,7 @@ export interface FoodMatch {
   fatG: number
   isGeneric: boolean
   fdcDataType?: string
+  servingSizeIsEstimated?: boolean
   matchScore: number
   matchReasons: string[]        // e.g. ["All query words match", "USDA Foundation food"]
 }

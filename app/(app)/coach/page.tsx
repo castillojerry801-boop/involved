@@ -430,7 +430,10 @@ export default function CoachPage() {
       const res = await fetch('/api/coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...apiMessages(), { role: 'user', content: trimmed }] }),
+        body: JSON.stringify({
+          messages: [...apiMessages(), { role: 'user', content: trimmed }],
+          clientDate: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })(),
+        }),
       })
 
       if (res.status === 429) {

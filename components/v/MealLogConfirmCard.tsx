@@ -66,6 +66,8 @@ export function MealLogConfirmCard({ data }: { data: MealLogPendingData }) {
         return
       }
       setState('done')
+      // Signal other tabs/windows that a meal was logged so the Nutrition page can refetch.
+      try { localStorage.setItem('v_meal_logged', data.logDate) } catch { /* private browsing */ }
     } catch {
       setErrorMsg('Something went wrong. Please try again.')
       setState('error')

@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const [{ data: { user } }, body] = await Promise.all([
     supabase.auth.getUser(),
-    req.json() as Promise<{ messages: Array<{ role: 'user' | 'assistant'; content: string }> }>,
+    req.json() as Promise<{ messages: Array<{ role: 'user' | 'assistant'; content: string }>; clientDate?: string }>,
   ])
   if (!user) return new Response('Unauthorized', { status: 401 })
   if (!body.messages?.length) return new Response('No messages', { status: 400 })
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
   }
 
   const tCtx = Date.now()
-  const ctx = await buildCoachContext(user.id, user.email)
+  const ctx = await buildCoachContext(user.id, user.email, body.clientDate)
   console.log(`[V-perf] context=${Date.now() - tCtx}ms auth_to_ctx=${tCtx - t0}ms`)
   const trainingCtx = ctx.trainingCtx
   const contextSnippet = contextToSystemSnippet(ctx)

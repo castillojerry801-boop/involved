@@ -322,3 +322,59 @@ describe('FatSecret parseDescription — oz parenthetical fix', () => {
     expect(calories).not.toBe(148)
   })
 })
+
+// ─── servingSizeIsEstimated flag ──────────────────────────────────────────────
+// Tests that parseDescription correctly signals when servingSize defaulted to 100
+// because no gram/ml/oz parenthetical was present in the description.
+
+describe('FatSecret parseDescription — servingSizeIsEstimated flag', () => {
+  const provider = new FatSecretProvider()
+
+  it('"Per 1 pack" (no metric parenthetical) → servingSizeIsEstimated: true, servingSize = 100', async () => {
+    setupSearchMock([{
+      food_id: '11111',
+      food_name: "M&M's 100 Calories Pack",
+      food_type: 'Brand',
+      food_description: "Per 1 pack - Calories: 100kcal | Fat: 4.00g | Carbs: 14.00g | Protein: 1.00g",
+    }])
+    const results = await provider.search("m&ms")
+    const food = results[0]
+    expect(food.servingSize).toBe(100)
+    expect((food as unknown as { servingSizeIsEstimated: boolean }).servingSizeIsEstimated).toBe(true)
+    // householdText still extracted despite no metric parenthetical
+    expect(food.householdServingText).toBe('1 pack')
+  })
+
+  it('"Per 1 bar (2.07 oz)" → servingSizeIsEstimated: false (oz converted to grams)', async () => {
+    setupSearchMock([{
+      food_id: '22222',
+      food_name: 'Snickers Bar',
+      food_type: 'Brand',
+      food_description: 'Per 1 bar (2.07 oz) - Calories: 280kcal | Fat: 14.00g | Carbs: 35.00g | Protein: 4.30g',
+    }])
+    const results = await provider.search("snickers")
+    expect((results[0] as unknown as { servingSizeIsEstimated: boolean }).servingSizeIsEstimated).toBe(false)
+  })
+
+  it('"Per 1 serving (65g)" → servingSizeIsEstimated: false (gram was found)', async () => {
+    setupSearchMock([{
+      food_id: '33333',
+      food_name: 'Peanut Butter',
+      food_type: 'Generic',
+      food_description: 'Per 1 serving (65g) - Calories: 390kcal | Fat: 32.00g | Carbs: 14.00g | Protein: 15.00g',
+    }])
+    const results = await provider.search("peanut butter")
+    expect((results[0] as unknown as { servingSizeIsEstimated: boolean }).servingSizeIsEstimated).toBe(false)
+  })
+
+  it('"Per 100g" normalized → servingSizeIsEstimated: false (explicit 100g)', async () => {
+    setupSearchMock([{
+      food_id: '44444',
+      food_name: 'Plain Oats',
+      food_type: 'Generic',
+      food_description: 'Per 100g - Calories: 389kcal | Fat: 6.90g | Carbs: 66.30g | Protein: 17.00g',
+    }])
+    const results = await provider.search("oats")
+    expect((results[0] as unknown as { servingSizeIsEstimated: boolean }).servingSizeIsEstimated).toBe(false)
+  })
+})

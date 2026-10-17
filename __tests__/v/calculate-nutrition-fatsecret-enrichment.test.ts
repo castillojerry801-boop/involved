@@ -211,6 +211,25 @@ const TORTILLA_DETAIL: ExternalFoodDetail = {
   },
 }
 
+/** Detail response — M&M's 100 Calories Pack (real gram weight: 22.7g per pack) */
+const MAMS_100CAL_DETAIL: ExternalFoodDetail = {
+  provider: 'fatsecret',
+  externalId: '5521',
+  name: "M&M's 100 Calories Pack",
+  isGeneric: false,
+  servingSize: 22.7,
+  servingUnit: 'g',
+  householdServingText: '1 pack',
+  householdUnit: 'pack',
+  unitsPerServing: 1,
+  coreNutrients: {
+    calories: 100,
+    proteinG: 1,
+    carbohydrateG: 14,
+    fatG: 4,
+  },
+}
+
 /** Detail response — "1 serving" (non-count word, must NOT enable count resolution) */
 const SERVING_ONLY_DETAIL: ExternalFoodDetail = {
   provider: 'fatsecret',
@@ -567,5 +586,157 @@ describe('calculateNutrition — FatSecret detail enrichment', () => {
     expect(mockedPrisma.foodItemPortion.findFirst).toHaveBeenCalledTimes(1)
     // create must NOT be called — portion already exists
     expect(mockedPrisma.foodItemPortion.create).not.toHaveBeenCalled()
+  })
+
+  it('servingSizeIsEstimated: true + weight unit → enrichment fires to get real gram weight', async () => {
+    const mockMatch = vi.mocked(matchIngredient)
+    // Simulate "M&M's 100 Calories Pack" from search: servingSize=100 (default), flag set
+    mockMatch.mockResolvedValueOnce({
+      confidence: 'confident',
+      topMatch: {
+        provider: 'fatsecret',
+        externalId: '5521',
+        name: "M&M's 100 Calories Pack",
+        servingSize: 100,
+        servingUnit: 'g',
+        householdUnit: undefined,
+        unitsPerServing: undefined,
+        householdServingText: '1 pack',
+        calories: 100,
+        proteinG: 1,
+        carbohydrateG: 14,
+        fatG: 4,
+        isGeneric: false,
+        matchScore: 80,
+        matchReasons: ['FatSecret branded'],
+        fdcDataType: undefined,
+        servingSizeIsEstimated: true,
+      },
+      alternatives: [],
+      rawResults: [],
+    })
+
+    getByIdSpy.mockResolvedValueOnce(MAMS_100CAL_DETAIL)
+
+    await calculateNutrition({
+      ingredients: [{ name: "M&Ms", quantity: 100, unit: 'g' }],
+    })
+
+    // Enrichment MUST fire for servingSizeIsEstimated=true even though unit is 'g'
+    expect(getByIdSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('servingSizeIsEstimated: true + weight unit → after enrichment, real gram weight used for calculation', async () => {
+    const mockMatch = vi.mocked(matchIngredient)
+    mockMatch.mockResolvedValueOnce({
+      confidence: 'confident',
+      topMatch: {
+        provider: 'fatsecret',
+        externalId: '5521',
+        name: "M&M's 100 Calories Pack",
+        servingSize: 100,
+        servingUnit: 'g',
+        householdUnit: undefined,
+        unitsPerServing: undefined,
+        householdServingText: '1 pack',
+        calories: 100,
+        proteinG: 1,
+        carbohydrateG: 14,
+        fatG: 4,
+        isGeneric: false,
+        matchScore: 80,
+        matchReasons: ['FatSecret branded'],
+        fdcDataType: undefined,
+        servingSizeIsEstimated: true,
+      },
+      alternatives: [],
+      rawResults: [],
+    })
+
+    // Detail returns real 22.7g serving
+    getByIdSpy.mockResolvedValueOnce(MAMS_100CAL_DETAIL)
+
+    const result = await calculateNutrition({
+      ingredients: [{ name: "M&Ms", quantity: 22.7, unit: 'g' }],
+    })
+
+    const mms = result.ingredients[0]
+    expect(mms.resolved).toBe(true)
+    // 22.7g / 22.7g per pack = 1 pack → 100 cal
+    expect(mms.calories).toBeCloseTo(100, 0)
+
+    // Without the fix, the old servingSize=100 default would give:
+    // 22.7g / 100g = 0.227 → 100 × 0.227 = 22.7 cal (wrong)
+    expect(mms.calories).not.toBeCloseTo(22.7, 0)
+  })
+
+  it('servingSizeIsEstimated: false + weight unit → enrichment NOT called (real servingSize available)', async () => {
+    const mockMatch = vi.mocked(matchIngredient)
+    // Normal food with explicit 100g serving — servingSizeIsEstimated not set (undefined)
+    mockMatch.mockResolvedValueOnce(
+      makeFatSecretMatchNoHousehold({
+        name: 'Oats',
+        externalId: '8888',
+        servingSize: 100,
+        calories: 389,
+        proteinG: 17,
+        carbohydrateG: 66,
+        fatG: 7,
+      }),
+    )
+
+    await calculateNutrition({
+      ingredients: [{ name: 'oats', quantity: 50, unit: 'g' }],
+    })
+
+    // servingSizeIsEstimated is undefined (not true) → enrichment must NOT fire
+    expect(getByIdSpy).not.toHaveBeenCalled()
+  })
+
+  it('servingSizeIsEstimated: true + enrichment returns null + weight unit → ingredient unresolved (no fabricated 100g nutrition)', async () => {
+    const mockMatch = vi.mocked(matchIngredient)
+    mockMatch.mockResolvedValueOnce({
+      confidence: 'confident',
+      topMatch: {
+        provider: 'fatsecret',
+        externalId: '9999',
+        name: 'Mystery Pack',
+        servingSize: 100,
+        servingUnit: 'g',
+        householdUnit: undefined,
+        unitsPerServing: undefined,
+        householdServingText: '1 pack',
+        calories: 150,
+        proteinG: 2,
+        carbohydrateG: 20,
+        fatG: 6,
+        isGeneric: false,
+        matchScore: 70,
+        matchReasons: ['FatSecret branded'],
+        fdcDataType: undefined,
+        servingSizeIsEstimated: true,
+      },
+      alternatives: [],
+      rawResults: [],
+    })
+
+    // Detail API returns no household data → enrichment returns null
+    getByIdSpy.mockResolvedValueOnce(null)
+
+    const result = await calculateNutrition({
+      ingredients: [{ name: 'Mystery Pack', quantity: 50, unit: 'g' }],
+    })
+
+    // Enrichment was called
+    expect(getByIdSpy).toHaveBeenCalledTimes(1)
+
+    // Ingredient must be unresolved — the 100g default is fabricated
+    const ing = result.ingredients[0]
+    expect(ing.resolved).toBe(false)
+    expect(ing.calories).toBe(0)
+    expect(result.unresolvedIngredients).toHaveLength(1)
+
+    // Regression guard: old behaviour returned 75 cal (150 × 50/100 = 75)
+    expect(ing.calories).not.toBe(75)
   })
 })

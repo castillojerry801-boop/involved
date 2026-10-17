@@ -94,6 +94,7 @@ async function getAccessToken(clientId: string, clientSecret: string): Promise<s
 function parseDescription(desc: string): {
   calories: number; fat: number; carbs: number; protein: number
   servingSize: number; servingUnit: string; householdText: string | undefined
+  servingSizeIsEstimated: boolean
 } | null {
   try {
     const cal     = parseFloat(desc.match(/Calories:\s*([\d.]+)/i)?.[1] ?? '')
@@ -109,6 +110,7 @@ function parseDescription(desc: string): {
     let servingSize = 100
     let servingUnit = 'g'
     let householdText: string | undefined
+    let servingSizeIsEstimated = false
 
     if (perText.toLowerCase() === '100g') {
       // Normalized to 100g — standard for generic foods
@@ -131,6 +133,11 @@ function parseDescription(desc: string): {
         // 1 oz = 28.3495g; round to 1 decimal for clean storage
         servingSize = Math.round(parseFloat(ozMatch[1]) * 28.3495 * 10) / 10
         servingUnit = 'g'
+      } else {
+        // No gram/ml/oz found — servingSize stays at default 100, which is wrong for
+        // count-noun foods like "1 pack" or "1 bag". Flag so enrichment can fetch the
+        // real gram weight from the FatSecret detail API.
+        servingSizeIsEstimated = true
       }
       // Extract human-readable part: "1 serving" from "1 serving (65g)"
       const labelMatch = perText.match(/^(.+?)\s*\(/)
@@ -139,7 +146,7 @@ function parseDescription(desc: string): {
 
     return {
       calories: cal || 0, fat: fat || 0, carbs: carbs || 0, protein: protein || 0,
-      servingSize, servingUnit, householdText,
+      servingSize, servingUnit, householdText, servingSizeIsEstimated,
     }
   } catch {
     return null
@@ -245,6 +252,9 @@ function mapSearchResult(item: FatSecretSearchResult): ExternalFoodResult {
     householdServingText: parsed?.householdText,
     householdUnit,
     unitsPerServing,
+    // True when no gram/ml/oz was found in the description — servingSize is a placeholder
+    // 100 that needs the detail API to resolve the real gram weight.
+    servingSizeIsEstimated: parsed?.servingSizeIsEstimated ?? !parsed,
     coreNutrients: {
       calories:      Math.round(parsed?.calories ?? 0),
       proteinG:      Math.round((parsed?.protein ?? 0) * 10) / 10,

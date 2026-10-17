@@ -164,6 +164,15 @@ export default function NutritionPage() {
 
   useEffect(() => { fetchDaily() }, [fetchDaily])
 
+  // Refetch when V logs a meal from the Coach page (cross-tab localStorage signal).
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'v_meal_logged' && e.newValue === logDate) fetchDaily()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [fetchDaily, logDate])
+
   const goBack = () => {
     const d = new Date(logDate + 'T12:00:00')
     d.setDate(d.getDate() - 1)

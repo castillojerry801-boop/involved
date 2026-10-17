@@ -128,8 +128,20 @@ export interface CoachContext {
   trainingCtx:            VTrainingContext | null
 }
 
-export async function buildCoachContext(userId: string, userEmail?: string): Promise<CoachContext> {
-  const today     = new Date().toISOString().slice(0, 10)
+function isValidClientDate(s: string | undefined): s is string {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false
+  const [y, mo, d] = s.split('-').map(Number)
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false
+  // Use local-time constructor so JS date overflow reveals impossible dates
+  // (e.g. Feb 29 on a non-leap year becomes Mar 1 — getDate returns 1, not 29).
+  const dt = new Date(y, mo - 1, d)
+  return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d
+}
+
+export async function buildCoachContext(userId: string, userEmail?: string, clientDate?: string): Promise<CoachContext> {
+  // Use the browser's local date when provided (avoids UTC/local mismatch for evening users).
+  // Fall back to server UTC only when clientDate is absent or not a real calendar date.
+  const today     = isValidClientDate(clientDate) ? clientDate : new Date().toISOString().slice(0, 10)
   const todayDate = new Date(today)
 
   // 7-day window: 6 days ago through today
