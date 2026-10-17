@@ -21,6 +21,9 @@ export interface MealLogUnresolvedIngredient {
 
 export interface MealLogPendingData {
   calculationToken: string
+  // Original-index selection the server resolved for this card. Forwarded verbatim to the
+  // confirm endpoint so the server logs exactly the ingredients shown here.
+  includeIngredientIndexes?: number[]
   resolvedIngredients: MealLogResolvedIngredient[]
   unresolvedIngredients: MealLogUnresolvedIngredient[]
   totals: { calories: number; proteinG: number; carbG: number; fatG: number }
@@ -44,6 +47,7 @@ export function MealLogConfirmCard({ data }: { data: MealLogPendingData }) {
   if (state === 'dismissed') return null
 
   const isPartial = data.unresolvedIngredients.length > 0
+  const selectedCount = data.resolvedIngredients.length
   const mealLabel = MEAL_TYPE_LABELS[data.mealType] ?? data.mealType
 
   const handleLog = async () => {
@@ -57,6 +61,7 @@ export function MealLogConfirmCard({ data }: { data: MealLogPendingData }) {
           calculationToken: data.calculationToken,
           mealType:         data.mealType,
           logDate:          data.logDate,
+          ...(data.includeIngredientIndexes ? { includeIngredientIndexes: data.includeIngredientIndexes } : {}),
         }),
       })
       const json = await res.json() as { ok?: boolean; isPartial?: boolean; error?: string }
@@ -124,8 +129,13 @@ export function MealLogConfirmCard({ data }: { data: MealLogPendingData }) {
         </div>
       )}
 
-      {/* Resolved ingredients */}
-      <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50 mt-2">
+      {/* Selected ingredients — exactly the verified items that will be logged */}
+      <div className="px-4 pt-3 pb-1">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400">
+          Logging {selectedCount} item{selectedCount !== 1 ? 's' : ''}
+        </p>
+      </div>
+      <div className="divide-y divide-zinc-50 dark:divide-zinc-800/50">
         {data.resolvedIngredients.map((ing, i) => (
           <div key={i} className="flex items-center justify-between px-4 py-2.5 gap-3">
             <div className="flex-1 min-w-0">
@@ -137,15 +147,21 @@ export function MealLogConfirmCard({ data }: { data: MealLogPendingData }) {
         ))}
       </div>
 
-      {/* Unresolved items (if any) */}
+      {/* Unresolved items (if any) — visually distinct from the logged list above:
+          these could NOT be resolved and are never logged. */}
       {isPartial && (
-        <div className="mx-3 mb-2 mt-1 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 divide-y divide-zinc-100 dark:divide-zinc-700/50">
-          {data.unresolvedIngredients.map((ing, i) => (
-            <div key={i} className="flex items-center justify-between px-3 py-2 gap-2">
-              <p className="text-xs text-zinc-500 line-through truncate">{ing.name}</p>
-              <p className="text-xs text-zinc-400 shrink-0">not resolved</p>
-            </div>
-          ))}
+        <div className="mx-3 mb-2 mt-1 rounded-xl bg-zinc-50 dark:bg-zinc-800/50">
+          <p className="px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-500">
+            Not logged — couldn&apos;t resolve
+          </p>
+          <div className="divide-y divide-zinc-100 dark:divide-zinc-700/50">
+            {data.unresolvedIngredients.map((ing, i) => (
+              <div key={i} className="flex items-center justify-between px-3 py-2 gap-2">
+                <p className="text-xs text-zinc-500 line-through truncate">{ing.name}</p>
+                <p className="text-xs text-zinc-400 shrink-0">not resolved</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -177,9 +193,7 @@ export function MealLogConfirmCard({ data }: { data: MealLogPendingData }) {
         >
           {state === 'logging'
             ? <><Loader2 className="size-4 animate-spin" /> Logging...</>
-            : isPartial
-              ? <><CheckCircle2 className="size-4" /> Log resolved items only</>
-              : <><CheckCircle2 className="size-4" /> Log it</>
+            : <><CheckCircle2 className="size-4" /> Log {selectedCount} item{selectedCount !== 1 ? 's' : ''}</>
           }
         </button>
       </div>

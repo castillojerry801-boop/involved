@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
-import { verifyMealLogToken } from '@/lib/v/meal-log-token'
+import { verifyMealLogToken, selectTokenIngredients } from '@/lib/v/meal-log-token'
 import { Prisma } from '@prisma/client'
 
 const VALID_MEAL_TYPES = new Set(['breakfast', 'lunch', 'dinner', 'snack', 'other'])
@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
     calculationToken: string
     mealType: string
     logDate: string
+    includeIngredientIndexes?: number[]
   }
 
   // Structural validation
@@ -41,6 +42,11 @@ export async function POST(req: NextRequest) {
   }
   if (!VALID_MEAL_TYPES.has(body.mealType)) {
     return NextResponse.json({ error: 'Invalid mealType' }, { status: 400 })
+  }
+  // includeIngredientIndexes, when present, must be an array (contents are range/integer
+  // checked by selectTokenIngredients). A non-array value is a malformed request.
+  if (body.includeIngredientIndexes !== undefined && !Array.isArray(body.includeIngredientIndexes)) {
+    return NextResponse.json({ error: 'includeIngredientIndexes must be an array of integers' }, { status: 400 })
   }
   if (!LOG_DATE_RE.test(body.logDate)) {
     return NextResponse.json({ error: 'Invalid logDate — expected YYYY-MM-DD' }, { status: 400 })
@@ -58,9 +64,12 @@ export async function POST(req: NextRequest) {
 
   const { payload } = verified
 
-  // Only log ingredients that actually resolved — never fabricate nutrition
-  const resolvedIngredients = payload.ingredients.filter(i => i.resolved)
-  if (resolvedIngredients.length === 0) {
+  // Server-authoritative selection over the signed token. The AI/client may only name which
+  // resolved ingredients to include (by original index); all macros come from the token.
+  // Omitted → all resolved. An explicit selection naming only unresolved/out-of-range indexes
+  // yields an empty selection, which is rejected below — we never fall back to logging other items.
+  const { selected } = selectTokenIngredients(payload, body.includeIngredientIndexes)
+  if (selected.length === 0) {
     return NextResponse.json({ error: 'No resolved ingredients to log' }, { status: 400 })
   }
 
@@ -68,14 +77,18 @@ export async function POST(req: NextRequest) {
   const mealType  = body.mealType as 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'other'
   const isPartial = payload.completeness !== 'complete'
 
-  // Build entries from the token's trusted snapshot — never from request body macros
-  const entries = resolvedIngredients.map((ing, idx) => ({
+  // Build entries from the token's trusted snapshot — never from request body macros.
+  // idempotencyKey uses the ingredient's STABLE ORIGINAL index in the token, so the same
+  // ingredient logs at most once per calculation regardless of which subset was selected.
+  // calculationId is a fresh UUID per calculation, so these keys never collide with entries
+  // written by earlier calculations (including those from before this change).
+  const entries = selected.map(({ ingredient: ing, originalIndex }) => ({
     userId:             user.id,
     logDate,
     mealType,
     servingMultiplier:  new Prisma.Decimal(1),
     foodItemId:         null,
-    idempotencyKey:     `${payload.calculationId}-${idx}`,
+    idempotencyKey:     `${payload.calculationId}-${originalIndex}`,
     estimateSourceNote: isPartial
       ? `Coach V (partial — ${payload.unresolvedIngredients.length} item(s) not logged) — ${ing.userDescription}`
       : `Coach V — ${ing.userDescription}`,
@@ -102,5 +115,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, isPartial, loggedCount: resolvedIngredients.length })
+  return NextResponse.json({ ok: true, isPartial, loggedCount: selected.length })
 }

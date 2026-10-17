@@ -25,7 +25,7 @@ import type { QualityIssue } from '@/lib/v/program-quality'
 import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL } from './constants'
 import { calculateNutrition } from '@/lib/v/tools/calculate-nutrition'
 import type { CalculateNutritionArgs } from '@/lib/v/tools/calculate-nutrition'
-import { buildMealLogToken, verifyMealLogToken } from '@/lib/v/meal-log-token'
+import { buildMealLogToken, verifyMealLogToken, selectTokenIngredients } from '@/lib/v/meal-log-token'
 import type OpenAI from 'openai'
 
 // One Luna draft + one targeted Luna correction, then escalate to Sol (which also
@@ -268,13 +268,26 @@ export async function POST(req: NextRequest) {
     let pendingCalcContext = ''
     if (pendingCalcVerified?.ok) {
       const p = pendingCalcVerified.payload
+      // Enumerate ingredients with their STABLE original indexes + resolved status. On a
+      // follow-up turn the tool result from the previous turn is NOT in the forwarded history
+      // (the client sends only text messages), so this list is V's only source for which
+      // ingredients exist and which indexes to pass to prepare_meal_log's includeIngredientIndexes.
+      const ingredientLines = p.ingredients
+        .map((ing, i) =>
+          ing.resolved
+            ? `  [${i}] ${ing.userDescription} → ${ing.matchedFoodName} — resolved (${ing.calories} kcal)`
+            : `  [${i}] ${ing.userDescription} — UNRESOLVED (cannot be logged)`
+        )
+        .join('\n')
       pendingCalcContext =
         `\n\nOUTSTANDING NUTRITION CALCULATION (verified, active):\n` +
-        `If the user asks to log this meal, call prepare_meal_log with this calculationToken ` +
-        `(pass it exactly — do not modify): ${pendingCalcRaw}\n` +
-        `Totals: ${p.totals.calories} kcal, ${p.totals.proteinG}g protein, ` +
-        `${p.totals.carbG}g carbs, ${p.totals.fatG}g fat. ` +
-        `Do NOT call calculate_nutrition again unless the user requests a different food, different quantity, or a correction.`
+        `Ingredients (use these 0-based indexes for includeIngredientIndexes):\n${ingredientLines}\n` +
+        `Resolved total: ${p.totals.calories} kcal, ${p.totals.proteinG}g protein, ${p.totals.carbG}g carbs, ${p.totals.fatG}g fat.\n` +
+        `To log, call prepare_meal_log with this calculationToken (pass it exactly — do not modify): ${pendingCalcRaw}\n` +
+        `• "log that" / "log the meal" / "log the resolved items" → omit includeIngredientIndexes (the server logs every resolved ingredient; unresolved ones are disclosed but never logged).\n` +
+        `• The user names specific items ("just the eggs", "the eggs and toast") → pass includeIngredientIndexes with ONLY those resolved items' indexes.\n` +
+        `• A partially resolved meal CAN still be logged — at least one resolved ingredient is enough. Tell the user which items were not resolved and will be left out.\n` +
+        `Do NOT call calculate_nutrition again unless the user requests a different food, a different quantity, or a correction.`
     } else if (pendingCalcRaw && pendingCalcVerified?.ok === false) {
       // Token present but invalid — tell V so it recalculates instead of using a bad token
       pendingCalcContext =
@@ -872,6 +885,7 @@ export async function POST(req: NextRequest) {
                 calculationToken: string
                 mealType: string
                 logDate: string
+                includeIngredientIndexes?: number[]
               }
 
               if (!logArgs.calculationToken) {
@@ -887,38 +901,53 @@ export async function POST(req: NextRequest) {
                   result = JSON.stringify({ status: 'error', reason: verified.reason, message: hint })
                 } else {
                   const { payload } = verified
-                  const resolvedIngredients = payload.ingredients.filter(i => i.resolved)
-                  // Allow logging even when some ingredients are unresolved ('estimated'),
-                  // but block entirely when nothing resolved at all ('incomplete').
-                  if (resolvedIngredients.length === 0) {
+                  const includeIndexes = Array.isArray(logArgs.includeIngredientIndexes)
+                    ? logArgs.includeIngredientIndexes
+                    : undefined
+                  // Server-authoritative selection — the AI only supplied indexes; all macros
+                  // come from the signed token via selectTokenIngredients.
+                  const { selected, totals: selectedTotals, requestedSelection, resolvedCount } =
+                    selectTokenIngredients(payload, includeIndexes)
+
+                  if (selected.length === 0) {
+                    // Covers: nothing resolved at all, OR an explicit selection that named only
+                    // unresolved / out-of-range indexes. Never fall back to logging other items.
                     result = JSON.stringify({
                       status: 'error',
-                      message: 'No ingredients were resolved — nothing to log. Tell the user which ingredients failed and ask them to rephrase or provide quantities.',
+                      message: requestedSelection && resolvedCount > 0
+                        ? 'None of the selected items are resolved and loggable. The resolved items (with their indexes) are in the OUTSTANDING NUTRITION CALCULATION context — ask the user to choose from those, or omit includeIngredientIndexes to log all resolved items.'
+                        : 'No ingredients were resolved — nothing to log. Tell the user which ingredients failed and ask them to rephrase or provide quantities.',
                     })
                   } else {
+                    const selectedIndexes = selected.map(s => s.originalIndex)
                     emitRaw({
                       type: 'meal_log_pending',
                       data: {
                         calculationToken: logArgs.calculationToken,
-                        resolvedIngredients: resolvedIngredients.map(i => ({
-                          name:              i.matchedFoodName,
-                          userDescription:   i.userDescription,
-                          calories:          i.calories,
-                          proteinG:          i.proteinG,
-                          carbG:             i.carbG,
-                          fatG:              i.fatG,
-                          conversionNote:    i.conversionNote,
+                        // Forwarded to the confirm endpoint so the server logs exactly this set.
+                        includeIngredientIndexes: selectedIndexes,
+                        resolvedIngredients: selected.map(({ ingredient }) => ({
+                          name:              ingredient.matchedFoodName,
+                          userDescription:   ingredient.userDescription,
+                          calories:          ingredient.calories,
+                          proteinG:          ingredient.proteinG,
+                          carbG:             ingredient.carbG,
+                          fatG:              ingredient.fatG,
+                          conversionNote:    ingredient.conversionNote,
                         })),
+                        // Always disclose every unresolved ingredient — a partial meal is never
+                        // silently presented as complete.
                         unresolvedIngredients: payload.unresolvedIngredients,
-                        totals:               payload.totals,
+                        totals:               selectedTotals,
                         completeness:         payload.completeness,
                         mealType:             logArgs.mealType,
                         logDate:              logArgs.logDate,
                       },
                     })
+                    const unresolvedCount = payload.unresolvedIngredients.length
                     result = JSON.stringify({
                       status: 'pending',
-                      message: 'A confirmation card is now shown to the user with the meal breakdown. Tell them the totals and that they can tap to save to their diary.',
+                      message: `A confirmation card is now shown with ${selected.length} selected item(s)${unresolvedCount ? ` and ${unresolvedCount} unresolved item(s) that will NOT be logged` : ''}. Tell the user the totals, name any unresolved items being left out, and that they can tap to save to their diary.`,
                     })
                   }
                 }

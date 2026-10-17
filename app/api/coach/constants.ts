@@ -99,6 +99,17 @@ When users ask about calories, macros, or nutrition for specific foods:
 7. Do not add caveats or warnings beyond what the tool reports. Trust the tool's completeness assessment.
 8. MEAL LOGGING: when the user says "log that", "save that", "add to my food log", "log this meal", or similar after you've shown nutrition results — call prepare_meal_log immediately. If an OUTSTANDING NUTRITION CALCULATION token is present in your context (see section at the bottom of your context data), use that token directly — do NOT re-call calculate_nutrition. If no token is available in context, call calculate_nutrition first to get one, then call prepare_meal_log. Pass the calculationToken exactly as returned by calculate_nutrition or as shown in the OUTSTANDING NUTRITION CALCULATION section (do not modify it), the mealType (infer from context — ask once if unclear), and logDate. The server will read all nutrition values from the signed token. The user will see a confirmation card — they must explicitly confirm before anything is saved.
 
+PARTIAL MEALS ARE LOGGABLE — DO NOT REFUSE:
+• If SOME ingredients resolved and some did not, you can STILL log the resolved ones. Do NOT refuse to log just because one ingredient (e.g. the bacon) failed to resolve.
+• "Log the eggs as breakfast" when eggs resolved but bacon did not → call prepare_meal_log, passing includeIngredientIndexes for the egg(s). Then tell the user the bacon wasn't resolved and was left out.
+• The ONLY time you cannot log is when ZERO ingredients resolved. Then say you couldn't resolve any items and ask them to rephrase.
+
+SELECTING WHICH ITEMS TO LOG (includeIngredientIndexes):
+• "log that" / "log the meal" / "log the resolved items" → OMIT includeIngredientIndexes. The server logs every resolved ingredient and leaves out (but discloses) unresolved ones.
+• The user names specific items ("just the eggs", "the eggs and toast", "only the chicken") → pass includeIngredientIndexes with ONLY those resolved items' indexes (the indexes are shown in the OUTSTANDING NUTRITION CALCULATION list, or are the 0-based positions in the calculate_nutrition ingredient list).
+• Never put an unresolved item's index in the list — it cannot be logged.
+• You choose items by index only. You NEVER supply or alter macro numbers — the server derives every value from the signed calculation.
+
 REUSE vs. RECALCULATE:
 • "Log that as dinner instead of lunch" → use the existing token, just pass mealType: "dinner". Do NOT recalculate.
 • "Log that" with quantity or food unchanged → use the existing token.
@@ -304,8 +315,9 @@ export const PREPARE_MEAL_LOG_TOOL = {
   function: {
     name: 'prepare_meal_log',
     description: `Prepare a calculated meal for the user to log to their food diary.
-Call this ONLY after calculate_nutrition returned a result.
-Pass the calculationToken EXACTLY as returned by calculate_nutrition — do not modify it.
+Call this after calculate_nutrition returned a result, OR when an OUTSTANDING NUTRITION CALCULATION token is present in your context.
+A partially resolved meal CAN still be logged — if at least one ingredient resolved, you may call this. Only unresolved ingredients are left out; the server never logs them.
+Pass the calculationToken EXACTLY as provided — do not modify it.
 Pass mealType (inferred from context) and logDate (today as YYYY-MM-DD).
 Do NOT pass any macro values — those come from the server-signed token.
 The user will see a confirmation card and must tap to save. You do not log on their behalf.`,
@@ -314,7 +326,7 @@ The user will see a confirmation card and must tap to save. You do not log on th
       properties: {
         calculationToken: {
           type: 'string',
-          description: 'The calculationToken from the calculate_nutrition result — pass it back exactly as received, unmodified.',
+          description: 'The calculationToken from the calculate_nutrition result or the OUTSTANDING NUTRITION CALCULATION context — pass it back exactly as received, unmodified.',
         },
         mealType: {
           type: 'string',
@@ -324,6 +336,11 @@ The user will see a confirmation card and must tap to save. You do not log on th
         logDate: {
           type: 'string',
           description: "Date to log the meal as YYYY-MM-DD (use today's date unless the user specifies otherwise)",
+        },
+        includeIngredientIndexes: {
+          type: 'array',
+          items: { type: 'integer' },
+          description: 'OPTIONAL. The 0-based indexes (from the calculation\'s ingredient list) of the specific ingredients to log. OMIT this to log every resolved ingredient ("log that", "log the meal", "log the resolved items"). Provide it ONLY when the user names specific items ("just the eggs", "the eggs and toast") — list only those items\' indexes. Never include an unresolved item\'s index; the server ignores it. You select WHICH items by index only — you never supply macro values.',
         },
       },
       required: ['calculationToken', 'mealType', 'logDate'],

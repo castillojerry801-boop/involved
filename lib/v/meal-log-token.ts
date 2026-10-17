@@ -104,3 +104,73 @@ export function buildMealLogToken(
   }
   return signMealLogToken(payload)
 }
+
+// ─── Ingredient selection ──────────────────────────────────────────────────────
+// Server-authoritative selection over a verified token payload. The AI may only
+// supply WHICH ingredients to include, by their stable original index in
+// payload.ingredients. Every macro value is read from the signed token here —
+// nothing the AI or client sends can introduce or alter nutrition data.
+//
+// Semantics:
+//   includeIndexes === undefined  → select ALL resolved ingredients (the default:
+//                                    "log that" / "log the meal" / "log resolved only").
+//   includeIndexes is an array    → select resolved ingredients whose ORIGINAL index
+//                                    is in the (range-checked, integer-only) set. An
+//                                    empty array, or one naming only unresolved /
+//                                    out-of-range indexes, yields an empty selection —
+//                                    the caller must reject, never fall back to all.
+
+export interface SelectedIngredient {
+  ingredient: IngredientResult
+  originalIndex: number
+}
+
+export interface IngredientSelection {
+  selected: SelectedIngredient[]
+  totals: { calories: number; proteinG: number; carbG: number; fatG: number }
+  /** true when includeIndexes was explicitly provided (vs. the all-resolved default) */
+  requestedSelection: boolean
+  /** number of resolved ingredients in the token (selected or not) */
+  resolvedCount: number
+}
+
+export function selectTokenIngredients(
+  payload: MealLogTokenPayload,
+  includeIndexes?: number[] | null,
+): IngredientSelection {
+  const requestedSelection = Array.isArray(includeIndexes)
+  const allowed: Set<number> | null = requestedSelection
+    ? new Set(
+        includeIndexes!.filter(
+          n => Number.isInteger(n) && n >= 0 && n < payload.ingredients.length,
+        ),
+      )
+    : null
+
+  const selected: SelectedIngredient[] = []
+  let resolvedCount = 0
+  payload.ingredients.forEach((ingredient, originalIndex) => {
+    if (!ingredient.resolved) return
+    resolvedCount++
+    if (allowed && !allowed.has(originalIndex)) return
+    selected.push({ ingredient, originalIndex })
+  })
+
+  // Totals are summed from the token's own per-ingredient values — never recomputed
+  // from anything the AI/client supplied.
+  const totals = selected.reduce(
+    (acc, { ingredient }) => ({
+      calories: acc.calories + ingredient.calories,
+      proteinG: acc.proteinG + ingredient.proteinG,
+      carbG:    acc.carbG    + ingredient.carbG,
+      fatG:     acc.fatG     + ingredient.fatG,
+    }),
+    { calories: 0, proteinG: 0, carbG: 0, fatG: 0 },
+  )
+  totals.calories = Math.round(totals.calories)
+  totals.proteinG = Math.round(totals.proteinG * 10) / 10
+  totals.carbG    = Math.round(totals.carbG    * 10) / 10
+  totals.fatG     = Math.round(totals.fatG     * 10) / 10
+
+  return { selected, totals, requestedSelection, resolvedCount }
+}
