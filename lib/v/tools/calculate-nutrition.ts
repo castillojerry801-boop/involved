@@ -90,6 +90,7 @@ function isCountUnit(unit: string): boolean {
 
 const NON_COUNT_HOUSEHOLD_WORDS = new Set([
   'serving', 'servings', 'portion', 'portions',
+  'meal', 'meals',   // "1 meal" is ambiguous — don't skip enrichment hoping for a better serving
   'g', 'gram', 'grams', 'ml', 'milliliter', 'milliliters',
   'oz', 'ounce', 'ounces', 'lb', 'lbs', 'pound', 'pounds',
   'cup', 'cups', 'tbsp', 'tablespoon', 'tablespoons',
@@ -228,6 +229,28 @@ function toNum(v: Decimal | number): number {
   return typeof v === 'number' ? v : Number(v)
 }
 
+// ── Helper: build FoodForConversion from a FoodMatch ─────────────────────────
+// Used for both the primary topMatch and fallback alternative candidates.
+
+function buildFoodForConversion(m: FoodMatch) {
+  return {
+    id: m.internalId ?? m.externalId,
+    servingSize: m.servingSize as unknown as Decimal,
+    servingUnit: m.servingUnit,
+    calories: m.calories as unknown as Decimal,
+    proteinG: m.proteinG as unknown as Decimal,
+    carbohydrateG: m.carbohydrateG as unknown as Decimal,
+    fatG: m.fatG as unknown as Decimal,
+    householdUnit: m.householdUnit ?? null,
+    unitsPerServing: m.unitsPerServing != null ? (m.unitsPerServing as unknown as Decimal) : null,
+    householdServingText: m.householdServingText ?? null,
+    sourceProvider: m.provider,
+    externalId: m.externalId,
+    fdcDataType: m.fdcDataType ?? null,
+    name: m.name,
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function calculateNutrition(
@@ -240,6 +263,7 @@ export async function calculateNutrition(
     ingredientCount: ingredients.length,
     servings: safeServings,
     units: ingredients.map(i => ({ unit: i.unit, normalized: normalizeIngredientUnit(i.unit) })),
+    quantities: ingredients.map(i => i.quantity),
   })
 
   // ── 1. Match all ingredients in parallel ─────────────────────────────────────
@@ -362,27 +386,7 @@ export async function calculateNutrition(
       }
     }
 
-    // Build FoodForConversion from FoodMatch
-    // FoodForConversion.id must be the internal DB id if we have it; otherwise use externalId
-    const foodForConversion = {
-      id: topMatch.internalId ?? topMatch.externalId,
-      servingSize: topMatch.servingSize as unknown as Decimal,
-      servingUnit: topMatch.servingUnit,
-      calories: topMatch.calories as unknown as Decimal,
-      proteinG: topMatch.proteinG as unknown as Decimal,
-      carbohydrateG: topMatch.carbohydrateG as unknown as Decimal,
-      fatG: topMatch.fatG as unknown as Decimal,
-      householdUnit: topMatch.householdUnit ?? null,
-      unitsPerServing:
-        topMatch.unitsPerServing != null
-          ? (topMatch.unitsPerServing as unknown as Decimal)
-          : null,
-      householdServingText: topMatch.householdServingText ?? null,
-      sourceProvider: topMatch.provider,
-      externalId: topMatch.externalId,
-      fdcDataType: topMatch.fdcDataType ?? null,
-      name: topMatch.name,
-    }
+    const foodForConversion = buildFoodForConversion(topMatch)
 
     console.log('[V-nutrition] match-result', {
       index: ingredientResults.length,
@@ -425,6 +429,69 @@ export async function calculateNutrition(
       continue
     }
 
+    // ── Part C: Alternative candidate fallback ────────────────────────────────
+    // When the top match fails conversion (e.g. library food with no portion data,
+    // or FatSecret record whose only serving is "meal"/"serving"), try the pre-ranked
+    // alternatives from the matcher in order. Apply the same enrichment logic as
+    // topMatch. Stop at the first alternative that resolves.
+    //
+    // Fallback results are marked 'plausible' regardless of the alt's original score —
+    // we couldn't use the best match so confidence is conservatively capped.
+    let usedFallback = false
+    if (isConversionError(conversionResult) && match.alternatives.length > 0) {
+      for (const alt of match.alternatives) {
+        // Semantic safety gate: skip alternatives with matchScore below the minimum
+        // 'worthwhile' threshold (40). Prevents resolving "chicken patty" via a
+        // poor-scoring unrelated food just to get a number.
+        if (alt.matchScore < 40) continue
+
+        let altMatch = alt
+
+        // Apply same enrichment logic: if FatSecret + count unit + no usable household unit
+        const altHasUsable = !!altMatch.householdUnit && isUsableHouseholdUnit(altMatch.householdUnit)
+        if (altMatch.provider === 'fatsecret' && !altHasUsable && isCountUnit(resolvedUnit)) {
+          const enriched = await enrichFatSecretMatch(altMatch, resolvedUnit)
+          if (enriched) {
+            altMatch = enriched
+            console.log('[V-nutrition] alt-enriched', {
+              externalId: altMatch.externalId,
+              householdUnit: altMatch.householdUnit,
+              servingSize: altMatch.servingSize,
+            })
+          }
+        }
+
+        let altResult: Awaited<ReturnType<typeof resolveIngredientFactor>>
+        try {
+          altResult = await resolveIngredientFactor(
+            buildFoodForConversion(altMatch),
+            ing.quantity,
+            resolvedUnit,
+          )
+        } catch {
+          continue
+        }
+
+        if (!isConversionError(altResult)) {
+          console.log('[V-nutrition] alt-match-used', {
+            index: ingredientResults.length,
+            altProvider: altMatch.provider,
+            altId: altMatch.externalId,
+            altName: altMatch.name,
+            originalError: conversionResult.errorCode,
+          })
+          topMatch = altMatch
+          conversionResult = altResult
+          usedFallback = true
+          // Surface the substitution in assumptions so V can disclose it to the user
+          assumptions.push(
+            `"${ing.name}": no serving conversion for best match — used comparable reference "${altMatch.name}" (${altMatch.provider}, confidence: plausible)`
+          )
+          break
+        }
+      }
+    }
+
     if (isConversionError(conversionResult)) {
       console.log('[V-nutrition] conversion-error', {
         index: ingredientResults.length,
@@ -456,7 +523,7 @@ export async function calculateNutrition(
       continue
     }
 
-    // Successfully resolved — compute macros
+    // Successfully resolved — either the original topMatch or a fallback alternative.
     const factor = conversionResult.factor
     const calories  = Math.round(toNum(topMatch.calories)      * factor)
     const proteinG  = Math.round(toNum(topMatch.proteinG)      * factor * 10) / 10
@@ -466,7 +533,8 @@ export async function calculateNutrition(
     ingredientResults.push({
       userDescription: userDesc,
       matchedFoodName: topMatch.name,
-      matchConfidence: match.confidence,
+      // Fallback results cap at 'plausible' — we couldn't use the best match
+      matchConfidence: usedFallback ? 'plausible' : match.confidence,
       calories,
       proteinG,
       carbG,
