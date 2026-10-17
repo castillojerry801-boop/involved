@@ -21,6 +21,7 @@ interface LogEntry {
   servingSize: number
   servingUnit: string
   servingMultiplier: number
+  isPartial?: boolean
 }
 
 interface DailyTotals {
@@ -345,6 +346,9 @@ export default function NutritionPage() {
                             {entry.calories} cal · P {entry.proteinG}g · C {entry.carbohydrateG}g · F {entry.fatG}g
                             {entry.servingMultiplier !== 1 && (
                               <span className="text-zinc-300 dark:text-zinc-600"> · {entry.servingMultiplier}×</span>
+                            )}
+                            {entry.isPartial && (
+                              <span className="text-amber-500"> · Partial estimate</span>
                             )}
                           </p>
                         </div>

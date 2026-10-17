@@ -88,6 +88,7 @@ async function getTodayNutrition(userId: string, dateStr: string) {
         snapshotProteinGPerServing: true,
         snapshotCarbohydrateGPerServing: true,
         snapshotFatGPerServing: true,
+        estimateSourceNote: true,
       },
     }),
     prisma.nutritionTarget.findFirst({
@@ -120,6 +121,7 @@ async function getTodayNutrition(userId: string, dateStr: string) {
         }
       : null,
     hasEntries: entries.length > 0,
+    hasPartialEstimate: entries.some(e => e.estimateSourceNote?.startsWith('Coach V (partial')),
   }
 }
 
@@ -242,7 +244,7 @@ export default async function TodayPage() {
     user.email?.split('@')[0] ||
     'Athlete'
 
-  const { totals, target, hasEntries } = nutrition
+  const { totals, target, hasEntries, hasPartialEstimate } = nutrition
   const totalWaterMl = waterAgg._sum.value != null ? Number(waterAgg._sum.value) : 0
   const waterGoalOz = profile?.waterTargetOz
     ?? (profile?.biologicalSex === 'female' ? 80 : 100)
@@ -315,6 +317,11 @@ export default async function TodayPage() {
                 style={{ width: `${pct(totals.calories, target.calories)}%` }}
               />
             </div>
+
+            {/* Partial estimate notice */}
+            {hasPartialEstimate && (
+              <p className="mb-2 text-xs text-amber-500">Includes a partial estimate — some ingredients were not resolved.</p>
+            )}
 
             {/* Macro rows */}
             <div className="mb-3 flex flex-col gap-2">

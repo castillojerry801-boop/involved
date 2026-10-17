@@ -22,9 +22,10 @@ import {
   type SearchPhase, type CandidatePool,
 } from '@/lib/v/search-orchestration'
 import type { QualityIssue } from '@/lib/v/program-quality'
-import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools, CALCULATE_NUTRITION_TOOL } from './constants'
+import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL } from './constants'
 import { calculateNutrition } from '@/lib/v/tools/calculate-nutrition'
 import type { CalculateNutritionArgs } from '@/lib/v/tools/calculate-nutrition'
+import { buildMealLogToken, verifyMealLogToken } from '@/lib/v/meal-log-token'
 import type OpenAI from 'openai'
 
 // One Luna draft + one targeted Luna correction, then escalate to Sol (which also
@@ -153,7 +154,7 @@ export async function POST(req: NextRequest) {
   }
 
   void (async () => {
-    const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL, PROPOSE_PROGRAM_TOOL, CALCULATE_NUTRITION_TOOL]
+    const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL, PROPOSE_PROGRAM_TOOL, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL]
     // Per-turn loop guard for calculate_nutrition: if the model calls it more than
     // 3 times within a single conversation turn it gets a hard stop, forcing V to
     // respond with what it already has rather than looping indefinitely.
@@ -810,7 +811,10 @@ export async function POST(req: NextRequest) {
               try {
                 const nutritionArgs = JSON.parse(fn.arguments) as CalculateNutritionArgs
                 const nutritionResult = await calculateNutrition(nutritionArgs)
-                result = JSON.stringify(nutritionResult)
+                // Sign the result so prepare_meal_log can reference it by token — V never
+                // touches the actual macro values; the confirm endpoint reads from the token.
+                const calculationToken = buildMealLogToken(user.id, nutritionResult)
+                result = JSON.stringify({ ...nutritionResult, calculationToken })
               } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : 'Nutrition calculation failed'
                 console.error('[V-nutrition-tool-error]', { userId: user.id, error: msg })
@@ -819,6 +823,69 @@ export async function POST(req: NextRequest) {
                   message: `Nutrition calculation failed: ${msg}. Tell the user you were unable to calculate macros right now.`,
                 })
               }
+            }
+
+          } else if (fn.name === 'prepare_meal_log') {
+            try {
+              const logArgs = JSON.parse(fn.arguments) as {
+                calculationToken: string
+                mealType: string
+                logDate: string
+              }
+
+              if (!logArgs.calculationToken) {
+                result = JSON.stringify({ status: 'error', message: 'Missing calculationToken — call calculate_nutrition first and pass its calculationToken here.' })
+              } else {
+                const verified = verifyMealLogToken(logArgs.calculationToken, user.id)
+                if (!verified.ok) {
+                  const hint =
+                    verified.reason === 'no_key'            ? 'Meal logging is temporarily unavailable. Tell the user to try again later.' :
+                    verified.reason === 'expired'           ? 'The calculation has expired (older than 2 hours). Call calculate_nutrition again to get a fresh result.' :
+                    verified.reason === 'wrong_user'        ? 'Ownership mismatch — cannot log a calculation belonging to another session.' :
+                    /* malformed / invalid_signature */       'The calculationToken is invalid — do not modify the token returned by calculate_nutrition.'
+                  result = JSON.stringify({ status: 'error', reason: verified.reason, message: hint })
+                } else {
+                  const { payload } = verified
+                  const resolvedIngredients = payload.ingredients.filter(i => i.resolved)
+                  // Allow logging even when some ingredients are unresolved ('estimated'),
+                  // but block entirely when nothing resolved at all ('incomplete').
+                  if (resolvedIngredients.length === 0) {
+                    result = JSON.stringify({
+                      status: 'error',
+                      message: 'No ingredients were resolved — nothing to log. Tell the user which ingredients failed and ask them to rephrase or provide quantities.',
+                    })
+                  } else {
+                    emitRaw({
+                      type: 'meal_log_pending',
+                      data: {
+                        calculationToken: logArgs.calculationToken,
+                        resolvedIngredients: resolvedIngredients.map(i => ({
+                          name:              i.matchedFoodName,
+                          userDescription:   i.userDescription,
+                          calories:          i.calories,
+                          proteinG:          i.proteinG,
+                          carbG:             i.carbG,
+                          fatG:              i.fatG,
+                          conversionNote:    i.conversionNote,
+                        })),
+                        unresolvedIngredients: payload.unresolvedIngredients,
+                        totals:               payload.totals,
+                        completeness:         payload.completeness,
+                        mealType:             logArgs.mealType,
+                        logDate:              logArgs.logDate,
+                      },
+                    })
+                    result = JSON.stringify({
+                      status: 'pending',
+                      message: 'A confirmation card is now shown to the user with the meal breakdown. Tell them the totals and that they can tap to save to their diary.',
+                    })
+                  }
+                }
+              }
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : 'Failed to prepare meal log'
+              console.error('[V-meal-log-error]', { userId: user.id, error: msg })
+              result = JSON.stringify({ status: 'error', message: msg })
             }
 
           } else {

@@ -12,6 +12,8 @@ import { cn } from '@/lib/utils'
 import { GenerateProgramModal } from '@/components/v/GenerateProgramModal'
 import { VoiceMicInput } from '@/components/v/VoiceMicInput'
 import { HealthSyncTrigger } from '@/components/today/HealthSyncTrigger'
+import { MealLogConfirmCard } from '@/components/v/MealLogConfirmCard'
+import type { MealLogPendingData } from '@/components/v/MealLogConfirmCard'
 
 interface TextMessage { role: 'user' | 'assistant'; content: string; type: 'text' }
 interface WorkoutMessage {
@@ -52,8 +54,13 @@ interface ProgramMessage {
     }>
   }
 }
+interface MealLogMessage {
+  role: 'assistant'
+  type: 'meal_log_pending'
+  data: MealLogPendingData
+}
 
-type Message = TextMessage | WorkoutMessage | ProgramMessage
+type Message = TextMessage | WorkoutMessage | ProgramMessage | MealLogMessage
 
 interface Usage {
   tier: 'free' | 'trial' | 'plus'
@@ -323,6 +330,17 @@ function ProgramCard({ data }: { data: ProgramMessage['data'] }) {
 // ─── Message bubble ───────────────────────────────────────────────────────────
 
 function MessageBubble({ msg }: { msg: Message }) {
+  if (msg.type === 'meal_log_pending') return (
+    <div className="flex gap-3">
+      <div className="size-8 shrink-0 rounded-full overflow-hidden">
+        <Image src="/icon.jpg" alt="Coach" width={32} height={32} className="size-8 object-cover" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <MealLogConfirmCard data={msg.data} />
+      </div>
+    </div>
+  )
+
   if (msg.type === 'program') return (
     <div className="flex gap-3">
       <div className="size-8 shrink-0 rounded-full overflow-hidden">
@@ -448,7 +466,7 @@ export default function CoachPage() {
           const json = line.slice(6)
           if (!json.trim()) continue
           try {
-            const event = JSON.parse(json) as { type: string; content?: string; data?: WorkoutMessage['data'] | ProgramMessage['data'] }
+            const event = JSON.parse(json) as { type: string; content?: string; data?: WorkoutMessage['data'] | ProgramMessage['data'] | MealLogPendingData }
             if (event.type === 'text' && event.content) {
               assistantText += event.content
               setMessages(prev => {
@@ -463,6 +481,8 @@ export default function CoachPage() {
               setMessages(prev => [...prev, { role: 'assistant', type: 'workout', data: event.data as WorkoutMessage['data'] }])
             } else if (event.type === 'program' && event.data) {
               setMessages(prev => [...prev, { role: 'assistant', type: 'program', data: event.data as ProgramMessage['data'] }])
+            } else if (event.type === 'meal_log_pending' && event.data) {
+              setMessages(prev => [...prev, { role: 'assistant', type: 'meal_log_pending', data: event.data as MealLogPendingData }])
             }
           } catch { /* malformed event */ }
         }

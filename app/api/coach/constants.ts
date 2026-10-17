@@ -82,6 +82,7 @@ TOOLS
 • propose_workout — single training session ("give me a workout", "I have 45 minutes").
 • propose_program — structured multi-day plan ("build me a program", "3-day split", "6-week plan").
 • calculate_nutrition — calculate real macros from a food database for any ingredient list. Always use this instead of recalling values from memory.
+• prepare_meal_log — after calculate_nutrition returns, when the user says "log that", "save that", "add to my diary", or similar. Pass the calculationToken from the calculate_nutrition result (exactly as received), the mealType (infer from context — ask once if unclear), and logDate. Never pass or modify macro values — the server reads nutrition from the signed token. The user must confirm via the card before anything is saved.
 
 ════════════════════════════════════════
 NUTRITION CALCULATIONS
@@ -94,6 +95,7 @@ When users ask about calories, macros, or nutrition for specific foods:
 5. After the tool returns, present results conversationally. Show totals clearly. Mention per-serving if servings were specified.
 6. If some ingredients are unresolved, tell the user specifically which ones failed and present the partial result for everything that did calculate. Example: "I couldn't find a portion conversion for [ingredient] — the other ingredients calculated fine." Do NOT ask for brands for generic whole foods (eggs, bacon, tortillas, meat, produce). Only ask for a brand if it's a packaged product where the brand significantly changes the nutrition.
 7. Do not add caveats or warnings beyond what the tool reports. Trust the tool's completeness assessment.
+8. MEAL LOGGING: when the user says "log that", "save that", "add to my food log", "log this meal", or similar after you've shown nutrition results — call prepare_meal_log immediately. Pass the calculationToken exactly as returned by calculate_nutrition (do not modify it), the mealType (infer from context — ask once if unclear), and logDate. Do NOT re-call calculate_nutrition. The server will read all nutrition values from the signed token. The user will see a confirmation card showing resolved and unresolved ingredients — they must explicitly confirm before anything is saved.
 
 CRITICAL — NEVER ESTIMATE WHEN THE TOOL RETURNS INCOMPLETE:
 When calculate_nutrition returns completeness='incomplete' or unresolvedIngredients has entries, you MUST:
@@ -280,6 +282,44 @@ If the tool returns unresolved ingredients: calculate and present all the ingred
         },
       },
       required: ['ingredients'],
+    },
+  },
+}
+
+// ── Tool definition for prepare_meal_log ─────────────────────────────────────
+// Called by V after a successful calculate_nutrition result when the user wants
+// to save the meal to their diary. The calculationToken is an opaque server-signed
+// value from the calculate_nutrition result — V must not modify it or supply macro
+// values independently. The route handler verifies the token's signature, ownership,
+// and expiry before emitting the meal_log_pending SSE event.
+export const PREPARE_MEAL_LOG_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: 'prepare_meal_log',
+    description: `Prepare a calculated meal for the user to log to their food diary.
+Call this ONLY after calculate_nutrition returned a result.
+Pass the calculationToken EXACTLY as returned by calculate_nutrition — do not modify it.
+Pass mealType (inferred from context) and logDate (today as YYYY-MM-DD).
+Do NOT pass any macro values — those come from the server-signed token.
+The user will see a confirmation card and must tap to save. You do not log on their behalf.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        calculationToken: {
+          type: 'string',
+          description: 'The calculationToken from the calculate_nutrition result — pass it back exactly as received, unmodified.',
+        },
+        mealType: {
+          type: 'string',
+          enum: ['breakfast', 'lunch', 'dinner', 'snack', 'other'],
+          description: 'Meal type inferred from conversation context',
+        },
+        logDate: {
+          type: 'string',
+          description: "Date to log the meal as YYYY-MM-DD (use today's date unless the user specifies otherwise)",
+        },
+      },
+      required: ['calculationToken', 'mealType', 'logDate'],
     },
   },
 }

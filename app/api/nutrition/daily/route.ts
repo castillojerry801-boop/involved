@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
       proteinG: Math.round(Number(e.snapshotProteinGPerServing) * Number(e.servingMultiplier) * 10) / 10,
       carbohydrateG: Math.round(Number(e.snapshotCarbohydrateGPerServing) * Number(e.servingMultiplier) * 10) / 10,
       fatG: Math.round(Number(e.snapshotFatGPerServing) * Number(e.servingMultiplier) * 10) / 10,
+      isPartial: e.estimateSourceNote?.startsWith('Coach V (partial') ?? false,
     })),
     totals: {
       calories: Math.round(totals.calories),
