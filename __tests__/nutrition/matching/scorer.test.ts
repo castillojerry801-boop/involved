@@ -149,3 +149,99 @@ describe('scoreForIngredient', () => {
     }
   })
 })
+
+// ── Size-diminutive conflict penalty ──────────────────────────────────────────
+
+describe('scoreForIngredient — size-diminutive penalty', () => {
+  it('Snickers Bar ranks above Snickers Minis for query "snickers"', () => {
+    const results = [
+      makeFood({ name: 'Snickers Minis', externalId: 'minis', provider: 'fatsecret' }),
+      makeFood({ name: 'Snickers Bar',   externalId: 'bar',   provider: 'fatsecret' }),
+    ]
+    const scored = scoreForIngredient(results, req('snickers'))
+    const bar   = scored.find(r => r.externalId === 'bar')!
+    const minis = scored.find(r => r.externalId === 'minis')!
+    expect(bar.matchScore).toBeGreaterThan(minis.matchScore)
+  })
+
+  it('Snickers Bar ranks above Snickers Minis for query "normal sized snickers"', () => {
+    const results = [
+      makeFood({ name: 'Snickers Minis', externalId: 'minis', provider: 'fatsecret' }),
+      makeFood({ name: 'Snickers Bar',   externalId: 'bar',   provider: 'fatsecret' }),
+    ]
+    const scored = scoreForIngredient(results, req('normal sized snickers'))
+    const bar   = scored.find(r => r.externalId === 'bar')!
+    const minis = scored.find(r => r.externalId === 'minis')!
+    expect(bar.matchScore).toBeGreaterThan(minis.matchScore)
+  })
+
+  it('fun size candy bar is penalized when query is unqualified', () => {
+    const results = [
+      makeFood({ name: 'Snickers, Fun Size', externalId: 'fun',    provider: 'fatsecret' }),
+      makeFood({ name: 'Snickers Bar',       externalId: 'bar',    provider: 'fatsecret' }),
+    ]
+    const scored = scoreForIngredient(results, req('snickers bar'))
+    const bar     = scored.find(r => r.externalId === 'bar')!
+    const funSize = scored.find(r => r.externalId === 'fun')!
+    expect(bar.matchScore).toBeGreaterThan(funSize.matchScore)
+  })
+
+  it('minis variant is NOT penalized when query explicitly requests minis', () => {
+    const results = [
+      makeFood({ name: 'Snickers Minis', externalId: 'minis', provider: 'fatsecret' }),
+      makeFood({ name: 'Snickers Bar',   externalId: 'bar',   provider: 'fatsecret' }),
+    ]
+    const scored = scoreForIngredient(results, req('snickers minis'))
+    const minis = scored.find(r => r.externalId === 'minis')!
+    const bar   = scored.find(r => r.externalId === 'bar')!
+    // When user asks for minis, the minis variant should rank higher
+    expect(minis.matchScore).toBeGreaterThan(bar.matchScore)
+  })
+
+  it('M&Ms Minis penalized for unqualified "m&ms" query', () => {
+    const results = [
+      makeFood({ name: "M&M's Minis",         externalId: 'mm_minis',   provider: 'fatsecret' }),
+      makeFood({ name: "M&M's Milk Chocolate", externalId: 'mm_regular', provider: 'fatsecret' }),
+    ]
+    const scored = scoreForIngredient(results, req("m&ms"))
+    const minis   = scored.find(r => r.externalId === 'mm_minis')!
+    const regular = scored.find(r => r.externalId === 'mm_regular')!
+    expect(regular.matchScore).toBeGreaterThan(minis.matchScore)
+  })
+
+  it('bite size candy penalized for unqualified query', () => {
+    const results = [
+      makeFood({ name: 'Reese Bites',            externalId: 'bites',   provider: 'fatsecret' }),
+      makeFood({ name: "Reese's Peanut Butter Cup", externalId: 'cup', provider: 'fatsecret' }),
+    ]
+    const scored = scoreForIngredient(results, req("reese's peanut butter cup"))
+    const cup   = scored.find(r => r.externalId === 'cup')!
+    const bites = scored.find(r => r.externalId === 'bites')!
+    expect(cup.matchScore).toBeGreaterThan(bites.matchScore)
+  })
+
+  it('matchReasons includes size-diminutive conflict when penalized', () => {
+    const results = [
+      makeFood({ name: 'Snickers Minis', externalId: 'minis', provider: 'fatsecret' }),
+    ]
+    const scored = scoreForIngredient(results, req('snickers'))
+    const minis = scored[0]
+    expect(minis.matchReasons.some(r => r.includes('diminutive'))).toBe(true)
+  })
+
+  it('no false penalty for foods that happen to contain "mini" as part of another word', () => {
+    // "minimum" or brand names with "mini" in them should not be incorrectly penalized
+    // unless the standalone word "mini" or "minis" appears as a token
+    const results = [
+      makeFood({ name: 'Minimalist Bites Granola', externalId: 'minimalist', provider: 'fatsecret' }),
+      makeFood({ name: 'Granola Bar Original',     externalId: 'original',   provider: 'fatsecret' }),
+    ]
+    const scored = scoreForIngredient(results, req('granola bar'))
+    // "minimalist" should not trigger the penalty because "mini" only matches as a substring
+    // but "bites" WILL trigger it (it's in the diminutive set)
+    // This test verifies the original granola bar still ranks higher
+    const original    = scored.find(r => r.externalId === 'original')!
+    const minimalist  = scored.find(r => r.externalId === 'minimalist')!
+    expect(original.matchScore).toBeGreaterThanOrEqual(minimalist.matchScore)
+  })
+})

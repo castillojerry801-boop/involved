@@ -110,10 +110,22 @@ export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const [{ data: { user } }, body] = await Promise.all([
     supabase.auth.getUser(),
-    req.json() as Promise<{ messages: Array<{ role: 'user' | 'assistant'; content: string }>; clientDate?: string }>,
+    req.json() as Promise<{ messages: Array<{ role: 'user' | 'assistant'; content: string }>; clientDate?: string; pendingCalculationToken?: string }>,
   ])
   if (!user) return new Response('Unauthorized', { status: 401 })
   if (!body.messages?.length) return new Response('No messages', { status: 400 })
+
+  // Verify the pending calculation token immediately after auth — synchronous, so no extra round-trip.
+  // We re-verify ownership + signature + expiry server-side every turn; the client value is never trusted.
+  // The token value itself is never logged; only metadata (verified status, expiry window) is recorded.
+  const pendingCalcRaw = body.pendingCalculationToken ?? null
+  const pendingCalcVerified = pendingCalcRaw ? verifyMealLogToken(pendingCalcRaw, user.id) : null
+  console.log('[V-pending-calc]', {
+    userId: user.id,
+    hasToken: !!pendingCalcRaw,
+    verified: pendingCalcVerified?.ok ?? false,
+    reason: pendingCalcVerified?.ok === false ? pendingCalcVerified.reason : null,
+  })
 
   const entitlement = await getUserEntitlement(user.id)
   const tier = entitlement.tier
@@ -248,8 +260,31 @@ export async function POST(req: NextRequest) {
     // Reassignable: on a quality-correction round it is REPLACED with a compact,
     // delta-only context (see buildCorrectionMessages) instead of resending the full
     // transcript + prior draft + pool, which is what blew the token budget.
+    // Inject the verified pending calculation into the system context so V can reference the
+    // token in the next turn without re-calling calculate_nutrition. The token value is included
+    // verbatim — V must pass it back unmodified to prepare_meal_log.
+    // If the token failed verification (expired, wrong user, tampered), show a brief note so V
+    // knows to recalculate rather than attempting prepare_meal_log with a stale token.
+    let pendingCalcContext = ''
+    if (pendingCalcVerified?.ok) {
+      const p = pendingCalcVerified.payload
+      pendingCalcContext =
+        `\n\nOUTSTANDING NUTRITION CALCULATION (verified, active):\n` +
+        `If the user asks to log this meal, call prepare_meal_log with this calculationToken ` +
+        `(pass it exactly — do not modify): ${pendingCalcRaw}\n` +
+        `Totals: ${p.totals.calories} kcal, ${p.totals.proteinG}g protein, ` +
+        `${p.totals.carbG}g carbs, ${p.totals.fatG}g fat. ` +
+        `Do NOT call calculate_nutrition again unless the user requests a different food, different quantity, or a correction.`
+    } else if (pendingCalcRaw && pendingCalcVerified?.ok === false) {
+      // Token present but invalid — tell V so it recalculates instead of using a bad token
+      pendingCalcContext =
+        `\n\nNOTE: A previous nutrition calculation is no longer valid ` +
+        `(${pendingCalcVerified.reason === 'expired' ? 'it expired' : 'it could not be verified'}). ` +
+        `If the user asks to log a meal, call calculate_nutrition first to get a fresh result.`
+    }
+
     let chatMessages: ChatMessage[] = [
-      { role: 'system', content: SYSTEM_PROMPT + contextSnippet + equipmentCapabilitySummary },
+      { role: 'system', content: SYSTEM_PROMPT + contextSnippet + equipmentCapabilitySummary + pendingCalcContext },
       ...trimMessageHistory(body.messages).map(m => ({ role: m.role, content: m.content } as ChatMessage)),
     ]
 
@@ -814,6 +849,12 @@ export async function POST(req: NextRequest) {
                 // Sign the result so prepare_meal_log can reference it by token — V never
                 // touches the actual macro values; the confirm endpoint reads from the token.
                 const calculationToken = buildMealLogToken(user.id, nutritionResult)
+                // Emit the token to the client so it can be forwarded in subsequent turns.
+                // This is what allows "log that" in Turn 2 to work without re-running the
+                // food lookup. A new calculation replaces any previously stored token.
+                if (calculationToken) {
+                  emitRaw({ type: 'calculation_token', calculationToken })
+                }
                 result = JSON.stringify({ ...nutritionResult, calculationToken })
               } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : 'Nutrition calculation failed'

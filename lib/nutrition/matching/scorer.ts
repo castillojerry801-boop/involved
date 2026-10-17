@@ -9,6 +9,19 @@ const STOPWORDS = new Set([
   'and', 'or', 'the', 'a', 'an', 'with', 'without', 'for', 'of', 'in', 'on', 'at', 'to', 'by',
 ])
 
+// Size-diminutive words in a food result name that conflict with a non-diminutive query.
+// When the result name contains one of these words but the query does NOT, the result
+// is a materially smaller product (different calories, different portion) and should be
+// strongly penalized. Example: "Snickers Minis" vs query "snickers bar".
+const SIZE_DIMINUTIVE_WORDS = new Set([
+  'minis', 'mini', 'miniatures',
+  'fun size', 'fun-size',
+  'bite size', 'bite-size', 'bites',
+  'snack size', 'snack-size',
+  'treat size', 'treat-size',
+  'snack pack', 'snack-pack',
+])
+
 // Negative keyword pairs: if query contains word A, penalize foods containing word B
 const NEGATIVE_PAIRS: [string, string[]][] = [
   ['breast',  ['thigh', 'nugget', 'wing', 'drumstick', 'ground', 'rotisserie', 'dark']],
@@ -170,6 +183,29 @@ export function scoreForIngredient(
         reasons.push(`Negative keyword conflict: ${bad}`)
         break  // Only apply once
       }
+    }
+
+    // Size-diminutive conflict: result is a smaller product variant (minis, fun size, bites,
+    // etc.) but the query does not request a diminutive form. Prevents "Snickers Minis" from
+    // ranking above "Snickers Bar" when the user just asks for "snickers".
+    // Multi-word phrases are checked against the full name string; single words use wordInText.
+    const nameLowerForDim = nameLower
+    let hasDiminutiveConflict = false
+    for (const dim of SIZE_DIMINUTIVE_WORDS) {
+      const dimInResult = dim.includes(' ')
+        ? nameLowerForDim.includes(dim)
+        : wordInText(dim, r.name)
+      const dimInQuery = dim.includes(' ')
+        ? queryLower.includes(dim)
+        : wordInText(dim, req.ingredientName)
+      if (dimInResult && !dimInQuery) {
+        hasDiminutiveConflict = true
+        break
+      }
+    }
+    if (hasDiminutiveConflict) {
+      score -= 25
+      reasons.push('Size-diminutive conflict: result is a smaller variant not requested')
     }
 
     const match: FoodMatch = {

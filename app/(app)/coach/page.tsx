@@ -399,6 +399,10 @@ export default function CoachPage() {
   const [usage, setUsage] = useState<Usage | null>(null)
   const [limitReached, setLimitReached] = useState(false)
   const [programModalOpen, setProgramModalOpen] = useState(false)
+  // Tracks the most recent signed calculationToken from calculate_nutrition so it can be
+  // forwarded to the next turn. This lets V call prepare_meal_log without re-running the
+  // food lookup when the user says "log that" in a follow-up message.
+  const [pendingCalcToken, setPendingCalcToken] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -433,6 +437,7 @@ export default function CoachPage() {
         body: JSON.stringify({
           messages: [...apiMessages(), { role: 'user', content: trimmed }],
           clientDate: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })(),
+          ...(pendingCalcToken ? { pendingCalculationToken: pendingCalcToken } : {}),
         }),
       })
 
@@ -469,7 +474,7 @@ export default function CoachPage() {
           const json = line.slice(6)
           if (!json.trim()) continue
           try {
-            const event = JSON.parse(json) as { type: string; content?: string; data?: WorkoutMessage['data'] | ProgramMessage['data'] | MealLogPendingData }
+            const event = JSON.parse(json) as { type: string; content?: string; data?: WorkoutMessage['data'] | ProgramMessage['data'] | MealLogPendingData; calculationToken?: string }
             if (event.type === 'text' && event.content) {
               assistantText += event.content
               setMessages(prev => {
@@ -480,11 +485,19 @@ export default function CoachPage() {
                 }
                 return updated
               })
+            } else if (event.type === 'calculation_token' && event.calculationToken) {
+              // A new calculation replaces any previously stored token. The token is
+              // forwarded on the next request so V can call prepare_meal_log without
+              // re-running the food lookup.
+              setPendingCalcToken(event.calculationToken)
             } else if (event.type === 'workout' && event.data) {
               setMessages(prev => [...prev, { role: 'assistant', type: 'workout', data: event.data as WorkoutMessage['data'] }])
             } else if (event.type === 'program' && event.data) {
               setMessages(prev => [...prev, { role: 'assistant', type: 'program', data: event.data as ProgramMessage['data'] }])
             } else if (event.type === 'meal_log_pending' && event.data) {
+              // Token was consumed — clear it so a stale token isn't forwarded after
+              // the user discusses a different food.
+              setPendingCalcToken(null)
               setMessages(prev => [...prev, { role: 'assistant', type: 'meal_log_pending', data: event.data as MealLogPendingData }])
             }
           } catch { /* malformed event */ }
