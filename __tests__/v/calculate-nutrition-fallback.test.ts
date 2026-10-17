@@ -543,6 +543,63 @@ describe('calculateNutrition — alternative candidate fallback (Part C)', () =>
     })
   })
 
+  describe('UUID guard regression — USDA top match with non-UUID id triggers Part C', () => {
+    it('USDA top match (externalId "171513", no internalId) fails gracefully → Part C runs → FatSecret alt resolves', async () => {
+      // This was the production failure: USDA 171513 has no internalId, so
+      // lookupPortions('171513', 'piece') threw a Postgres UUID error, which
+      // hit the catch block in calculateNutrition and skipped Part C entirely.
+      // After UUID guard fix, resolveIngredientFactor returns ConversionError,
+      // Part C runs, and the FatSecret alt with 'patty' serving resolves.
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: {
+          provider: 'usda_fooddata' as const,
+          externalId: '171513',
+          internalId: undefined,  // not stored in DB — will use externalId as id
+          name: 'Chicken Patty, frozen',
+          servingSize: 100,
+          servingUnit: 'g',
+          householdUnit: undefined,
+          unitsPerServing: undefined,
+          householdServingText: undefined,
+          calories: 216,
+          proteinG: 16,
+          carbohydrateG: 12,
+          fatG: 11,
+          isGeneric: true,
+          matchScore: 72,
+          matchReasons: ['SR Legacy'],
+          fdcDataType: 'SR Legacy',
+        },
+        alternatives: [
+          makeFatSecretAlt({
+            externalId: 'fs-patty-good',
+            name: 'Frozen Chicken Patty',
+            servingSize: 83,
+            calories: 180,
+            proteinG: 12,
+            carbohydrateG: 10,
+            fatG: 9,
+            householdUnit: 'patty',
+            householdServingText: '1 patty',
+            unitsPerServing: 1,
+          } as Parameters<typeof makeFatSecretAlt>[0]),
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'frozen chicken patties', quantity: 2, unit: 'piece' }],
+        servings: 1,
+      })
+
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].matchedFoodName).toBe('Frozen Chicken Patty')
+      expect(result.ingredients[0].matchConfidence).toBe('plausible')
+      expect(result.ingredients[0].calories).toBe(360) // 180 × 2
+    })
+  })
+
   describe('Check 3 — tool schema requires quantity per ingredient', () => {
     it('CALCULATE_NUTRITION_TOOL schema marks quantity as required on each ingredient', () => {
       const schema = CALCULATE_NUTRITION_TOOL.function.parameters

@@ -439,6 +439,18 @@ export async function calculateNutrition(
     // we couldn't use the best match so confidence is conservatively capped.
     let usedFallback = false
     if (isConversionError(conversionResult) && match.alternatives.length > 0) {
+      console.log('[V-nutrition] trying-alternatives', {
+        index: ingredientResults.length,
+        topError: conversionResult.errorCode,
+        altCount: match.alternatives.length,
+        alts: match.alternatives.map(a => ({
+          provider: a.provider,
+          id: a.externalId,
+          name: a.name,
+          score: a.matchScore,
+          householdUnit: a.householdUnit ?? null,
+        })),
+      })
       for (const alt of match.alternatives) {
         // Semantic safety gate: skip alternatives with matchScore below the minimum
         // 'worthwhile' threshold (40). Prevents resolving "chicken patty" via a
@@ -468,7 +480,25 @@ export async function calculateNutrition(
             ing.quantity,
             resolvedUnit,
           )
-        } catch {
+        } catch (err) {
+          console.log('[V-nutrition] alt-conversion-threw', {
+            index: ingredientResults.length,
+            altId: altMatch.externalId,
+            altProvider: altMatch.provider,
+            error: err instanceof Error ? err.message : String(err),
+          })
+          continue
+        }
+
+        if (isConversionError(altResult)) {
+          console.log('[V-nutrition] alt-conversion-failed', {
+            index: ingredientResults.length,
+            altId: altMatch.externalId,
+            altProvider: altMatch.provider,
+            altName: altMatch.name,
+            errorCode: altResult.errorCode,
+            householdUnit: altMatch.householdUnit ?? null,
+          })
           continue
         }
 

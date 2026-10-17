@@ -17,6 +17,13 @@ export interface StoredPortion {
 const SIZE_ADJECTIVES = new Set(['large', 'medium', 'small', 'extra large', 'xl', 'lg', 'sm', 'med'])
 
 const BASE_URL = 'https://api.nal.usda.gov/fdc/v1'
+
+// FoodItemPortion.foodItemId is a @db.Uuid column. Passing a non-UUID string
+// (e.g. FatSecret numeric ID "2917" or USDA fdcId "171513") causes Postgres to
+// throw "invalid input syntax for type uuid". Guard both DB-accessing functions
+// so they return [] instead of throwing, allowing callers to fall through to the
+// ConversionError path and trigger Part C alternative fallback.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const FETCH_TIMEOUT_MS = 5000
 
 async function fetchWithTimeout(url: string): Promise<Response> {
@@ -82,6 +89,10 @@ export async function fetchAndStoreUsdaPortions(
   if (!fdcId || !/^\d+$/.test(fdcId.trim())) {
     return []
   }
+
+  // foodItemId must be a valid UUID — DB column is @db.Uuid; a non-UUID (e.g. "171513")
+  // causes Postgres to throw, which would bypass the ConversionError path and Part C.
+  if (!UUID_RE.test(foodItemId)) return []
 
   // Check if portions already exist for this food
   const existing = await prisma.foodItemPortion.findFirst({
@@ -164,6 +175,10 @@ export async function lookupPortions(
   unit: string,
   preparationState?: string,
 ): Promise<StoredPortion[]> {
+  // Guard: foodItemId must be a valid UUID. Non-UUID ids (FatSecret/USDA externalIds used
+  // when the food hasn't been stored in our DB yet) would cause a Postgres UUID syntax error.
+  if (!UUID_RE.test(foodItemId)) return []
+
   const normalizedUnit = normalizeUnit(unit)
 
   const portions = await prisma.foodItemPortion.findMany({

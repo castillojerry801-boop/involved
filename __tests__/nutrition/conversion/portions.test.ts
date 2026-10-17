@@ -23,7 +23,11 @@ vi.stubGlobal('fetch', mockFetch)
 
 vi.stubEnv('USDA_API_KEY', 'test-api-key')
 
-import { fetchAndStoreUsdaPortions } from '../../../lib/nutrition/conversion/portions'
+import { fetchAndStoreUsdaPortions, lookupPortions } from '../../../lib/nutrition/conversion/portions'
+
+// FoodItemPortion.foodItemId is @db.Uuid — tests that exercise Foundation/SR Legacy
+// processing must use a valid UUID, otherwise the UUID guard returns [] early.
+const VALID_FOOD_UUID = '550e8400-e29b-41d4-a716-446655440000'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -98,7 +102,7 @@ describe('fetchAndStoreUsdaPortions', () => {
       .mockResolvedValueOnce({ id: 'p1', portionDescription: '1 cup', quantity: 1, unit: 'cup', gramWeight: 125.0, fdcPortionId: 100, sourceConfidence: 'usda_measured', preparationState: null })
       .mockResolvedValueOnce({ id: 'p2', portionDescription: '1 tbsp', quantity: 1, unit: 'tbsp', gramWeight: 15.5, fdcPortionId: 101, sourceConfidence: 'usda_measured', preparationState: 'raw' })
 
-    const result = await fetchAndStoreUsdaPortions('food-id', '99999', 'Foundation')
+    const result = await fetchAndStoreUsdaPortions(VALID_FOOD_UUID, '99999', 'Foundation')
 
     expect(mockFetch).toHaveBeenCalledOnce()
     expect(mockFetch.mock.calls[0][0]).toContain('99999')
@@ -132,7 +136,7 @@ describe('fetchAndStoreUsdaPortions', () => {
       preparationState: null,
     })
 
-    const result = await fetchAndStoreUsdaPortions('food-id', '54321', 'SR Legacy')
+    const result = await fetchAndStoreUsdaPortions(VALID_FOOD_UUID, '54321', 'SR Legacy')
     expect(result).toHaveLength(1)
     expect(result[0].unit).toBe('slice')
   })
@@ -170,7 +174,7 @@ describe('fetchAndStoreUsdaPortions', () => {
       preparationState: null,
     })
 
-    const result = await fetchAndStoreUsdaPortions('food-id', '11111', 'Foundation')
+    const result = await fetchAndStoreUsdaPortions(VALID_FOOD_UUID, '11111', 'Foundation')
     expect(result).toHaveLength(1)
     expect(result[0].unit).toBe('piece')
     expect(result[0].gramWeight).toBe(50)
@@ -194,7 +198,7 @@ describe('fetchAndStoreUsdaPortions', () => {
       },
     ])
 
-    const result = await fetchAndStoreUsdaPortions('food-id', '99999', 'Foundation')
+    const result = await fetchAndStoreUsdaPortions(VALID_FOOD_UUID, '99999', 'Foundation')
     expect(mockFetch).not.toHaveBeenCalled()
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe('existing-p1')
@@ -222,7 +226,7 @@ describe('fetchAndStoreUsdaPortions', () => {
       preparationState: 'raw',
     })
 
-    const result = await fetchAndStoreUsdaPortions('food-id', '22222', 'Foundation')
+    const result = await fetchAndStoreUsdaPortions(VALID_FOOD_UUID, '22222', 'Foundation')
     expect(result[0].preparationState).toBe('raw')
   })
 
@@ -249,7 +253,7 @@ describe('fetchAndStoreUsdaPortions', () => {
       preparationState: null,
     })
 
-    const result = await fetchAndStoreUsdaPortions('food-id', '33333', 'Foundation')
+    const result = await fetchAndStoreUsdaPortions(VALID_FOOD_UUID, '33333', 'Foundation')
     expect(result[0].preparationState).toBeNull()
 
     // Verify that what was passed to create had preparationState: null
@@ -279,7 +283,7 @@ describe('fetchAndStoreUsdaPortions', () => {
       preparationState: null,
     })
 
-    const result = await fetchAndStoreUsdaPortions('food-id', '44444', 'Foundation')
+    const result = await fetchAndStoreUsdaPortions(VALID_FOOD_UUID, '44444', 'Foundation')
     expect(result[0].preparationState).toBeNull()
     const createArg = mockPrisma.foodItemPortion.create.mock.calls[0][0].data
     expect(createArg.preparationState).toBeNull()
@@ -287,10 +291,63 @@ describe('fetchAndStoreUsdaPortions', () => {
 
   it('returns [] when USDA API key is missing', async () => {
     vi.stubEnv('USDA_API_KEY', '')
-    const result = await fetchAndStoreUsdaPortions('food-id', '99999', 'Foundation')
+    const result = await fetchAndStoreUsdaPortions(VALID_FOOD_UUID, '99999', 'Foundation')
     expect(result).toEqual([])
     expect(mockFetch).not.toHaveBeenCalled()
     // Restore
     vi.stubEnv('USDA_API_KEY', 'test-api-key')
+  })
+
+  // ── UUID guard — prevents Postgres "invalid input syntax for type uuid" ───────
+  // FoodItemPortion.foodItemId is @db.Uuid. Passing a non-UUID foodItemId (e.g.
+  // FatSecret numeric ID "2917" or USDA fdcId "171513") causes a Postgres throw
+  // that propagates through resolveIngredientFactor and bypasses Part C fallback.
+  it('non-UUID foodItemId (FatSecret numeric ID) → returns [] without querying DB', async () => {
+    const result = await fetchAndStoreUsdaPortions('2917', '2917', 'Foundation')
+    expect(result).toEqual([])
+    expect(mockPrisma.foodItemPortion.findFirst).not.toHaveBeenCalled()
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('non-UUID foodItemId (USDA numeric string) → returns [] without querying DB', async () => {
+    const result = await fetchAndStoreUsdaPortions('171513', '171513', 'SR Legacy')
+    expect(result).toEqual([])
+    expect(mockPrisma.foodItemPortion.findFirst).not.toHaveBeenCalled()
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('valid UUID foodItemId → still queries DB normally', async () => {
+    // Explicitly override any queued mock values from prior tests
+    mockPrisma.foodItemPortion.findFirst.mockResolvedValue(null)
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 404 })
+    const result = await fetchAndStoreUsdaPortions(VALID_FOOD_UUID, '99999', 'Foundation')
+    expect(result).toEqual([])
+    expect(mockPrisma.foodItemPortion.findFirst).toHaveBeenCalledWith({
+      where: { foodItemId: VALID_FOOD_UUID },
+    })
+  })
+})
+
+describe('lookupPortions — UUID guard', () => {
+  it('non-UUID foodItemId → returns [] without querying DB', async () => {
+    const result = await lookupPortions('2917', 'piece')
+    expect(result).toEqual([])
+    expect(mockPrisma.foodItemPortion.findMany).not.toHaveBeenCalled()
+  })
+
+  it('non-UUID USDA fdcId → returns [] without querying DB', async () => {
+    const result = await lookupPortions('171513', 'strip')
+    expect(result).toEqual([])
+    expect(mockPrisma.foodItemPortion.findMany).not.toHaveBeenCalled()
+  })
+
+  it('valid UUID foodItemId → queries DB normally', async () => {
+    const validUUID = '550e8400-e29b-41d4-a716-446655440000'
+    mockPrisma.foodItemPortion.findMany.mockResolvedValueOnce([])
+    const result = await lookupPortions(validUUID, 'piece')
+    expect(result).toEqual([])
+    expect(mockPrisma.foodItemPortion.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ foodItemId: validUUID }) })
+    )
   })
 })
