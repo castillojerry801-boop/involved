@@ -115,15 +115,22 @@ function parseDescription(desc: string): {
       servingSize = 100
       servingUnit = 'g'
     } else {
-      // "1 serving (65g)" or "1 piece (130g)" or "1 cup (240ml)" etc.
+      // "1 serving (65g)" or "1 piece (130g)" or "1 bar (2.07 oz)" or "1 cup (240ml)" etc.
       const gramMatch = perText.match(/([\d.]+)\s*g\b/i)
       const mlMatch   = perText.match(/([\d.]+)\s*ml\b/i)
+      // oz parenthetical: "Per 1 bar (2.07 oz)" — convert to grams so the serving
+      // size reflects the physical quantity instead of defaulting to 100g.
+      const ozMatch   = perText.match(/([\d.]+)\s*oz\b/i)
       if (gramMatch) {
         servingSize = parseFloat(gramMatch[1])
         servingUnit = 'g'
       } else if (mlMatch) {
         servingSize = parseFloat(mlMatch[1])
         servingUnit = 'ml'
+      } else if (ozMatch) {
+        // 1 oz = 28.3495g; round to 1 decimal for clean storage
+        servingSize = Math.round(parseFloat(ozMatch[1]) * 28.3495 * 10) / 10
+        servingUnit = 'g'
       }
       // Extract human-readable part: "1 serving" from "1 serving (65g)"
       const labelMatch = perText.match(/^(.+?)\s*\(/)
