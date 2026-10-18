@@ -49,6 +49,7 @@
 
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
 import { ALL_SCENARIOS } from './scenarios'
+import type { LayerBIdentitySpec } from './scenarios'
 import { SYSTEM_PROMPT, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL } from '../../../app/api/coach/constants'
 import { V_CHAT_MODEL } from '../../../lib/ai/models'
 
@@ -153,10 +154,45 @@ if (REAL_AI_ENABLED) {
     macrosPlausible?: boolean
     macrosPlausibilityReasons?: string[]
     allIngredientsResolved?: boolean
+    // Food identity assessment — separate axis from resolution success
+    identityChecked?: boolean          // true if layerBIdentity constraints were evaluated
+    identityAccurate?: boolean         // true if matched food passed identity constraints
+    identityFailReasons?: string[]     // what specifically failed (token missing / forbidden token found)
     // Overall
     pass: boolean
     failReasons: string[]
     tokenCost: { promptTokens: number; completionTokens: number }
+  }
+
+  /**
+   * Check whether the matched food name satisfies the scenario's identity constraints.
+   * Returns { accurate: true } when all required tokens are present and no forbidden tokens appear.
+   * Returns { accurate: false, reasons: [...] } on any violation.
+   * Only the FIRST resolved food name is checked (single-ingredient scenarios).
+   */
+  function checkFoodIdentity(
+    resolvedFoodNames: string[],
+    identity: LayerBIdentitySpec,
+  ): { accurate: boolean; reasons: string[] } {
+    if (resolvedFoodNames.length === 0) {
+      return { accurate: false, reasons: ['No food was resolved — identity cannot be assessed'] }
+    }
+    const firstName = resolvedFoodNames[0].toLowerCase()
+    const reasons: string[] = []
+
+    for (const token of identity.requiredTokens) {
+      if (!firstName.includes(token.toLowerCase())) {
+        reasons.push(`Required token "${token}" not found in matched food "${resolvedFoodNames[0]}"`)
+      }
+    }
+
+    for (const token of identity.forbiddenTokens ?? []) {
+      if (firstName.includes(token.toLowerCase())) {
+        reasons.push(`Forbidden token "${token}" found in matched food "${resolvedFoodNames[0]}"`)
+      }
+    }
+
+    return { accurate: reasons.length === 0, reasons }
   }
 
   async function runLayerBScenario(
@@ -166,6 +202,7 @@ if (REAL_AI_ENABLED) {
     userInput: string,
     requiresClarification: boolean,
     clarificationClass?: 'never' | 'acceptable_if_disclosed' | 'required',
+    layerBIdentity?: LayerBIdentitySpec,
   ): Promise<LayerBResult> {
     const failReasons: string[] = []
     let calledCalculateNutrition = false
@@ -180,6 +217,9 @@ if (REAL_AI_ENABLED) {
     let macrosPlausible: boolean | undefined
     let macrosPlausibilityReasons: string[] | undefined
     let allIngredientsResolved: boolean | undefined
+    let identityChecked: boolean | undefined
+    let identityAccurate: boolean | undefined
+    let identityFailReasons: string[] | undefined
     let totalPromptTokens = 0
     let totalCompletionTokens = 0
 
@@ -240,6 +280,17 @@ if (REAL_AI_ENABLED) {
 
               allIngredientsResolved = toolResult.ingredients.every(i => i.resolved)
 
+              // ── Food identity check ──────────────────────────────────────────
+              if (layerBIdentity && resolvedFoodNames !== undefined) {
+                identityChecked = true
+                const idCheck = checkFoodIdentity(resolvedFoodNames, layerBIdentity)
+                identityAccurate = idCheck.accurate
+                identityFailReasons = idCheck.reasons
+                if (!idCheck.accurate) {
+                  failReasons.push(`Identity mismatch: ${idCheck.reasons.join('; ')}`)
+                }
+              }
+
               if (!allIngredientsResolved && !requiresClarification) {
                 const unresolved = toolResult.ingredients
                   .filter(i => !i.resolved)
@@ -255,7 +306,7 @@ if (REAL_AI_ENABLED) {
               messages.push({ role: 'assistant', content: null, tool_calls: choice1.message.tool_calls })
               messages.push({
                 role: 'tool',
-                tool_call_id: tc.tool_call_id,
+                tool_call_id: tc.id,
                 content: JSON.stringify(toolResult),
               })
 
@@ -351,6 +402,9 @@ if (REAL_AI_ENABLED) {
       macrosPlausible,
       macrosPlausibilityReasons,
       allIngredientsResolved,
+      identityChecked,
+      identityAccurate,
+      identityFailReasons,
       pass,
       failReasons,
       tokenCost: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens },
@@ -391,6 +445,7 @@ if (REAL_AI_ENABLED) {
           scenario.userInput,
           scenario.requiresClarification,
           scenario.clarificationClass,
+          scenario.layerBIdentity,
         )
         results.push(result)
         totalTokensUsed += result.tokenCost.promptTokens + result.tokenCost.completionTokens
@@ -404,10 +459,14 @@ if (REAL_AI_ENABLED) {
         }
 
         if (REAL_PROVIDERS_ENABLED && result.toolExecuted) {
+          const identityStatus = result.identityChecked
+            ? (result.identityAccurate ? 'identity=PASS' : 'identity=FAIL')
+            : 'identity=unchecked'
           console.info(
             `  [${scenario.id}] resolved: [${result.resolvedFoodNames?.join(', ') ?? 'none'}] ` +
             `cal=${result.macrosReturned?.calories.toFixed(0) ?? 'n/a'} ` +
-            `allResolved=${result.allIngredientsResolved ?? false}`
+            `allResolved=${result.allIngredientsResolved ?? false} ` +
+            identityStatus
           )
         }
 
@@ -430,16 +489,30 @@ if (REAL_AI_ENABLED) {
       }
 
       if (REAL_PROVIDERS_ENABLED) {
+        const executed = results.filter(r => r.toolExecuted).length
         const resolved = results.filter(r => r.allIngredientsResolved === true).length
         const plausible = results.filter(r => r.macrosPlausible === true).length
-        const executed = results.filter(r => r.toolExecuted).length
-        console.log(`  Full workflow: ${resolved}/${executed} all-ingredients-resolved`)
-        console.log(`  Full workflow: ${plausible}/${executed} macros-plausible`)
+        const identityCheckedResults = results.filter(r => r.identityChecked === true)
+        const identityPassed = identityCheckedResults.filter(r => r.identityAccurate === true).length
+        const identityFailed = identityCheckedResults.filter(r => r.identityAccurate === false)
 
-        const unresolved = results.filter(r => r.toolExecuted && !r.allIngredientsResolved).map(r => r.label)
+        console.log(`\n  ── Full Workflow Scores ──────────────────────`)
+        console.log(`  Retrieval success:   ${resolved}/${executed} all-ingredients-resolved`)
+        console.log(`  Identity accuracy:   ${identityPassed}/${identityCheckedResults.length} correct food matched`)
+        console.log(`  Numerical plausible: ${plausible}/${executed} macros-plausible`)
+
+        const unresolved = results.filter(r => r.toolExecuted && !r.allIngredientsResolved)
         if (unresolved.length > 0) {
-          console.log(`  Provider failures (no match found):`)
-          for (const label of unresolved) console.log(`    • ${label}`)
+          console.log(`\n  Provider failures (no match found):`)
+          for (const r of unresolved) console.log(`    • [${r.scenarioId}] ${r.label}`)
+        }
+
+        if (identityFailed.length > 0) {
+          console.log(`\n  Identity failures (wrong food matched):`)
+          for (const r of identityFailed) {
+            console.log(`    • [${r.scenarioId}] ${r.label}`)
+            for (const reason of r.identityFailReasons ?? []) console.log(`        – ${reason}`)
+          }
         }
       }
 
@@ -514,7 +587,7 @@ if (REAL_AI_ENABLED) {
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: '2 large eggs' },
           { role: 'assistant', content: null, tool_calls: t1.choices?.[0]?.message?.tool_calls ?? [] },
-          { role: 'tool', tool_call_id: tc1?.tool_call_id ?? 'fake_id', content: JSON.stringify(dummyCalcResult) },
+          { role: 'tool', tool_call_id: tc1?.id ?? 'fake_id', content: JSON.stringify(dummyCalcResult) },
           { role: 'assistant', content: 'Those 2 large eggs have 143 calories, 12.6g protein, 0.7g carbs, and 9.5g fat.' },
           { role: 'user', content: 'log that as breakfast' },
         ]
@@ -612,7 +685,7 @@ if (REAL_AI_ENABLED) {
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: '2 large eggs' },
           { role: 'assistant', content: null, tool_calls: t1.choices?.[0]?.message?.tool_calls ?? [] },
-          { role: 'tool', tool_call_id: tc1?.tool_call_id ?? 'fake_id', content: JSON.stringify(dummyCalcResult) },
+          { role: 'tool', tool_call_id: tc1?.id ?? 'fake_id', content: JSON.stringify(dummyCalcResult) },
           { role: 'assistant', content: 'Those 2 large eggs have 143 calories, 12.6g protein, 0.7g carbs, and 9.5g fat.' },
           { role: 'user', content: 'actually it was 3 eggs, not 2' },
         ]

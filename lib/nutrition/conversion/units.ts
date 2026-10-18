@@ -19,7 +19,7 @@ export const TSP_UNITS       = new Set(['tsp', 'teaspoon', 'teaspoons'])
 export const CLOVE_UNITS     = new Set(['clove', 'cloves'])
 // 'strip' and 'rasher' are common bacon/meat slice synonyms used by USDA and FatSecret.
 export const SLICE_UNITS     = new Set(['slice', 'slices', 'strip', 'strips', 'rasher', 'rashers'])
-export const PIECE_UNITS     = new Set(['piece', 'pieces'])
+export const PIECE_UNITS     = new Set(['piece', 'pieces', 'fruit', 'fruits'])
 
 // Food-specific count nouns recognized as equivalent to 'piece' for household portion lookup.
 // These are the unit strings USDA FoodData Central stores for common whole-food portions.

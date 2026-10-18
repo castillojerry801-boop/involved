@@ -483,6 +483,11 @@ export async function calculateNutrition(
         // 'worthwhile' threshold (40). Prevents resolving "chicken patty" via a
         // poor-scoring unrelated food just to get a number.
         if (alt.matchScore < 40) continue
+        // Relative quality gate: alternative must score ≥ 80% of the top match's
+        // score. Prevents a semantically wrong food (e.g. a compound dish that
+        // merely contains the query ingredient) from substituting for a correct top
+        // match that happened to lack serving conversion data.
+        if (alt.matchScore < match.topMatch.matchScore * 0.80) continue
 
         let altMatch = alt
 

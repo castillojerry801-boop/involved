@@ -71,6 +71,28 @@ export interface LayerASpec {
   expectedConversionSource?: string
 }
 
+/**
+ * Food identity constraints for Layer B full-workflow assessment.
+ * These annotations exist ONLY in the eval dataset — never in production matching code.
+ * They define what the eval considers a correct food identity match.
+ */
+export interface LayerBIdentitySpec {
+  /**
+   * ALL of these tokens must appear somewhere in the matched food name (case-insensitive, substring).
+   * A match that omits any required token is an identity failure.
+   */
+  requiredTokens: string[]
+  /**
+   * If any of these tokens appear in the matched food name, it is an identity failure.
+   * Use only for tokens that unambiguously indicate a different food category
+   * (e.g. 'chicken' for a spinach query, 'juice' for a whole-fruit/veg query).
+   * Do NOT use preparation words (raw, cooked) or brand names here.
+   */
+  forbiddenTokens?: string[]
+  /** Human-readable explanation of why a wrong match would fail this check. */
+  note?: string
+}
+
 export interface EvalScenario {
   id: string
   category: ScenarioCategory
@@ -94,6 +116,12 @@ export interface EvalScenario {
   expectsNoMatch?: boolean
   /** Layer A structured spec — present on scenarios that are deterministically testable */
   layerA?: LayerASpec
+  /**
+   * Layer B food identity constraints — used exclusively in Layer B full-workflow eval.
+   * Evaluated against the matched food name returned by the pipeline.
+   * Kept here in the eval dataset only — never referenced in production matching or prompts.
+   */
+  layerBIdentity?: LayerBIdentitySpec
   /** Notes for the evaluator */
   notes?: string
 }
@@ -108,6 +136,11 @@ const WHOLE_FOOD_SIMPLE: EvalScenario[] = [
     userInput: 'banana',
     requiresClarification: false,
     clarificationClass: 'never',
+    layerBIdentity: {
+      requiredTokens: ['banana'],
+      forbiddenTokens: ['almond', 'butter', 'bread', 'muffin', 'chip', 'flavoring'],
+      note: 'Must match banana the fruit — not banana almond butter, banana bread, or banana flavoring',
+    },
     layerA: {
       ingredients: [{ name: 'banana', quantity: 1, unit: 'medium' }],
       expectedNameTokens: ['banana'],
@@ -122,6 +155,11 @@ const WHOLE_FOOD_SIMPLE: EvalScenario[] = [
     userInput: 'apple',
     requiresClarification: false,
     clarificationClass: 'never',
+    layerBIdentity: {
+      requiredTokens: ['apple'],
+      forbiddenTokens: ['juice', 'cider', 'sauce', 'vinegar', 'butter'],
+      note: 'Must match apple the fruit — not apple juice, cider, sauce, or vinegar',
+    },
     layerA: {
       ingredients: [{ name: 'apple', quantity: 1, unit: 'medium' }],
       expectedNameTokens: ['apple'],
@@ -136,6 +174,11 @@ const WHOLE_FOOD_SIMPLE: EvalScenario[] = [
     userInput: 'raw chicken breast',
     requiresClarification: false,
     clarificationClass: 'acceptable_if_disclosed',
+    layerBIdentity: {
+      requiredTokens: ['chicken'],
+      forbiddenTokens: ['soup', 'salad', 'sandwich', 'casserole', 'burrito', 'nugget', 'wing', 'thigh', 'flavor'],
+      note: 'Must match chicken breast meat — not a prepared dish containing chicken',
+    },
     layerA: {
       ingredients: [{ name: 'chicken breast', quantity: 100, unit: 'g' }],
       expectedNameTokens: ['chicken', 'breast'],
@@ -150,6 +193,11 @@ const WHOLE_FOOD_SIMPLE: EvalScenario[] = [
     userInput: 'salmon fillet',
     requiresClarification: false,
     clarificationClass: 'acceptable_if_disclosed',
+    layerBIdentity: {
+      requiredTokens: ['salmon'],
+      forbiddenTokens: ['salad', 'roll', 'sushi', 'dip', 'flavored', 'flavor', 'casserole'],
+      note: 'Must match salmon the fish — not a dish containing salmon',
+    },
     layerA: {
       ingredients: [{ name: 'salmon', quantity: 100, unit: 'g' }],
       expectedNameTokens: ['salmon'],
@@ -164,6 +212,11 @@ const WHOLE_FOOD_SIMPLE: EvalScenario[] = [
     userInput: 'broccoli',
     requiresClarification: false,
     clarificationClass: 'never',
+    layerBIdentity: {
+      requiredTokens: ['broccoli'],
+      forbiddenTokens: ['chicken', 'beef', 'cheese', 'soup', 'stuffed', 'casserole'],
+      note: 'Must match broccoli the vegetable — not a dish with broccoli as an ingredient',
+    },
     layerA: {
       ingredients: [{ name: 'broccoli', quantity: 1, unit: 'cup' }],
       expectedNameTokens: ['broccoli'],
@@ -177,6 +230,11 @@ const WHOLE_FOOD_SIMPLE: EvalScenario[] = [
     label: 'Brown rice cooked',
     userInput: 'cooked brown rice',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['rice'],
+      forbiddenTokens: ['pudding', 'cake', 'crispy', 'crisp', 'milk', 'syrup'],
+      note: 'Must match cooked brown rice grain — not rice pudding, rice cakes, or rice milk',
+    },
     layerA: {
       ingredients: [{ name: 'brown rice cooked', quantity: 1, unit: 'cup' }],
       expectedNameTokens: ['brown', 'rice'],
@@ -190,6 +248,11 @@ const WHOLE_FOOD_SIMPLE: EvalScenario[] = [
     label: 'Whole milk',
     userInput: 'whole milk',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['milk'],
+      forbiddenTokens: ['almond', 'soy', 'oat', 'coconut', 'rice', 'hemp'],
+      note: 'Must match dairy whole milk — not a plant-based milk alternative',
+    },
     layerA: {
       ingredients: [{ name: 'whole milk', quantity: 1, unit: 'cup' }],
       expectedNameTokens: ['milk'],
@@ -204,6 +267,10 @@ const WHOLE_FOOD_SIMPLE: EvalScenario[] = [
     userInput: 'cheddar cheese',
     requiresClarification: false,
     clarificationClass: 'acceptable_if_disclosed',
+    layerBIdentity: {
+      requiredTokens: ['cheddar'],
+      note: 'Must match cheddar cheese',
+    },
     layerA: {
       ingredients: [{ name: 'cheddar cheese', quantity: 1, unit: 'oz' }],
       expectedNameTokens: ['cheddar'],
@@ -217,6 +284,11 @@ const WHOLE_FOOD_SIMPLE: EvalScenario[] = [
     label: 'Spinach raw',
     userInput: 'raw spinach',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['spinach'],
+      forbiddenTokens: ['chicken', 'beef', 'pork', 'turkey', 'salmon', 'stuffed', 'pasta', 'dip', 'juice'],
+      note: 'Must match spinach the vegetable — not a compound dish (stuffed chicken, spinach dip) or spinach juice',
+    },
     layerA: {
       ingredients: [{ name: 'spinach raw', quantity: 1, unit: 'cup' }],
       expectedNameTokens: ['spinach'],
@@ -231,6 +303,11 @@ const WHOLE_FOOD_SIMPLE: EvalScenario[] = [
     userInput: 'sweet potato',
     requiresClarification: false,
     clarificationClass: 'never',
+    layerBIdentity: {
+      requiredTokens: ['potato'],
+      forbiddenTokens: ['pie', 'casserole', 'soup', 'fries', 'chip'],
+      note: 'Must match sweet potato — not sweet potato pie, casserole, fries, or chips',
+    },
     layerA: {
       ingredients: [{ name: 'sweet potato', quantity: 1, unit: 'medium' }],
       expectedNameTokens: ['sweet', 'potato'],
@@ -249,6 +326,11 @@ const WHOLE_FOOD_MEASURED: EvalScenario[] = [
     label: '2 large eggs',
     userInput: '2 large eggs',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['egg'],
+      forbiddenTokens: ['salad', 'roll', 'casserole', 'quiche', 'sandwich'],
+      note: 'Must match whole egg — not an egg-based dish',
+    },
     layerA: {
       ingredients: [{ name: 'egg whole raw', quantity: 2, unit: 'large' }],
       expectedNameTokens: ['egg'],
@@ -263,6 +345,11 @@ const WHOLE_FOOD_MEASURED: EvalScenario[] = [
     label: '3 strips bacon',
     userInput: '3 strips of bacon',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['bacon'],
+      forbiddenTokens: ['flavor', 'flavored', 'seasoning', 'ranch'],
+      note: 'Must match bacon the cured meat — not a bacon-flavored product',
+    },
     layerA: {
       ingredients: [{ name: 'bacon', quantity: 3, unit: 'strip' }],
       expectedNameTokens: ['bacon'],
@@ -277,6 +364,11 @@ const WHOLE_FOOD_MEASURED: EvalScenario[] = [
     label: '1 cup cooked oatmeal',
     userInput: 'one cup of oatmeal cooked',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['oat'],
+      forbiddenTokens: ['cookie', 'bar', 'granola', 'muffin', 'cake'],
+      note: 'Must match oats or oatmeal — not an oat-based baked good',
+    },
     layerA: {
       ingredients: [{ name: 'oatmeal cooked', quantity: 1, unit: 'cup' }],
       expectedNameTokens: ['oat'],
@@ -290,6 +382,11 @@ const WHOLE_FOOD_MEASURED: EvalScenario[] = [
     label: '2 tbsp peanut butter',
     userInput: '2 tablespoons of peanut butter',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['peanut'],
+      forbiddenTokens: ['cookie', 'cup', 'candy', 'bar'],
+      note: 'Must match peanut butter — not a peanut butter cup or candy',
+    },
     layerA: {
       ingredients: [{ name: 'peanut butter', quantity: 2, unit: 'tbsp' }],
       expectedNameTokens: ['peanut', 'butter'],
@@ -303,6 +400,11 @@ const WHOLE_FOOD_MEASURED: EvalScenario[] = [
     label: 'Half avocado',
     userInput: 'half an avocado',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['avocado'],
+      forbiddenTokens: ['ranch', 'dressing', 'dip', 'toast', 'salad', 'oil'],
+      note: 'Must match avocado the fruit — not avocado ranch dressing or avocado toast',
+    },
     layerA: {
       ingredients: [{ name: 'avocado', quantity: 0.5, unit: 'medium' }],
       expectedNameTokens: ['avocado'],
@@ -316,6 +418,11 @@ const WHOLE_FOOD_MEASURED: EvalScenario[] = [
     label: '4 oz chicken breast',
     userInput: '4 ounces of chicken breast grilled',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['chicken'],
+      forbiddenTokens: ['soup', 'salad', 'sandwich', 'casserole', 'nugget', 'wing', 'thigh', 'flavor'],
+      note: 'Must match chicken breast meat — not a prepared dish containing chicken',
+    },
     layerA: {
       ingredients: [{ name: 'chicken breast grilled', quantity: 4, unit: 'oz' }],
       expectedNameTokens: ['chicken', 'breast'],
@@ -329,6 +436,10 @@ const WHOLE_FOOD_MEASURED: EvalScenario[] = [
     label: '1 tbsp olive oil',
     userInput: 'one tablespoon olive oil',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['olive'],
+      note: 'Must match olive oil',
+    },
     layerA: {
       ingredients: [{ name: 'olive oil', quantity: 1, unit: 'tbsp' }],
       expectedNameTokens: ['olive', 'oil'],
@@ -342,6 +453,11 @@ const WHOLE_FOOD_MEASURED: EvalScenario[] = [
     label: '3 oz salmon',
     userInput: '3 oz salmon',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['salmon'],
+      forbiddenTokens: ['salad', 'roll', 'sushi', 'dip', 'flavored', 'casserole'],
+      note: 'Must match salmon the fish — not a dish with salmon as an ingredient',
+    },
     layerA: {
       ingredients: [{ name: 'salmon', quantity: 3, unit: 'oz' }],
       expectedNameTokens: ['salmon'],
@@ -355,6 +471,11 @@ const WHOLE_FOOD_MEASURED: EvalScenario[] = [
     label: '1/2 cup blueberries',
     userInput: 'half a cup of blueberries',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['blueberr'],
+      forbiddenTokens: ['muffin', 'pie', 'juice', 'jam', 'waffle'],
+      note: 'Must match blueberries — not a blueberry baked good or juice',
+    },
     layerA: {
       ingredients: [{ name: 'blueberries', quantity: 0.5, unit: 'cup' }],
       expectedNameTokens: ['blueberr'],
@@ -368,6 +489,11 @@ const WHOLE_FOOD_MEASURED: EvalScenario[] = [
     label: '1 cup Greek yogurt',
     userInput: 'one cup plain Greek yogurt',
     requiresClarification: false,
+    layerBIdentity: {
+      requiredTokens: ['yogurt'],
+      forbiddenTokens: ['ice cream', 'parfait', 'sauce', 'dip'],
+      note: 'Must match yogurt — not a yogurt-based sauce or dessert',
+    },
     layerA: {
       ingredients: [{ name: 'Greek yogurt plain', quantity: 1, unit: 'cup' }],
       expectedNameTokens: ['greek', 'yogurt'],

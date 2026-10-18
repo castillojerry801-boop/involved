@@ -88,6 +88,25 @@ export function passesQualityGate(result: ExternalFoodResult, query: string): bo
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
 
+// Prep/size words that are trivial modifiers — not counted as "extra" words when
+// deciding whether a startsWith match is a compound dish.
+const SCORING_STOP_WORDS = new Set([
+  'raw', 'cooked', 'plain', 'whole', 'large', 'medium', 'small',
+  'fresh', 'frozen', 'dried', 'organic', 'natural', 'low', 'fat',
+])
+
+/**
+ * Count meaningful words in `foodNorm` that do not appear in `queryNorm` (or its
+ * plural/singular variants) and are not trivial prep-stop words.  Used to detect
+ * compound dishes that happen to start with the query ingredient.
+ */
+function countSignificantExtraWords(foodNorm: string, queryNorm: string): number {
+  const foodWords = foodNorm.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 3)
+  const queryWords = queryNorm.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 3)
+  const queryVariantSet = new Set(queryWords.flatMap(w => tokenVariants(w)))
+  return foodWords.filter(w => !queryVariantSet.has(w) && !SCORING_STOP_WORDS.has(w)).length
+}
+
 /** Score how well a result matches the query. Higher = show first. */
 export function scoreResult(r: ExternalFoodResult, query: string): number {
   let score = 0
@@ -98,9 +117,26 @@ export function scoreResult(r: ExternalFoodResult, query: string): number {
 
   // Name/combined match quality
   if (combinedNorm === qNorm || nameNorm === qNorm) score += 100
-  else if (combinedNorm.startsWith(qNorm + ' ') || combinedNorm.startsWith(qNorm + ',')) score += 80
-  else if (combinedNorm.includes(qNorm)) score += 60
   else {
+    // Check startsWith using plural/singular variants of the query so that
+    // e.g. "Bananas, raw" correctly matches query "banana" (+80) instead of
+    // falling through to contains (+60).
+    const qVariants = tokenVariants(qNorm)
+    const startsWithVariant = qVariants.some(
+      v => combinedNorm.startsWith(v + ' ') || combinedNorm.startsWith(v + ','),
+    )
+    if (startsWithVariant) {
+      // Guard: if the food has ≥2 significant extra words beyond the query, it is
+      // likely a compound dish (e.g. "Banana Raw Almond Butter") — demote to +60
+      // so a simple correct match can still win.
+      const extraWords = countSignificantExtraWords(combinedNorm, qNorm)
+      score += extraWords >= 2 ? 60 : 80
+    } else if (combinedNorm.includes(qNorm)) {
+      score += 60
+    }
+  }
+
+  if (score === 0) {
     // Word coverage via variant-aware matching
     const qTokens = query.toLowerCase().split(/\s+/).filter(w => w.length >= 2)
     if (qTokens.length > 0) {

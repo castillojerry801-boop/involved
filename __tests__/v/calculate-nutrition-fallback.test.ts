@@ -681,4 +681,96 @@ describe('calculateNutrition — alternative candidate fallback (Part C)', () =>
       expect(result.totals.calories).toBe(3*72 + 3*27 + 101) // 216 + 81 + 101 = 398
     })
   })
+
+  describe('relative quality gate: alternative must score ≥ 80% of top match score (Phase 1 fix)', () => {
+    it('alternative below 80% of top match score is rejected even when it can resolve', async () => {
+      // top match: "Organic Raw Spinach Juice" score=91, fails conversion (unit_incompatible)
+      // alt: "Raw Stuffed Chicken Breasts Artichoke, Spinach, Parmesan" score=70 — can resolve via piece
+      // 70 < 91 * 0.80 = 72.8 → should be REJECTED, ingredient marked unresolved
+      const badAlt = {
+        ...makeFatSecretAlt({
+          externalId: 'stuffed-chicken',
+          name: 'Raw Stuffed Chicken Breasts Artichoke, Spinach, Parmesan',
+          servingSize: 170,
+          calories: 230,
+          proteinG: 20,
+          carbohydrateG: 5,
+          fatG: 14,
+          householdUnit: 'piece',
+          householdServingText: '1 piece',
+          unitsPerServing: 1,
+        }),
+        matchScore: 70,  // override default 75 from makeFatSecretAlt
+      }
+      const topMatchScore = 91
+      const topMatch = {
+        ...makeFatSecretAlt({
+          externalId: 'spinach-juice',
+          name: 'Organic Raw Spinach Juice',
+          servingSize: 240,   // ml-based serving — incompatible with gram query
+          calories: 45,
+          proteinG: 1,
+          carbohydrateG: 9,
+          fatG: 0,
+        }),
+        matchScore: topMatchScore,
+        servingUnit: 'ml',  // volume — cannot convert from grams
+      }
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'confident' as const,
+        topMatch: topMatch as unknown as MatchResult['topMatch'],
+        alternatives: [badAlt as unknown as NonNullable<MatchResult['alternatives']>[0]],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'raw spinach', quantity: 100, unit: 'g' }],
+      })
+      // The bad alt (70 < 91*0.80=72.8) should be rejected — ingredient is unresolved
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+    })
+
+    it('alternative at exactly 80% of top match score is allowed', async () => {
+      // top match score=100, alt score=80 (exactly 80%) → should be allowed
+      const goodAlt = {
+        ...makeFatSecretAlt({
+          externalId: 'good-alt',
+          name: 'Spinach, Raw',
+          servingSize: 100,
+          calories: 23,
+          proteinG: 2.9,
+          carbohydrateG: 3.6,
+          fatG: 0.4,
+        }),
+        matchScore: 80,
+      }
+      const topMatch = {
+        ...makeFatSecretAlt({
+          externalId: 'top-juice',
+          name: 'Spinach Juice',
+          servingSize: 240,
+          calories: 45,
+          proteinG: 1,
+          carbohydrateG: 9,
+          fatG: 0,
+        }),
+        matchScore: 100,
+        servingUnit: 'ml',
+      }
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'confident' as const,
+        topMatch: topMatch as unknown as MatchResult['topMatch'],
+        alternatives: [goodAlt as unknown as NonNullable<MatchResult['alternatives']>[0]],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'spinach', quantity: 100, unit: 'g' }],
+      })
+      // 80 >= 100*0.80=80 → should resolve via the good alt
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.totals.calories).toBe(23)
+    })
+  })
 })

@@ -245,3 +245,100 @@ describe('scoreForIngredient — size-diminutive penalty', () => {
     expect(original.matchScore).toBeGreaterThanOrEqual(minimalist.matchScore)
   })
 })
+
+// ── Phase 1 regression suite — DERIVED_FORM_WORDS and progressive penalty ─────
+// Tests that:
+//  1. Derived-form words (juice, powder, extract, etc.) are penalized when absent from query
+//  2. Form penalty does NOT fire when the query itself contains the form word
+//  3. Progressive extra-word penalty hits compound dishes harder than simple foods
+//  4. Legitimate compound dishes (peanut butter, chicken noodle soup) are not over-rejected
+//  5. Correct simple food beats same-ingredient compound or derived-form variant
+
+describe('scoreForIngredient — derived-form penalty (Phase 1)', () => {
+  it('spinach the vegetable scores higher than spinach juice for query "spinach"', () => {
+    const vegetable = makeFood({ name: 'Spinach, raw',        externalId: 'spinach-veg',   provider: 'usda_fooddata', isGeneric: true })
+    const juice     = makeFood({ name: 'Spinach Juice',       externalId: 'spinach-juice',  provider: 'fatsecret' })
+    const scored = scoreForIngredient([vegetable, juice], req('spinach'))
+    const vegScore   = scored.find(r => r.externalId === 'spinach-veg')!.matchScore
+    const juiceScore = scored.find(r => r.externalId === 'spinach-juice')!.matchScore
+    expect(vegScore).toBeGreaterThan(juiceScore)
+  })
+
+  it('spinach juice penalty reason is recorded', () => {
+    const juice = makeFood({ name: 'Spinach Juice', externalId: 'juice', provider: 'fatsecret' })
+    const scored = scoreForIngredient([juice], req('spinach'))
+    const match = scored[0]
+    expect(match.matchReasons.some(r => r.includes('Derived form conflict'))).toBe(true)
+  })
+
+  it('no form penalty when query itself contains the form word — "orange juice"', () => {
+    const juiceFood = makeFood({ name: 'Orange Juice', externalId: 'oj', provider: 'fatsecret' })
+    const scored = scoreForIngredient([juiceFood], req('orange juice'))
+    const match = scored[0]
+    expect(match.matchReasons.some(r => r.includes('Derived form conflict'))).toBe(false)
+  })
+
+  it('no form penalty when query contains "powder" — "protein powder"', () => {
+    const powder = makeFood({ name: 'Whey Protein Powder', externalId: 'powder', provider: 'fatsecret' })
+    const scored = scoreForIngredient([powder], req('protein powder'))
+    expect(scored[0].matchReasons.some(r => r.includes('Derived form conflict'))).toBe(false)
+  })
+
+  it('no form penalty when query contains "paste" — "tomato paste"', () => {
+    const paste = makeFood({ name: 'Tomato Paste', externalId: 'paste', provider: 'fatsecret' })
+    const scored = scoreForIngredient([paste], req('tomato paste'))
+    expect(scored[0].matchReasons.some(r => r.includes('Derived form conflict'))).toBe(false)
+  })
+})
+
+describe('scoreForIngredient — progressive extra-word penalty (Phase 1)', () => {
+  it('5-extra-word compound dish gets penalty ≥ 30', () => {
+    const compound = makeFood({
+      name: 'Raw Stuffed Chicken Breasts Artichoke Spinach Parmesan',
+      externalId: 'stuffed-chicken',
+      provider: 'fatsecret',
+    })
+    const scored = scoreForIngredient([compound], req('spinach'))
+    const match = scored[0]
+    const penaltyReason = match.matchReasons.find(r => r.includes('Extra words penalty'))
+    expect(penaltyReason).toBeDefined()
+    // Penalty should be 32 (5+ extra words)
+    expect(penaltyReason).toMatch(/-3[0-9]/)
+  })
+
+  it('1-extra-word food gets small penalty (3)', () => {
+    const food = makeFood({ name: 'Chicken Breast Grilled', externalId: 'grilled', provider: 'fatsecret' })
+    // "grilled" is in PREP_MODIFIER_WORDS — not counted as extra. 0 extra words → no penalty.
+    const scored = scoreForIngredient([food], req('chicken breast'))
+    expect(scored[0].matchReasons.some(r => r.includes('Extra words penalty'))).toBe(false)
+  })
+
+  it('legitimate compound food peanut butter is not penalized by derived-form or extra-word rules', () => {
+    // "peanut butter" is a query that contains both words of the food name — no extra words, no form conflict
+    const pbExact = makeFood({ name: 'Peanut Butter', externalId: 'pb-exact', provider: 'fatsecret', isGeneric: true })
+    const scored = scoreForIngredient([pbExact], req('peanut butter'))
+    const match = scored[0]
+    // Should have no extra-word penalty and no derived-form conflict
+    expect(match.matchReasons.some(r => r.includes('Extra words penalty'))).toBe(false)
+    expect(match.matchReasons.some(r => r.includes('Derived form conflict'))).toBe(false)
+  })
+
+  it('olive oil is not penalized by derived-form or extra-word rules', () => {
+    // "olive oil" query: "oil" is NOT in DERIVED_FORM_WORDS — no form conflict
+    const oil = makeFood({ name: 'Olive Oil', externalId: 'olive-oil', provider: 'fatsecret', isGeneric: true })
+    const scored = scoreForIngredient([oil], req('olive oil'))
+    const match = scored[0]
+    expect(match.matchReasons.some(r => r.includes('Extra words penalty'))).toBe(false)
+    expect(match.matchReasons.some(r => r.includes('Derived form conflict'))).toBe(false)
+  })
+
+  it('compound dish with query ingredient scores better than unrelated compound', () => {
+    // "chicken noodle soup" query — legitimate complex dish
+    const soupExact = makeFood({ name: 'Chicken Noodle Soup', externalId: 'soup', provider: 'fatsecret' })
+    const stuffed   = makeFood({ name: 'Stuffed Chicken Breast with Mushroom Sauce', externalId: 'stuffed', provider: 'fatsecret' })
+    const scored = scoreForIngredient([soupExact, stuffed], req('chicken noodle soup'))
+    const soupScore    = scored.find(r => r.externalId === 'soup')!.matchScore
+    const stuffedScore = scored.find(r => r.externalId === 'stuffed')!.matchScore
+    expect(soupScore).toBeGreaterThan(stuffedScore)
+  })
+})

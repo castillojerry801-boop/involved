@@ -36,6 +36,13 @@ const NEGATIVE_PAIRS: [string, string[]][] = [
   ['smoked',  ['raw', 'fresh']],
 ]
 
+// Food-form words that indicate the ingredient was processed into a different product.
+// When present in the food name but absent from the query, apply a form-conflict penalty.
+// Example: query="spinach" → "Spinach Juice" gets -20; query="orange juice" → no penalty.
+const DERIVED_FORM_WORDS = new Set([
+  'juice', 'extract', 'powder', 'supplement', 'concentrate', 'syrup', 'paste', 'puree',
+])
+
 // Words that are preparation or cut modifiers — not penalized as "extra" words in the food name
 const PREP_MODIFIER_WORDS = new Set([
   'raw', 'cooked', 'roasted', 'fried', 'baked', 'grilled', 'smoked', 'boiled', 'steamed',
@@ -160,14 +167,26 @@ export function scoreForIngredient(
 
     // ── Penalties ──────────────────────────────────────────────────────────────
 
-    // Extra significant words in food name that don't appear in query AND not prep/cut modifiers
+    // Extra significant words in food name that don't appear in query AND not prep/cut modifiers.
+    // Progressive scale penalizes compound dishes (5+ extra words) much more than simple variants.
     const extraWords = foodWords.filter(
       w => !wordInText(w, req.ingredientName) && !PREP_MODIFIER_WORDS.has(w),
     )
     if (extraWords.length > 0) {
-      const penalty = Math.min(extraWords.length * 2, 15)
+      const n = extraWords.length
+      const penalty = n === 1 ? 3 : n === 2 ? 8 : n === 3 ? 15 : n === 4 ? 23 : 32
       score -= penalty
-      if (penalty > 0) reasons.push(`Extra words penalty: -${penalty}`)
+      if (penalty > 0) reasons.push(`Extra words penalty: -${penalty} (${n} extra words)`)
+    }
+
+    // Derived-form conflict: food was processed into a different product form
+    // (juice, powder, extract, etc.) but the query does not request that form.
+    for (const formWord of DERIVED_FORM_WORDS) {
+      if (wordInText(formWord, r.name) && !wordInText(formWord, req.ingredientName)) {
+        score -= 20
+        reasons.push(`Derived form conflict: "${formWord}" in food but not in query`)
+        break
+      }
     }
 
     // Food has a brand that is NOT mentioned in the query
