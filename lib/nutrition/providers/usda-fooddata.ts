@@ -4,6 +4,7 @@
 
 import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail } from './types'
 import { parseHouseholdText, enrichWithFoodNoun } from './household-parser'
+import { emit } from '@/lib/nutrition/telemetry'
 
 const BASE_URL = 'https://api.nal.usda.gov/fdc/v1'
 const ALL_DATA_TYPES = 'Foundation,SR Legacy,Survey (FNDDS),Branded'
@@ -204,6 +205,7 @@ export class UsdaFoodDataProvider implements FoodProvider {
       .join(',')
     const url = `${BASE_URL}/foods/search?${safeParams.toString()}&dataType=${rawDataType}`
 
+    const start = Date.now()
     try {
       const res = await fetchWithTimeout(url, { next: { revalidate: 3600 } })
       if (!res.ok) {
@@ -218,6 +220,15 @@ export class UsdaFoodDataProvider implements FoodProvider {
             // body read failure is non-fatal
           }
         }
+        emit({
+          kind: 'provider_search',
+          provider: 'usda_fooddata',
+          query: query.slice(0, 80),
+          status: res.status === 429 ? 'rate_limited' : 'http_error',
+          resultCount: 0,
+          latencyMs: Date.now() - start,
+          httpStatus: res.status,
+        })
         return []
       }
       const data = await res.json() as { foods?: UsdaFood[] }
@@ -266,10 +277,28 @@ export class UsdaFoodDataProvider implements FoodProvider {
         return true
       })
 
-      return deduped.slice(0, options?.limit ?? 20).map(({ food }) => mapFood(food))
+      const results = deduped.slice(0, options?.limit ?? 20).map(({ food }) => mapFood(food))
+      emit({
+        kind: 'provider_search',
+        provider: 'usda_fooddata',
+        query: query.slice(0, 80),
+        status: results.length > 0 ? 'ok' : 'empty',
+        resultCount: results.length,
+        latencyMs: Date.now() - start,
+      })
+      return results
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
+      const isTimeout = msg.includes('abort')
       console.error(`[usda] search error: ${msg}`)
+      emit({
+        kind: 'provider_search',
+        provider: 'usda_fooddata',
+        query: query.slice(0, 80),
+        status: isTimeout ? 'timeout' : 'http_error',
+        resultCount: 0,
+        latencyMs: Date.now() - start,
+      })
       return []
     }
   }

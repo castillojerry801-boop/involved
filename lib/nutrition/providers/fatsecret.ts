@@ -5,6 +5,7 @@
 
 import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail, AutocompleteResult } from './types'
 import { parseHouseholdText } from './household-parser'
+import { emit } from '@/lib/nutrition/telemetry'
 
 const BASE_URL = 'https://platform.fatsecret.com/rest/server.api'
 const TOKEN_URL = 'https://oauth.fatsecret.com/connect/token'
@@ -344,8 +345,13 @@ export class FatSecretProvider implements FoodProvider {
   private get clientId()     { return process.env.FATSECRET_CLIENT_ID ?? '' }
   private get clientSecret() { return process.env.FATSECRET_CLIENT_SECRET ?? '' }
 
+  private _lastRequestStatus: { status: import('@/lib/nutrition/telemetry').ProviderStatus; httpStatus?: number; errorCode?: number } = { status: 'ok' }
+
   private async request<T>(params: Record<string, string>): Promise<T | null> {
-    if (!this.clientId || !this.clientSecret) return null
+    if (!this.clientId || !this.clientSecret) {
+      this._lastRequestStatus = { status: 'auth_fail' }
+      return null
+    }
     try {
       const token = await getAccessToken(this.clientId, this.clientSecret)
       const url = new URL(BASE_URL)
@@ -360,7 +366,13 @@ export class FatSecretProvider implements FoodProvider {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         })
-        if (!res.ok) return null
+        if (!res.ok) {
+          this._lastRequestStatus = {
+            status: res.status === 429 ? 'rate_limited' : 'http_error',
+            httpStatus: res.status,
+          }
+          return null
+        }
         const data = await res.json() as T & { error?: { code: number; message: string } }
 
         // Detect FatSecret API-level errors (returned as HTTP 200 with error body)
@@ -368,12 +380,15 @@ export class FatSecretProvider implements FoodProvider {
           const err = data.error as { code: number; message: string }
           if (err.code === 21) {
             console.warn('[fatsecret] IP allowlist restriction (Error 21) — propagation pending')
+            this._lastRequestStatus = { status: 'ip_restricted', errorCode: 21 }
           } else {
             console.error(`[fatsecret] API error ${err.code}: ${err.message}`)
+            this._lastRequestStatus = { status: 'http_error', errorCode: err.code }
           }
           return null
         }
 
+        this._lastRequestStatus = { status: 'ok' }
         return data as T
       } finally {
         clearTimeout(timer)
@@ -382,14 +397,17 @@ export class FatSecretProvider implements FoodProvider {
       const msg = err instanceof Error ? err.message : String(err)
       if (!msg.includes('abort')) {
         console.error(`[fatsecret] request error: ${msg}`)
+        this._lastRequestStatus = { status: 'http_error' }
       } else {
         console.warn('[fatsecret] request timed out')
+        this._lastRequestStatus = { status: 'timeout' }
       }
       return null
     }
   }
 
   async search(query: string, options?: { limit?: number }): Promise<ExternalFoodResult[]> {
+    const start = Date.now()
     const data = await this.request<{
       foods?: { food?: FatSecretSearchResult | FatSecretSearchResult[]; max_results?: string }
     }>({
@@ -398,17 +416,52 @@ export class FatSecretProvider implements FoodProvider {
       max_results: String(options?.limit ?? 20),
       page_number: '0',
     })
-    if (!data?.foods?.food) return []
+    if (!data?.foods?.food) {
+      const s = this._lastRequestStatus
+      emit({
+        kind: 'provider_search',
+        provider: 'fatsecret',
+        query: query.slice(0, 80),
+        status: s.status === 'ok' ? 'empty' : s.status,
+        resultCount: 0,
+        latencyMs: Date.now() - start,
+        httpStatus: s.httpStatus,
+        errorCode: s.errorCode,
+      })
+      return []
+    }
     const foods = Array.isArray(data.foods.food) ? data.foods.food : [data.foods.food]
-    return foods.map(mapSearchResult)
+    const results = foods.map(mapSearchResult)
+    emit({
+      kind: 'provider_search',
+      provider: 'fatsecret',
+      query: query.slice(0, 80),
+      status: 'ok',
+      resultCount: results.length,
+      latencyMs: Date.now() - start,
+    })
+    return results
   }
 
   async getById(externalId: string): Promise<ExternalFoodDetail | null> {
+    const start = Date.now()
     const data = await this.request<{ food?: FatSecretFood }>({
       method: 'food.get.v4',
       food_id: externalId,
     })
-    if (!data?.food) return null
+    if (!data?.food) {
+      const s = this._lastRequestStatus
+      emit({
+        kind: 'provider_detail',
+        provider: 'fatsecret',
+        status: s.status === 'ok' ? 'empty' : s.status,
+        latencyMs: Date.now() - start,
+        httpStatus: s.httpStatus,
+        errorCode: s.errorCode,
+      })
+      return null
+    }
+    emit({ kind: 'provider_detail', provider: 'fatsecret', status: 'ok', latencyMs: Date.now() - start })
     return mapFoodDetail(data.food)
   }
 

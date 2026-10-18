@@ -10,6 +10,7 @@ import {
 import { scoreForIngredient } from './scorer'
 import { getClarificationQuestion } from './clarifications'
 import type { MatchRequest, MatchResult, FoodMatch } from './types'
+import { emit } from '@/lib/nutrition/telemetry'
 
 // ── Library cache lookup ──────────────────────────────────────────────────────
 
@@ -80,6 +81,7 @@ export async function matchIngredient(req: MatchRequest): Promise<MatchResult> {
 
   // 4. Apply quality gate to provider results
   const relevant = withNutrition.filter(r => passesQualityGate(r, query))
+  const qualityGateRejects = withNutrition.length - relevant.length
 
   // 5. Deduplicate provider results
   const seenBarcodes  = new Set<string>()
@@ -133,6 +135,13 @@ export async function matchIngredient(req: MatchRequest): Promise<MatchResult> {
   const rawResults = scored.slice(0, 6)
 
   if (scored.length === 0) {
+    emit({
+      kind: 'match_no_result',
+      query: query.slice(0, 80),
+      reason: withNutrition.length === 0 ? 'all_empty' : 'quality_gate',
+      qualityGateRejects,
+      totalBeforeGate: withNutrition.length,
+    })
     return {
       confidence: 'no_match',
       topMatch: null,
@@ -146,6 +155,13 @@ export async function matchIngredient(req: MatchRequest): Promise<MatchResult> {
 
   // No match: top score too low
   if (topMatch.matchScore < 40) {
+    emit({
+      kind: 'match_no_result',
+      query: query.slice(0, 80),
+      reason: 'low_score',
+      qualityGateRejects,
+      totalBeforeGate: withNutrition.length,
+    })
     return {
       confidence: 'no_match',
       topMatch: null,
@@ -181,6 +197,17 @@ export async function matchIngredient(req: MatchRequest): Promise<MatchResult> {
   const matchNote = topMatch.isGeneric || !topMatch.brand
     ? `Matched to generic ${topMatch.name}`
     : undefined
+
+  emit({
+    kind: 'match_selected',
+    query: query.slice(0, 80),
+    provider: topMatch.provider,
+    foodName: topMatch.name.slice(0, 60),
+    score: topMatch.matchScore,
+    confidence,
+    qualityGateRejects,
+    totalCandidates: scored.length,
+  })
 
   return {
     confidence,
