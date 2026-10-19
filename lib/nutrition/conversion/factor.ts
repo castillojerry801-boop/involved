@@ -23,6 +23,7 @@ import {
   weightToGrams,
   volumeToMl,
   normalizeUnit,
+  canonicalizeUnit,
 } from './units'
 
 export interface FoodForConversion {
@@ -171,7 +172,7 @@ export async function resolveIngredientFactor(
     Number(food.unitsPerServing) > 0
   ) {
     const hUnit = normalizeUnit(food.householdUnit)
-    if (iu === hUnit) {
+    if (iu === hUnit || canonicalizeUnit(iu) === canonicalizeUnit(hUnit)) {
       const unitsPerServing = Number(food.unitsPerServing)
       const factor = quantity / unitsPerServing
       const grams = GRAM_UNITS.has(fu) ? factor * servingSize : factor * servingSize

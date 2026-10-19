@@ -8,6 +8,10 @@ import {
   PIECE_UNITS,
   SLICE_UNITS,
   FOOD_COUNT_NOUNS,
+  CUP_UNITS,
+  TBSP_UNITS,
+  TSP_UNITS,
+  FL_OZ_UNITS,
 } from '@/lib/nutrition/conversion/units'
 import { prisma } from '@/lib/prisma'
 import type { FoodMatch } from '@/lib/nutrition/matching/types'
@@ -79,6 +83,11 @@ function isCountUnit(unit: string): boolean {
   return PIECE_UNITS.has(u) || SLICE_UNITS.has(u) || FOOD_COUNT_NOUNS.has(u)
 }
 
+function isVolumeUnit(unit: string): boolean {
+  const u = unit.toLowerCase().trim()
+  return CUP_UNITS.has(u) || TBSP_UNITS.has(u) || TSP_UNITS.has(u) || FL_OZ_UNITS.has(u)
+}
+
 // ── Helper: is a household unit from a FatSecret search result "usable"? ──────
 // Returns false for generic non-count words that offer no unit resolution
 // ('serving', 'portion', 'g', 'ml', etc.). Returns true for count units (strip,
@@ -99,6 +108,79 @@ const NON_COUNT_HOUSEHOLD_WORDS = new Set([
 
 function isUsableHouseholdUnit(unit: string): boolean {
   return !NON_COUNT_HOUSEHOLD_WORDS.has(unit.toLowerCase().trim())
+}
+
+// ── Helper: generalized food-identity and preparation-compatibility check ──────
+// Applied to every alternative in Part C before accepting it. Guards against:
+//
+//   1. Compound-dish substitution: an alt that combines the query ingredient with
+//      other ingredients (e.g. "Salmon and Broccoli Bowl" for a plain salmon query)
+//      is rejected when the topMatch is a standalone food. If topMatch is itself
+//      compound, compound alts are allowed (customer asked for a dish).
+//
+//   2. Preparation-state conflict (bidirectional): if the customer's requested food
+//      name or the topMatch carries an explicit preparation state (raw/dry vs
+//      cooked/grilled/smoked/etc.), an alt with a conflicting state is rejected.
+//      The customer's requested name takes priority when it carries a clear state —
+//      for example, a customer asking for "grilled salmon" overrides a USDA Foundation
+//      topMatch named "Salmon, Atlantic, Wild, Raw", allowing a cooked alt to resolve.
+//      When the customer's request is neutral, the topMatch's preparation state is
+//      used as the reference.
+//
+// Does NOT attempt food-noun identity matching by string — USDA and FatSecret use
+// structurally different naming conventions ("Oats, Rolled, Dry" vs "Old Fashioned
+// Oats") and a string equality check would over-reject valid equivalents. The score-
+// based gate already handles name-similarity; this function handles form and state.
+
+const COMPOUND_INDICATORS = new Set([
+  'with', 'and', 'over',
+  'bowl', 'salad', 'soup', 'stew', 'casserole', 'chili',
+  'pasta', 'risotto', 'lasagna',
+  'sandwich', 'pizza', 'burrito', 'taco', 'wrap',
+  'combo', 'meal', 'dinner', 'entree', 'dish', 'medley', 'platter',
+])
+
+function hasCompoundIndicator(name: string): boolean {
+  const lower = name.toLowerCase()
+  const words = lower.split(/[\s,]+/)
+  if (words.some(w => COMPOUND_INDICATORS.has(w))) return true
+  if (lower.includes(' with ') || lower.includes(' & ')) return true
+  return false
+}
+
+const COOKED_STATE_WORDS = [
+  'cooked', 'grilled', 'baked', 'roasted', 'broiled', 'fried',
+  'poached', 'steamed', 'smoked', 'canned', 'pickled',
+  'glazed', 'marinated', 'seasoned', 'flavored', 'breaded',
+  'stuffed', 'prepared',
+]
+
+type PrepState = 'raw_or_dry' | 'cooked' | 'neutral'
+
+function extractPrepState(name: string): PrepState {
+  const lower = name.toLowerCase()
+  if (/\braw\b/.test(lower) || /\bdry\b/.test(lower)) return 'raw_or_dry'
+  if (COOKED_STATE_WORDS.some(w => lower.includes(w))) return 'cooked'
+  return 'neutral'
+}
+
+// requestedName: the customer's original ingredient name (e.g. "grilled salmon").
+// When it carries an explicit prep state it takes priority over topMatchName.
+function altPassesIdentityCheck(topMatchName: string, altName: string, requestedName?: string): boolean {
+  const topNorm = topMatchName.toLowerCase()
+  const altNorm = altName.toLowerCase()
+
+  // Guard 1: compound-dish substitution
+  if (!hasCompoundIndicator(topNorm) && hasCompoundIndicator(altNorm)) return false
+
+  // Guard 2: preparation-state conflict (bidirectional)
+  // Prefer the customer's explicitly stated preparation. When neutral, fall back to topMatch.
+  const requestedPrepState = requestedName ? extractPrepState(requestedName.toLowerCase()) : 'neutral'
+  const refPrepState = requestedPrepState !== 'neutral' ? requestedPrepState : extractPrepState(topNorm)
+  const altPrepState = extractPrepState(altNorm)
+  if (refPrepState !== 'neutral' && altPrepState !== 'neutral' && refPrepState !== altPrepState) return false
+
+  return true
 }
 
 // ── Helper: enrich a FatSecret match that lacks household serving data ─────────
@@ -379,7 +461,7 @@ export async function calculateNutrition(
     if (
       topMatch.provider === 'fatsecret' &&
       !hasUsableHouseholdUnit &&
-      (isCountUnit(resolvedUnitForEnrichCheck) || hadEstimatedServingSize)
+      (isCountUnit(resolvedUnitForEnrichCheck) || isVolumeUnit(resolvedUnitForEnrichCheck) || hadEstimatedServingSize)
     ) {
       const enriched = await enrichFatSecretMatch(topMatch, resolvedUnitForEnrichCheck)
       if (enriched) {
@@ -490,13 +572,36 @@ export async function calculateNutrition(
         // score. Prevents a semantically wrong food (e.g. a compound dish that
         // merely contains the query ingredient) from substituting for a correct top
         // match that happened to lack serving conversion data.
-        if (alt.matchScore < match.topMatch.matchScore * 0.80) continue
+        if (alt.matchScore < match.topMatch.matchScore * 0.80) {
+          // USDA Foundation and SR Legacy foods structurally never carry household
+          // serving data (mapFood only extracts it for Branded foods). Their elevated
+          // match scores partly reflect data-type bonuses, not superior food identity.
+          // Apply a relaxed 50% floor for these so serving-compatible FatSecret
+          // alternatives can still resolve while very low-scoring entries are still blocked.
+          const topIsNonBrandedUsda =
+            match.topMatch.provider === 'usda_fooddata' &&
+            (match.topMatch.fdcDataType === 'Foundation' || match.topMatch.fdcDataType === 'SR Legacy')
+          if (!topIsNonBrandedUsda) continue
+          if (alt.matchScore < match.topMatch.matchScore * 0.50) continue
+        }
+
+        // Structural identity check: reject compound dishes and preparation-state
+        // substitutions regardless of which gate path was used.
+        if (!altPassesIdentityCheck(match.topMatch.name, alt.name, ing.name)) {
+          console.log('[V-nutrition] alt-identity-rejected', {
+            index: ingredientResults.length,
+            altId: alt.externalId,
+            altName: alt.name,
+            topName: match.topMatch.name,
+          })
+          continue
+        }
 
         let altMatch = alt
 
-        // Apply same enrichment logic: if FatSecret + count unit + no usable household unit
+        // Apply same enrichment logic: if FatSecret + count/volume unit + no usable household unit
         const altHasUsable = !!altMatch.householdUnit && isUsableHouseholdUnit(altMatch.householdUnit)
-        if (altMatch.provider === 'fatsecret' && !altHasUsable && isCountUnit(resolvedUnit)) {
+        if (altMatch.provider === 'fatsecret' && !altHasUsable && (isCountUnit(resolvedUnit) || isVolumeUnit(resolvedUnit))) {
           const enriched = await enrichFatSecretMatch(altMatch, resolvedUnit)
           if (enriched) {
             altMatch = enriched

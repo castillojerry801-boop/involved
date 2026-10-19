@@ -780,10 +780,10 @@ describe('calculateNutrition — alternative candidate fallback (Part C)', () =>
     // though the alt would provide the necessary serving data. This is documented
     // behavior; Phase 2B will address the volume/density gap for such cases.
 
-    it('USDA Foundation food at high score, FatSecret alt below 80% gate → correctly unresolved (gate blocks substitution)', async () => {
+    it('USDA Foundation food at high score, FatSecret alt below 50% floor → correctly unresolved (floor still blocks)', async () => {
       // USDA Foundation "Salmon, Atlantic, Wild, Raw" scores 128.
-      // FatSecret "Salmon Fillet" scores 75. 75 < 128 * 0.80 = 102.4 → gate blocks alt.
-      // Ingredient is unresolved — no invented gram weight.
+      // FatSecret alt scores 63. Phase 2B relaxed gate applies 50% floor for Foundation:
+      // 63 < 128 * 0.50 = 64 → still blocked. No invented gram weight.
       mockMatchIngredient.mockResolvedValue({
         confidence: 'ambiguous' as const,
         topMatch: {
@@ -819,7 +819,7 @@ describe('calculateNutrition — alternative candidate fallback (Part C)', () =>
               householdServingText: '1 fillet',
               unitsPerServing: 1,
             }),
-            matchScore: 75,  // 75 < 128 * 0.80 = 102.4 → gate blocks
+            matchScore: 63,  // 63 < 128 * 0.50 = 64 → still blocked by 50% floor
           },
         ],
         rawResults: [],
@@ -830,7 +830,7 @@ describe('calculateNutrition — alternative candidate fallback (Part C)', () =>
         servings: 1,
       })
 
-      // Gate rejects alt (score gap too large) → unresolved, not substituted
+      // 50% floor still blocks extremely low-scoring alts → unresolved, not substituted
       expect(result.ingredients[0].resolved).toBe(false)
       expect(result.totals.calories).toBe(0)
       expect(getByIdForEnrichmentSpy).not.toHaveBeenCalled()
@@ -981,6 +981,544 @@ describe('calculateNutrition — alternative candidate fallback (Part C)', () =>
       // 80 >= 100*0.80=80 → should resolve via the good alt
       expect(result.ingredients[0].resolved).toBe(true)
       expect(result.totals.calories).toBe(23)
+    })
+  })
+
+  describe('Phase 2B — Volume unit (cup/tbsp) enrichment and resolution', () => {
+    it("unit='cup' triggers FatSecret enrichment and resolves via cup serving", async () => {
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretMatch({
+          externalId: 'fs-oatmeal',
+          name: 'Old Fashioned Oats',
+          servingSize: 100,
+          calories: 375,
+          proteinG: 13,
+          carbohydrateG: 68,
+          fatG: 7,
+          // No household unit — search result only has 100g basis
+        }),
+      )
+
+      // FatSecret detail returns a cup serving: 0.5 cup = 40g dry = 150 cal
+      getByIdForEnrichmentSpy.mockResolvedValueOnce({
+        provider: 'fatsecret' as const,
+        externalId: 'fs-oatmeal',
+        name: 'Old Fashioned Oats',
+        brand: undefined,
+        isGeneric: true,
+        servingSize: 40,
+        servingUnit: 'g',
+        householdServingText: '0.5 cup dry',
+        householdUnit: 'cup',
+        unitsPerServing: 0.5,
+        coreNutrients: { calories: 150, proteinG: 5, carbohydrateG: 27, fatG: 2.5 },
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'oatmeal', quantity: 1, unit: 'cup' }],
+      })
+
+      expect(result.ingredients[0].resolved).toBe(true)
+      // factor = 1 / 0.5 = 2 → 2 × 150 = 300 cal
+      expect(result.ingredients[0].calories).toBe(300)
+      expect(getByIdForEnrichmentSpy).toHaveBeenCalledWith('fs-oatmeal', 'cup')
+    })
+
+    it("unit='tbsp' triggers enrichment and resolves via tablespoon serving (synonym match)", async () => {
+      // FatSecret detail returns householdUnit='tablespoon' (not 'tbsp')
+      // canonicalizeUnit ensures 'tbsp' === canonical('tablespoon') in Step 5
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretMatch({
+          externalId: 'fs-pb',
+          name: 'Peanut Butter',
+          servingSize: 100,
+          calories: 590,
+          proteinG: 25,
+          carbohydrateG: 20,
+          fatG: 50,
+        }),
+      )
+
+      getByIdForEnrichmentSpy.mockResolvedValueOnce({
+        provider: 'fatsecret' as const,
+        externalId: 'fs-pb',
+        name: 'Peanut Butter',
+        brand: undefined,
+        isGeneric: true,
+        servingSize: 32,
+        servingUnit: 'g',
+        householdServingText: '2 tablespoons',
+        householdUnit: 'tablespoon',
+        unitsPerServing: 2,
+        coreNutrients: { calories: 190, proteinG: 8, carbohydrateG: 6, fatG: 16 },
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'peanut butter', quantity: 2, unit: 'tbsp' }],
+      })
+
+      expect(result.ingredients[0].resolved).toBe(true)
+      // 2 tbsp requested, serving is 2 tablespoons → factor = 2/2 = 1 → 190 cal
+      expect(result.ingredients[0].calories).toBe(190)
+      expect(getByIdForEnrichmentSpy).toHaveBeenCalledWith('fs-pb', 'tbsp')
+    })
+
+    it("unit='cup' for food with no cup serving → unresolved (no density invention)", async () => {
+      // FatSecret detail only returns weight-based data — no cup serving
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretMatch({
+          externalId: 'fs-chicken',
+          name: 'Chicken Breast, Raw',
+          servingSize: 100,
+          calories: 165,
+          proteinG: 31,
+          carbohydrateG: 0,
+          fatG: 3.6,
+        }),
+      )
+
+      getByIdForEnrichmentSpy.mockResolvedValueOnce({
+        provider: 'fatsecret' as const,
+        externalId: 'fs-chicken',
+        name: 'Chicken Breast, Raw',
+        brand: undefined,
+        isGeneric: true,
+        servingSize: 100,
+        servingUnit: 'g',
+        householdServingText: undefined,
+        householdUnit: undefined,
+        unitsPerServing: undefined,
+        coreNutrients: { calories: 165, proteinG: 31, carbohydrateG: 0, fatG: 3.6 },
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'chicken breast', quantity: 1, unit: 'cup' }],
+      })
+
+      // No cup serving exists — must remain unresolved; no density invented
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+    })
+
+    it("unit='container' triggers enrichment and resolves via container serving", async () => {
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretMatch({
+          externalId: 'fs-yogurt',
+          name: 'Plain Greek Yogurt',
+          servingSize: 100,
+          calories: 59,
+          proteinG: 10,
+          carbohydrateG: 3.6,
+          fatG: 0.4,
+        }),
+      )
+
+      getByIdForEnrichmentSpy.mockResolvedValueOnce({
+        provider: 'fatsecret' as const,
+        externalId: 'fs-yogurt',
+        name: 'Plain Greek Yogurt',
+        brand: undefined,
+        isGeneric: true,
+        servingSize: 227,
+        servingUnit: 'g',
+        householdServingText: '1 container',
+        householdUnit: 'container',
+        unitsPerServing: 1,
+        coreNutrients: { calories: 130, proteinG: 22, carbohydrateG: 8, fatG: 0 },
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'Greek yogurt', quantity: 1, unit: 'container' }],
+      })
+
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].calories).toBe(130)
+      expect(getByIdForEnrichmentSpy).toHaveBeenCalledWith('fs-yogurt', 'container')
+    })
+  })
+
+  describe('Phase 2B — Relaxed gate for USDA Foundation/SR Legacy topMatch', () => {
+    it('USDA Foundation at score 128, FatSecret fillet alt at 75 → now resolves (gate relaxed to 50%)', async () => {
+      // Before: 75 < 128 × 0.80 = 102.4 → blocked
+      // After: Foundation → relaxed gate → 75 >= 128 × 0.50 = 64 → allowed
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: {
+          provider: 'usda_fooddata' as const,
+          externalId: '175168',
+          internalId: undefined,
+          name: 'Salmon, Atlantic, Wild, Raw',
+          servingSize: 100,
+          servingUnit: 'g',
+          householdUnit: undefined,
+          unitsPerServing: undefined,
+          householdServingText: undefined,
+          calories: 142,
+          proteinG: 19.8,
+          carbohydrateG: 0,
+          fatG: 6.3,
+          isGeneric: true,
+          matchScore: 128,
+          matchReasons: ['Foundation exact match'],
+          fdcDataType: 'Foundation',
+        },
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-salmon-fillet',
+              name: 'Salmon Fillet',
+              servingSize: 150,
+              calories: 213,
+              proteinG: 29.7,
+              carbohydrateG: 0,
+              fatG: 9.4,
+              householdUnit: 'fillet',
+              householdServingText: '1 fillet',
+              unitsPerServing: 1,
+            }),
+            matchScore: 75,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'salmon fillet', quantity: 1, unit: 'piece' }],
+      })
+
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].matchedFoodName).toBe('Salmon Fillet')
+      expect(result.ingredients[0].matchConfidence).toBe('plausible')
+      expect(result.ingredients[0].calories).toBe(213)
+    })
+
+    it('USDA Foundation at score 128, FatSecret alt at 63 → still blocked (below 50% floor)', async () => {
+      // 63 < 128 × 0.50 = 64 → still rejected
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: {
+          provider: 'usda_fooddata' as const,
+          externalId: '175168',
+          internalId: undefined,
+          name: 'Salmon, Atlantic, Wild, Raw',
+          servingSize: 100,
+          servingUnit: 'g',
+          householdUnit: undefined,
+          unitsPerServing: undefined,
+          householdServingText: undefined,
+          calories: 142,
+          proteinG: 19.8,
+          carbohydrateG: 0,
+          fatG: 6.3,
+          isGeneric: true,
+          matchScore: 128,
+          matchReasons: ['Foundation exact match'],
+          fdcDataType: 'Foundation',
+        },
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-random',
+              name: 'Salmon with Sauce',
+              servingSize: 180,
+              calories: 250,
+              proteinG: 22,
+              carbohydrateG: 10,
+              fatG: 12,
+              householdUnit: 'fillet',
+              householdServingText: '1 fillet',
+              unitsPerServing: 1,
+            }),
+            matchScore: 63,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'salmon', quantity: 1, unit: 'piece' }],
+      })
+
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+    })
+  })
+
+  describe('Phase 2B — Identity safeguards (altPassesIdentityCheck)', () => {
+    const makeUsdaFoundationTopMatch = (name: string, score = 90) => ({
+      provider: 'usda_fooddata' as const,
+      externalId: '175168',
+      internalId: undefined,
+      name,
+      servingSize: 100,
+      servingUnit: 'g',
+      householdUnit: undefined,
+      unitsPerServing: undefined,
+      householdServingText: undefined,
+      calories: 142,
+      proteinG: 19.8,
+      carbohydrateG: 0,
+      fatG: 6.3,
+      isGeneric: true,
+      matchScore: score,
+      matchReasons: ['Foundation'],
+      fdcDataType: 'Foundation' as const,
+    })
+
+    it('compound dish alt ("Salmon and Broccoli Bowl") rejected when topMatch is standalone food', async () => {
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: makeUsdaFoundationTopMatch('Salmon, Atlantic, Wild, Raw'),
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-bowl',
+              name: 'Salmon and Broccoli Bowl',
+              servingSize: 340,
+              calories: 420,
+              proteinG: 38,
+              carbohydrateG: 28,
+              fatG: 14,
+              householdUnit: 'bowl',
+              householdServingText: '1 bowl',
+              unitsPerServing: 1,
+            }),
+            matchScore: 75,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'salmon', quantity: 1, unit: 'piece' }],
+      })
+
+      // Compound dish must be rejected regardless of usable serving
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+    })
+
+    it('cooked/smoked alt rejected when topMatch is explicitly raw', async () => {
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: makeUsdaFoundationTopMatch('Salmon, Atlantic, Wild, Raw'),
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-smoked',
+              name: 'Smoked Salmon',
+              servingSize: 150,
+              calories: 245,
+              proteinG: 26,
+              carbohydrateG: 0,
+              fatG: 14,
+              householdUnit: 'fillet',
+              householdServingText: '1 fillet',
+              unitsPerServing: 1,
+            }),
+            matchScore: 75,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'raw salmon', quantity: 1, unit: 'piece' }],
+      })
+
+      // Preparation-state mismatch: raw topMatch vs smoked alt → rejected
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+    })
+
+    it('standalone same-food alt ("Salmon Fillet") passes identity check and resolves', async () => {
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: makeUsdaFoundationTopMatch('Salmon, Atlantic, Wild'),
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-fillet',
+              name: 'Salmon Fillet',
+              servingSize: 150,
+              calories: 213,
+              proteinG: 29.7,
+              carbohydrateG: 0,
+              fatG: 9.4,
+              householdUnit: 'fillet',
+              householdServingText: '1 fillet',
+              unitsPerServing: 1,
+            }),
+            matchScore: 75,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'salmon', quantity: 1, unit: 'fillet' }],
+      })
+
+      // No compound indicator, no preparation-state conflict → identity check passes
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].calories).toBe(213)
+      expect(result.ingredients[0].matchedFoodName).toBe('Salmon Fillet')
+    })
+
+    it('cooked alt rejected when topMatch name contains "dry" (dry-state match)', async () => {
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: makeUsdaFoundationTopMatch('Rice, Brown, Long-Grain, Dry'),
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-cooked-rice',
+              name: 'Cooked Brown Rice',
+              servingSize: 195,
+              calories: 216,
+              proteinG: 5,
+              carbohydrateG: 45,
+              fatG: 1.8,
+              householdUnit: 'cup',
+              householdServingText: '1 cup',
+              unitsPerServing: 1,
+            }),
+            matchScore: 75,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'brown rice dry', quantity: 1, unit: 'cup' }],
+      })
+
+      // "dry" topMatch + "cooked" alt → preparation-state mismatch → rejected
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+    })
+
+    it('non-compound prepared food alt resolves when topMatch has no raw/dry qualifier', async () => {
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: makeUsdaFoundationTopMatch('Brown Rice, Long-Grain'),
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-cooked-rice2',
+              name: 'Cooked Brown Rice',
+              servingSize: 195,
+              calories: 216,
+              proteinG: 5,
+              carbohydrateG: 45,
+              fatG: 1.8,
+              householdUnit: 'cup',
+              householdServingText: '1 cup',
+              unitsPerServing: 1,
+            }),
+            matchScore: 75,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'brown rice', quantity: 1, unit: 'cup' }],
+      })
+
+      // topMatch has no "raw"/"dry" qualifier → preparation guard does not fire → resolves
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].calories).toBe(216)
+    })
+
+    it('customer "grilled salmon" overrides raw topMatch: cooked alt resolves (requestedName priority)', async () => {
+      // Before bidirectional fix: topMatch "raw" → reject cooked alt → unresolved
+      // After fix: requestedName "grilled salmon" carries cooked state → cooked alt is compatible
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: makeUsdaFoundationTopMatch('Salmon, Atlantic, Wild, Raw', 90),
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-grilled',
+              name: 'Grilled Salmon Fillet',
+              servingSize: 150,
+              calories: 218,
+              proteinG: 30,
+              carbohydrateG: 0,
+              fatG: 10,
+              householdUnit: 'fillet',
+              householdServingText: '1 fillet',
+              unitsPerServing: 1,
+            }),
+            matchScore: 78,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'grilled salmon', quantity: 1, unit: 'fillet' }],
+      })
+
+      // requestedName "grilled salmon" (cooked) + alt "Grilled Salmon Fillet" (cooked) → compatible
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].calories).toBe(218)
+      expect(result.ingredients[0].matchedFoodName).toBe('Grilled Salmon Fillet')
+    })
+
+    it('cooked topMatch with neutral customer request: raw alt rejected (bidirectional)', async () => {
+      // Bidirectional fix: topMatch has cooked state → raw alt is incompatible even when
+      // the customer request itself carries no explicit preparation state.
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: {
+          provider: 'usda_fooddata' as const,
+          externalId: '171477',
+          internalId: undefined,
+          name: 'Chicken, Broilers, Breast, Meat Only, Cooked, Roasted',
+          servingSize: 100,
+          servingUnit: 'g',
+          householdUnit: undefined,
+          unitsPerServing: undefined,
+          householdServingText: undefined,
+          calories: 165,
+          proteinG: 31,
+          carbohydrateG: 0,
+          fatG: 3.6,
+          isGeneric: true,
+          matchScore: 128,
+          matchReasons: ['Foundation'],
+          fdcDataType: 'Foundation' as const,
+        },
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-raw-chicken',
+              name: 'Chicken Breast, Raw',
+              servingSize: 174,
+              calories: 186,
+              proteinG: 35,
+              carbohydrateG: 0,
+              fatG: 4,
+              householdUnit: 'piece',
+              householdServingText: '1 piece',
+              unitsPerServing: 1,
+            }),
+            matchScore: 75,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'chicken breast', quantity: 1, unit: 'piece' }],
+      })
+
+      // Customer request "chicken breast" is neutral → refPrepState falls back to topMatch "cooked"
+      // alt "Chicken Breast, Raw" has raw_or_dry state → cooked ≠ raw_or_dry → REJECTED
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
     })
   })
 })

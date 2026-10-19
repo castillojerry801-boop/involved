@@ -5,6 +5,7 @@
 
 import type { FoodProvider, ExternalFoodResult, ExternalFoodDetail, AutocompleteResult } from './types'
 import { parseHouseholdText } from './household-parser'
+import { canonicalizeUnit } from '../conversion/units'
 import { emit } from '@/lib/nutrition/telemetry'
 
 const BASE_URL = 'https://platform.fatsecret.com/rest/server.api'
@@ -177,8 +178,9 @@ function scoreServing(s: FatSecretServing, inputUnit?: string): number {
   const desc = (s.measurement_description ?? '').toLowerCase().trim()
   const servDesc = (s.serving_description ?? '').toLowerCase().trim()
 
-  // Exact match against measurement_description or serving_description word
-  if (desc === iu || servDesc.includes(iu)) {
+  // Exact match against measurement_description or serving_description word,
+  // or canonical synonym match (tbsp === tablespoon, tsp === teaspoon, etc.)
+  if (desc === iu || servDesc.includes(iu) || canonicalizeUnit(desc) === canonicalizeUnit(iu)) {
     return score + 100
   }
 

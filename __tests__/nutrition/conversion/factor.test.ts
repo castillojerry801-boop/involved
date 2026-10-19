@@ -1185,3 +1185,71 @@ describe('broadened count-unit DB lookup fallback (step 6b)', () => {
     expect(calories).toBeCloseTo(214.5, 0)
   })
 })
+
+// ── Phase 2B: Step 5 canonical unit matching ─────────────────────────────────
+// When food.householdUnit is 'tablespoon' (FatSecret spelling) and iu is 'tbsp'
+// (what V/the user sends), the pre-2B code did an exact string compare and missed.
+// canonicalizeUnit() maps both to 'tbsp' so they now match.
+
+describe('Step 5 — canonical unit matching (Phase 2B)', () => {
+  it("input 'tbsp' matches food householdUnit='tablespoon'", async () => {
+    // FatSecret returns measurement_description='tablespoon'; input is 'tbsp'
+    const food = makeFood({
+      servingSize: 32,
+      servingUnit: 'g',
+      householdUnit: 'tablespoon',
+      unitsPerServing: 2,
+    })
+    const result = await resolveIngredientFactor(food, 2, 'tbsp')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+    // 2 tbsp / 2 tablespoons-per-serving = factor 1.0 → 32g
+    expect(result.factor).toBeCloseTo(1.0, 5)
+    expect(result.grams).toBeCloseTo(32, 1)
+    expect(result.conversionSource).toBe('manufacturer_declared')
+  })
+
+  it("input 'tsp' matches food householdUnit='teaspoon'", async () => {
+    const food = makeFood({
+      servingSize: 5,
+      servingUnit: 'g',
+      householdUnit: 'teaspoon',
+      unitsPerServing: 1,
+    })
+    const result = await resolveIngredientFactor(food, 3, 'tsp')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+    // 3 tsp / 1 teaspoon-per-serving = factor 3.0 → 15g
+    expect(result.factor).toBeCloseTo(3.0, 5)
+    expect(result.grams).toBeCloseTo(15, 1)
+  })
+
+  it("input 'tablespoons' matches food householdUnit='tbsp'", async () => {
+    // Reverse direction: food has 'tbsp', user sends 'tablespoons'
+    const food = makeFood({
+      servingSize: 14,
+      servingUnit: 'g',
+      householdUnit: 'tbsp',
+      unitsPerServing: 1,
+    })
+    const result = await resolveIngredientFactor(food, 1, 'tablespoons')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+    expect(result.factor).toBeCloseTo(1.0, 5)
+  })
+
+  it("input 'cup' matches food householdUnit='cups'", async () => {
+    const food = makeFood({
+      servingSize: 40,
+      servingUnit: 'g',
+      householdUnit: 'cups',
+      unitsPerServing: 0.5,
+    })
+    const result = await resolveIngredientFactor(food, 1, 'cup')
+    expect(isConversionError(result)).toBe(false)
+    if (isConversionError(result)) return
+    // 1 cup / 0.5 cups-per-serving = factor 2.0 → 80g
+    expect(result.factor).toBeCloseTo(2.0, 5)
+    expect(result.grams).toBeCloseTo(80, 1)
+  })
+})

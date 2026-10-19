@@ -73,6 +73,17 @@ export const FOOD_COUNT_NOUNS = new Set([
   'onion', 'onions',
   'potato', 'potatoes',
   'mushroom', 'mushrooms',
+  // Consumer container/package nouns — used when V says "1 container of yogurt" etc.
+  'container', 'containers',
+  'package', 'packages', 'pkg',
+  'can', 'cans',
+  'bag', 'bags',
+  'box', 'boxes',
+  'jar', 'jars',
+  'bottle', 'bottles',
+  'bar', 'bars',
+  'packet', 'packets',
+  'pouch', 'pouches',
 ])
 
 // All recognized household count units (not volume, not weight).
@@ -112,4 +123,22 @@ export function isHouseholdUnit(unit: string): boolean {
 // Normalize a unit string to canonical lowercase form.
 export function normalizeUnit(unit: string): string {
   return unit.toLowerCase().trim()
+}
+
+// Map any recognized unit spelling to a single canonical token.
+// Used by Step 5 of resolveIngredientFactor and by FatSecret scoreServing() so that
+// 'tbsp'/'tablespoon'/'tablespoons' all compare equal, 'cup'/'cups' compare equal, etc.
+export function canonicalizeUnit(u: string): string {
+  const l = u.toLowerCase().trim()
+  if (CUP_UNITS.has(l))   return 'cup'
+  if (TBSP_UNITS.has(l))  return 'tbsp'
+  if (TSP_UNITS.has(l))   return 'tsp'
+  if (FL_OZ_UNITS.has(l)) return 'fl_oz'
+  if (GRAM_UNITS.has(l))  return 'g'
+  if (ML_UNITS.has(l))    return 'ml'
+  if (OZ_UNITS.has(l))    return 'oz'
+  if (LB_UNITS.has(l))    return 'lb'
+  if (KG_UNITS.has(l))    return 'kg'
+  if (L_UNITS.has(l))     return 'l'
+  return l
 }
