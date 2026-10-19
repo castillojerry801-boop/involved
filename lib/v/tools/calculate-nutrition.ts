@@ -197,17 +197,19 @@ function describeIngredient(ing: IngredientInput): string {
 }
 
 // ── Helper: normalize size qualifiers and common plural units ─────────────────
-// When V parses "3 large eggs", it may pass unit='large' — a size qualifier, not
-// a quantity unit. The conversion engine does not recognize size qualifiers, so
-// they must be remapped before entering the factor pipeline.
+// When V parses "3 large eggs" or "1 whole avocado", it may pass unit='large'
+// or unit='whole' — quantity descriptors, not recognized conversion units. These
+// must be remapped to 'piece' before entering the factor pipeline.
 //
 // Strategy:
-//   - Size qualifiers (large, medium, small, xl, etc.) → 'piece'
+//   - Size/form qualifiers → 'piece'
 //     The factor engine's Step 6b broadened count-unit fallback then finds the
-//     food-specific USDA portion (e.g. 'large egg', 'egg') automatically.
+//     food-specific USDA portion (e.g. 'large egg', 'whole avocado') automatically.
+//   - 'whole' means "1 whole item" — valid when the food has a piece-based serving.
+//     If no such serving exists, the pipeline returns unit_incompatible, which is
+//     correct — do not guess gram weights.
 //   - All plural normalizations are already in SLICE_UNITS / PIECE_UNITS in
-//     units.ts, so no extra work is needed there — this guard only covers the
-//     size-qualifier case that would otherwise hit unit_unknown.
+//     units.ts, so no extra work is needed there.
 //
 // The original unit string is preserved in userDescription (via describeIngredient)
 // so the user-facing output still reads "3 large eggs" not "3 piece eggs".
@@ -217,6 +219,7 @@ const SIZE_QUALIFIERS = new Set([
   'extra large', 'extra-large', 'x-large',
   'xl', 'lg', 'md', 'sm',
   'jumbo', 'mini',
+  'whole',
 ])
 
 function normalizeIngredientUnit(unit: string): string {

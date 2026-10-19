@@ -1,5 +1,5 @@
 /**
- * USDA FoodData Central provider — HTTP error handling and URL encoding
+ * USDA FoodData Central provider — HTTP error handling and POST request shape
  *
  * Verifies:
  *   1. HTTP 400 → provider returns [] gracefully
@@ -7,7 +7,10 @@
  *   3. Network timeout → provider returns [] gracefully
  *   4. Valid 200 response → returns mapped ExternalFoodResult array
  *   5. dataType string preserved: 'SR Legacy' (with space) → fdcDataType = 'SR Legacy'
- *   6. The URL constructed does NOT encode commas as %2C (regression guard)
+ *   6. search() uses POST with a JSON body (not GET with comma-separated dataType)
+ *   7. dataType array contains all four types including 'Survey (FNDDS)' with parens
+ *   8. Multi-word queries are encoded correctly in the JSON body
+ *   9. api_key is in the URL query param, not in the request body
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { UsdaFoodDataProvider } from '../../../lib/nutrition/providers/usda-fooddata'
@@ -118,40 +121,96 @@ describe('USDA provider HTTP error handling', () => {
   })
 })
 
-describe('USDA provider URL encoding regression guard', () => {
+// ── Helper: capture fetch call details (url + init) ─────────────────────────
+
+function captureFetch() {
+  let capturedUrl = ''
+  let capturedInit: RequestInit | undefined
+  mockFetch.mockImplementationOnce((url: string, init?: RequestInit) => {
+    capturedUrl = url
+    capturedInit = init
+    return Promise.resolve(makeOkResponse({ foods: [], totalHits: 0 }))
+  })
+  return {
+    get url() { return capturedUrl },
+    get init() { return capturedInit },
+    get body() {
+      return capturedInit?.body ? JSON.parse(capturedInit.body as string) : undefined
+    },
+  }
+}
+
+describe('USDA provider POST request shape', () => {
   const provider = new UsdaFoodDataProvider()
 
-  it('URL does NOT encode commas in dataType as %2C', async () => {
-    let capturedUrl = ''
-    mockFetch.mockImplementationOnce((url: string) => {
-      capturedUrl = url
-      return Promise.resolve(makeOkResponse({ foods: [], totalHits: 0 }))
-    })
+  it('search uses POST method, not GET', async () => {
+    const cap = captureFetch()
     await provider.search('egg')
-
-    // The critical assertion: commas must be literal in the URL
-    expect(capturedUrl).not.toContain('%2C')
-    // Spaces in "SR Legacy" and "Survey (FNDDS)" must be encoded as %20 (or literal, not +)
-    expect(capturedUrl).not.toContain('SR+Legacy')
-    expect(capturedUrl).not.toContain('Survey+%28FNDDS%29')
-    // dataType values must be present
-    expect(capturedUrl).toContain('Foundation')
-    expect(capturedUrl).toContain('SR')
-    expect(capturedUrl).toContain('Legacy')
+    expect(cap.init?.method).toBe('POST')
   })
 
-  it('query string with apostrophe is sanitized before URL construction', async () => {
-    let capturedUrl = ''
-    mockFetch.mockImplementationOnce((url: string) => {
-      capturedUrl = url
-      return Promise.resolve(makeOkResponse({ foods: [], totalHits: 0 }))
-    })
+  it('request has Content-Type: application/json header', async () => {
+    const cap = captureFetch()
+    await provider.search('egg')
+    const headers = cap.init?.headers as Record<string, string>
+    expect(headers?.['Content-Type']).toBe('application/json')
+  })
+
+  it('dataType in POST body is an array containing all four USDA types', async () => {
+    const cap = captureFetch()
+    await provider.search('egg')
+    expect(Array.isArray(cap.body?.dataType)).toBe(true)
+    expect(cap.body.dataType).toContain('Foundation')
+    expect(cap.body.dataType).toContain('SR Legacy')
+    expect(cap.body.dataType).toContain('Survey (FNDDS)')
+    expect(cap.body.dataType).toContain('Branded')
+  })
+
+  it('"Survey (FNDDS)" preserved with parentheses in body — not URL-encoded', async () => {
+    const cap = captureFetch()
+    await provider.search('oatmeal')
+    // parentheses must survive JSON serialization intact
+    expect(cap.body?.dataType).toContain('Survey (FNDDS)')
+    // URL must NOT contain the type string at all (it lives in the body)
+    expect(cap.url).not.toContain('Survey')
+    expect(cap.url).not.toContain('FNDDS')
+  })
+
+  it('multi-word query is in the JSON body, not only URL-encoded', async () => {
+    const cap = captureFetch()
+    await provider.search('raw spinach')
+    expect(cap.body?.query).toBe('raw spinach')
+    // The URL should only contain api_key, not the query
+    expect(cap.url).not.toContain('raw')
+    expect(cap.url).not.toContain('spinach')
+  })
+
+  it('api_key is in the URL query param, not in the request body', async () => {
+    const cap = captureFetch()
+    await provider.search('egg')
+    expect(cap.url).toContain('api_key=')
+    // api_key must NOT appear in the body
+    const bodyStr = cap.init?.body as string
+    expect(bodyStr).not.toContain('api_key')
+    expect(bodyStr).not.toContain('TEST_KEY')
+  })
+
+  it('query with apostrophe is sanitized before placing in body', async () => {
+    const cap = captureFetch()
     await provider.search("McDonald's fries")
-    // Apostrophe should be removed/replaced — normalizeQueryForUsda replaces ' with space
-    expect(capturedUrl).not.toContain("'")
-    expect(capturedUrl).not.toContain('%27')
-    // Core words should still be present (apostrophe replaced with space or removed)
-    expect(capturedUrl).toContain('fries')
-    expect(capturedUrl).toContain('McDonald')
+    // apostrophe stripped by normalizeQueryForUsda
+    expect(cap.body?.query).not.toContain("'")
+    expect(cap.body?.query).not.toContain('’')
+    // core words preserved
+    expect(cap.body?.query).toContain('McDonald')
+    expect(cap.body?.query).toContain('fries')
+  })
+
+  it('dataType is NOT present in the URL query string', async () => {
+    const cap = captureFetch()
+    await provider.search('spinach')
+    expect(cap.url).not.toContain('dataType')
+    expect(cap.url).not.toContain('Foundation')
+    expect(cap.url).not.toContain('%2C')
   })
 })

@@ -682,6 +682,216 @@ describe('calculateNutrition — alternative candidate fallback (Part C)', () =>
     })
   })
 
+  describe("'whole' unit normalization (Phase 2A) — maps to 'piece' for count-based serving lookup", () => {
+    it("unit='whole' resolves via piece-based household serving (e.g. whole avocado)", async () => {
+      // V sends unit="whole" for "half an avocado" → normalizeIngredientUnit("whole") → "piece"
+      // → resolveIngredientFactor uses piece path → finds "1 avocado" serving
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretMatch({
+          externalId: 'fs-avocado',
+          name: 'Avocado',
+          servingSize: 201,
+          calories: 320,
+          proteinG: 4,
+          carbohydrateG: 17,
+          fatG: 29,
+          householdUnit: 'avocado',
+          householdServingText: '1 avocado',
+          unitsPerServing: 1,
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'avocado', quantity: 0.5, unit: 'whole' }],
+        servings: 1,
+      })
+
+      expect(result.ingredients[0].resolved).toBe(true)
+      // 0.5 × 320 = 160 cal
+      expect(result.ingredients[0].calories).toBe(160)
+    })
+
+    it("unit='whole' on a food with no piece serving returns unresolved — does not invent grams", async () => {
+      // "whole" maps to "piece" — if no piece-based serving exists, pipeline returns
+      // unit_incompatible. This confirms we don't fall back to guessed gram weights.
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretMatch({
+          externalId: 'fs-spinach',
+          name: 'Spinach',
+          servingSize: 100,
+          calories: 23,
+          proteinG: 2.9,
+          carbohydrateG: 3.6,
+          fatG: 0.4,
+          // No householdUnit — spinach is typically measured by weight/cup, not whole items
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'spinach', quantity: 1, unit: 'whole' }],
+        servings: 1,
+      })
+
+      // Spinach has no piece serving → unit_incompatible → unresolved (correct behavior)
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+    })
+
+    it("unit='whole' and unit='fruit' both route through the same piece resolution path", async () => {
+      // Phase 1 added 'fruit' → PIECE_UNITS; Phase 2A adds 'whole' → SIZE_QUALIFIERS → 'piece'.
+      // Both should resolve identically when a piece-based serving exists.
+      const avocadoMatch = makeFatSecretMatch({
+        externalId: 'fs-avo',
+        name: 'Avocado',
+        servingSize: 201,
+        calories: 320,
+        proteinG: 4,
+        carbohydrateG: 17,
+        fatG: 29,
+        householdUnit: 'avocado',
+        householdServingText: '1 avocado',
+        unitsPerServing: 1,
+      })
+
+      mockMatchIngredient
+        .mockResolvedValueOnce(avocadoMatch)
+        .mockResolvedValueOnce(avocadoMatch)
+
+      const [withWhole, withFruit] = await Promise.all([
+        calculateNutrition({ ingredients: [{ name: 'avocado', quantity: 0.5, unit: 'whole' }] }),
+        calculateNutrition({ ingredients: [{ name: 'avocado', quantity: 0.5, unit: 'fruit' }] }),
+      ])
+
+      expect(withWhole.ingredients[0].resolved).toBe(true)
+      expect(withFruit.ingredients[0].resolved).toBe(true)
+      expect(withWhole.ingredients[0].calories).toBe(withFruit.ingredients[0].calories)
+    })
+  })
+
+  describe('Phase 2A — USDA Foundation/SR Legacy top match has no household serving', () => {
+    // USDA Foundation and SR Legacy foods are always on a 100g basis and never carry
+    // a household serving in mapFood (isBranded=false path). When the user requests
+    // a count unit (e.g. "piece") and USDA wins the match with a high score, the
+    // factor pipeline returns unit_incompatible. Part C (alternative fallback) then
+    // applies the 80% relative quality gate before trying each alternative.
+    //
+    // Known limitation: when USDA scores much higher than available FatSecret alts
+    // (e.g. Foundation food at 128 vs FatSecret at 75), the gate blocks the alt even
+    // though the alt would provide the necessary serving data. This is documented
+    // behavior; Phase 2B will address the volume/density gap for such cases.
+
+    it('USDA Foundation food at high score, FatSecret alt below 80% gate → correctly unresolved (gate blocks substitution)', async () => {
+      // USDA Foundation "Salmon, Atlantic, Wild, Raw" scores 128.
+      // FatSecret "Salmon Fillet" scores 75. 75 < 128 * 0.80 = 102.4 → gate blocks alt.
+      // Ingredient is unresolved — no invented gram weight.
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: {
+          provider: 'usda_fooddata' as const,
+          externalId: '175168',
+          internalId: undefined,           // Foundation foods not stored in DB
+          name: 'Salmon, Atlantic, Wild, Raw',
+          servingSize: 100,
+          servingUnit: 'g',
+          householdUnit: undefined,        // Foundation/SR Legacy never have household unit
+          unitsPerServing: undefined,
+          householdServingText: undefined,
+          calories: 142,
+          proteinG: 19.8,
+          carbohydrateG: 0,
+          fatG: 6.3,
+          isGeneric: true,
+          matchScore: 128,
+          matchReasons: ['Foundation exact match'],
+          fdcDataType: 'Foundation',
+        },
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-salmon-fillet',
+              name: 'Salmon Fillet',
+              servingSize: 150,
+              calories: 213,
+              proteinG: 29.7,
+              carbohydrateG: 0,
+              fatG: 9.4,
+              householdUnit: 'fillet',
+              householdServingText: '1 fillet',
+              unitsPerServing: 1,
+            }),
+            matchScore: 75,  // 75 < 128 * 0.80 = 102.4 → gate blocks
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'salmon fillet', quantity: 1, unit: 'piece' }],
+        servings: 1,
+      })
+
+      // Gate rejects alt (score gap too large) → unresolved, not substituted
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+      expect(getByIdForEnrichmentSpy).not.toHaveBeenCalled()
+    })
+
+    it('USDA Foundation at moderate score, FatSecret alt within 80% gate → resolves via FatSecret alt', async () => {
+      // USDA Foundation at score=90, FatSecret alt at score=75.
+      // 75 >= 90 * 0.80 = 72.0 → gate allows alt → resolves via fillet serving.
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous' as const,
+        topMatch: {
+          provider: 'usda_fooddata' as const,
+          externalId: '175168',
+          internalId: undefined,
+          name: 'Salmon, Atlantic, Wild, Raw',
+          servingSize: 100,
+          servingUnit: 'g',
+          householdUnit: undefined,
+          unitsPerServing: undefined,
+          householdServingText: undefined,
+          calories: 142,
+          proteinG: 19.8,
+          carbohydrateG: 0,
+          fatG: 6.3,
+          isGeneric: true,
+          matchScore: 90,
+          matchReasons: ['Foundation match'],
+          fdcDataType: 'Foundation',
+        },
+        alternatives: [
+          {
+            ...makeFatSecretAlt({
+              externalId: 'fs-salmon-fillet',
+              name: 'Salmon Fillet',
+              servingSize: 150,
+              calories: 213,
+              proteinG: 29.7,
+              carbohydrateG: 0,
+              fatG: 9.4,
+              householdUnit: 'fillet',
+              householdServingText: '1 fillet',
+              unitsPerServing: 1,
+            }),
+            matchScore: 75,  // 75 >= 90 * 0.80 = 72.0 → gate allows
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'salmon fillet', quantity: 1, unit: 'piece' }],
+        servings: 1,
+      })
+
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].matchedFoodName).toBe('Salmon Fillet')
+      expect(result.ingredients[0].matchConfidence).toBe('plausible')
+      expect(result.ingredients[0].calories).toBe(213)
+    })
+  })
+
   describe('relative quality gate: alternative must score ≥ 80% of top match score (Phase 1 fix)', () => {
     it('alternative below 80% of top match score is rejected even when it can resolve', async () => {
       // top match: "Organic Raw Spinach Juice" score=91, fails conversion (unit_incompatible)

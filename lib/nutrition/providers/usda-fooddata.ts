@@ -7,7 +7,12 @@ import { parseHouseholdText, enrichWithFoodNoun } from './household-parser'
 import { emit } from '@/lib/nutrition/telemetry'
 
 const BASE_URL = 'https://api.nal.usda.gov/fdc/v1'
-const ALL_DATA_TYPES = 'Foundation,SR Legacy,Survey (FNDDS),Branded'
+// Array form is required for POST /foods/search. The GET approach with a
+// comma-separated dataType param causes HTTP 400 from USDA's nginx for
+// queries where "Survey (FNDDS)" appears in certain URL positions — the
+// parentheses interact unpredictably with query-string parsing. POST with
+// a JSON body is the documented USDA API contract and avoids this entirely.
+const ALL_DATA_TYPES = ['Foundation', 'SR Legacy', 'Survey (FNDDS)', 'Branded'] as const
 const FETCH_TIMEOUT_MS = 5000
 
 // Nutrient IDs from USDA FDC schema.
@@ -150,9 +155,9 @@ function hasUsableNutrition(food: UsdaFood): boolean {
   return cal > 0 || protein > 0 || carbs > 0 || fat > 0
 }
 
-// Strip characters that cause USDA to return HTTP 400.
-// Apostrophes (%27) and certain other chars break USDA's query parser.
-// Keep hyphens and spaces — USDA handles those correctly.
+// Sanitize query before sending to USDA. Apostrophes and backticks are
+// stripped defensively — they add no semantic value in food searches and
+// have historically caused query-parser issues across various USDA endpoints.
 function normalizeQueryForUsda(query: string): string {
   return query
     .replace(/['''`]/g, ' ')  // apostrophes → space
@@ -187,27 +192,25 @@ export class UsdaFoodDataProvider implements FoodProvider {
     // Fetch extra so we can filter and rank before slicing
     const fetchSize = Math.min((options?.limit ?? 20) * 3, 100)
 
-    // Build URL manually instead of via URLSearchParams.set() for the dataType param.
-    // URLSearchParams encodes commas as %2C and spaces as +, producing
-    // "Foundation%2CSR+Legacy%2CSurvey+%28FNDDS%29%2CBranded" — USDA's nginx rejects
-    // that with HTTP 400. The API requires literal commas and %20-encoded spaces.
-    const safeParams = new URLSearchParams({
+    // POST /foods/search with a JSON body is the documented USDA API contract.
+    // api_key travels as a query param (not in the body) per USDA docs.
+    const url = `${BASE_URL}/foods/search?api_key=${encodeURIComponent(this.apiKey)}`
+    const searchBody = {
       query:     normalized,
-      api_key:   this.apiKey,
-      pageSize:  String(fetchSize),
+      dataType:  ALL_DATA_TYPES,
+      pageSize:  fetchSize,
       sortBy:    'score',
       sortOrder: 'desc',
-    })
-    // Append dataType raw — commas must be literal, spaces encoded as %20.
-    const rawDataType = ALL_DATA_TYPES
-      .split(',')
-      .map(t => encodeURIComponent(t.trim()))
-      .join(',')
-    const url = `${BASE_URL}/foods/search?${safeParams.toString()}&dataType=${rawDataType}`
+    }
 
     const start = Date.now()
     try {
-      const res = await fetchWithTimeout(url, { next: { revalidate: 3600 } })
+      const res = await fetchWithTimeout(url, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(searchBody),
+        next:    { revalidate: 3600 },
+      } as RequestInit)
       if (!res.ok) {
         console.error(`[usda] search failed: HTTP ${res.status} for query "${normalized}"`)
         if (res.status === 400) {
