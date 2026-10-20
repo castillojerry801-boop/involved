@@ -34,6 +34,20 @@ export function tokenHitsText(token: string, text: string): boolean {
   return tokenVariants(token).some(v => normText.includes(v))
 }
 
+// ── Modifier stop words ───────────────────────────────────────────────────────
+//
+// Trivial modifier words that are not food identifiers. Used in two places:
+//   1. Quality gate: when qTokens[0] is a modifier, skip to the first non-modifier
+//      token as the anchor. This lets USDA canonical names (which use "raw" not
+//      "fresh") pass for customer queries like "fresh jackfruit" — "jackfruit" is
+//      the identifier, "fresh" is a qualifier the database omits.
+//   2. Scoring: modifiers are excluded when counting "extra" compound-dish words
+//      so that "Bananas, raw" does not look like a compound dish for "banana".
+const SCORING_STOP_WORDS = new Set([
+  'raw', 'cooked', 'plain', 'whole', 'large', 'medium', 'small',
+  'fresh', 'frozen', 'dried', 'organic', 'natural', 'low', 'fat',
+])
+
 // ── Quality gate ──────────────────────────────────────────────────────────────
 //
 // Applied AFTER aggregation, scoring, and deduplication.
@@ -46,9 +60,13 @@ export function tokenHitsText(token: string, text: string): boolean {
 //  4. Brand exactly equals query → pass (e.g. "Fairlife" brand for "Fairlife" query).
 //  5. Extract significant query tokens (≥3 chars after punctuation stripping).
 //     - Single-token query: that token must hit name or brand.
-//     - Multi-token query: FIRST token must hit AND at least ceil(n/2) tokens must hit.
-//       The "first token must hit" rule prevents "Sugar Cane, Raw" from passing
-//       for "Raising Cane's" (the first significant token "raising" is absent).
+//     - Multi-token query: first IDENTIFIER token must hit AND at least ceil(n/2)
+//       tokens must hit. The "identifier" is the first non-stop-word token — if
+//       qTokens[0] is a trivial modifier (fresh, frozen, organic, etc.), the
+//       first non-modifier token is used as the anchor instead.
+//       Example: "fresh jackfruit" → anchor "jackfruit" → "Jackfruit, raw" passes.
+//       Brand-disambiguation is preserved: "raising" (from "Raising Cane's") is
+//       not a modifier, so "Sugar Cane, Raw" still fails for "Raising Cane's".
 
 export function passesQualityGate(result: ExternalFoodResult, query: string): boolean {
   // Hard-reject: unnamed or placeholder product with no brand
@@ -82,18 +100,18 @@ export function passesQualityGate(result: ExternalFoodResult, query: string): bo
 
   if (qTokens.length === 1) return hits.length >= 1
 
-  // Multi-token: first significant token must match AND ≥ ceil(total/2) must match.
-  return tokenHitsText(qTokens[0], combined) && hits.length >= Math.ceil(qTokens.length / 2)
+  // Multi-token: anchor (first non-modifier token) must match AND ≥ ceil(identityCount/2)
+  // tokens must match, where identityCount counts only non-stop-word tokens.
+  // Using identity count (not total) prevents multi-modifier queries like
+  // "fresh organic spinach" (identityCount=1 → threshold=1) from failing against
+  // "Spinach, raw" — the stop-word modifiers add no discriminating power to the gate.
+  const anchorToken = qTokens.find(t => !SCORING_STOP_WORDS.has(t)) ?? qTokens[0]
+  const identityCount = qTokens.filter(t => !SCORING_STOP_WORDS.has(t)).length
+  const threshold = Math.ceil(Math.max(1, identityCount) / 2)
+  return tokenHitsText(anchorToken, combined) && hits.length >= threshold
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
-
-// Prep/size words that are trivial modifiers — not counted as "extra" words when
-// deciding whether a startsWith match is a compound dish.
-const SCORING_STOP_WORDS = new Set([
-  'raw', 'cooked', 'plain', 'whole', 'large', 'medium', 'small',
-  'fresh', 'frozen', 'dried', 'organic', 'natural', 'low', 'fat',
-])
 
 /**
  * Count meaningful words in `foodNorm` that do not appear in `queryNorm` (or its

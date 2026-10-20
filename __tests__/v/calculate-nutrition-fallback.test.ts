@@ -1889,4 +1889,72 @@ describe('calculateNutrition — alternative candidate fallback (Part C)', () =>
       expect(result.completeness).toBe('incomplete')
     })
   })
+
+  describe('matchedFoodProvider — reflects actual selected candidate including fallback', () => {
+    it('returns topMatch provider when topMatch resolves (no fallback)', async () => {
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretMatch({
+          externalId: 'fs-egg-2',
+          name: 'Egg, large',
+          servingSize: 50,
+          calories: 72,
+          proteinG: 6.3,
+          carbohydrateG: 0.4,
+          fatG: 4.8,
+          householdUnit: 'large',
+          householdServingText: '1 large',
+          unitsPerServing: 1,
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'large egg', quantity: 1, unit: 'piece' }],
+        servings: 1,
+      })
+
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].matchedFoodProvider).toBe('fatsecret')
+    })
+
+    it('returns alt provider (fatsecret) when library topMatch falls back to fatsecret alt', async () => {
+      // topMatch is ai_vision (library food with no household unit)
+      // alt is fatsecret with a valid roll serving → resolves
+      // matchedFoodProvider must reflect the alt's provider, not the rejected topMatch's
+      mockMatchIngredient.mockResolvedValue(
+        makeLibraryMatch({
+          internalId: 'lib-roll-uuid',
+          name: 'Dinner Roll',
+          servingSize: 100,
+          calories: 280,
+          proteinG: 8,
+          carbohydrateG: 50,
+          fatG: 4,
+          alternatives: [
+            makeFatSecretAlt({
+              externalId: 'fs-roll-prov',
+              name: 'Dinner Roll',
+              servingSize: 33,
+              calories: 92,
+              proteinG: 2.7,
+              carbohydrateG: 15.4,
+              fatG: 2.1,
+              householdUnit: 'roll',
+              householdServingText: '1 roll',
+              unitsPerServing: 1,
+            } as Parameters<typeof makeFatSecretAlt>[0]),
+          ],
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'dinner roll', quantity: 1, unit: 'piece' }],
+        servings: 1,
+      })
+
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].matchedFoodName).toBe('Dinner Roll')
+      expect(result.ingredients[0].matchedFoodProvider).toBe('fatsecret') // alt, not topMatch ai_vision
+      expect(result.ingredients[0].matchConfidence).toBe('plausible')
+    })
+  })
 })

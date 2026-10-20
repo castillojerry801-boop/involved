@@ -114,6 +114,107 @@ describe('passesQualityGate', () => {
   })
 })
 
+// ── passesQualityGate — first-identifier-token fix ────────────────────────────
+//
+// When qTokens[0] is a trivial modifier (fresh, frozen, organic, etc.), the
+// quality gate must use the first non-modifier token as the anchor so that USDA
+// canonical names ("Jackfruit, raw", "Spinach, raw") pass for customer-natural
+// queries ("fresh jackfruit", "organic spinach").
+//
+// Brand-name disambiguation protection (Raising Cane's case) is preserved because
+// "raising" is not a modifier and remains the anchor for that query.
+
+describe('passesQualityGate — first-identifier-token (modifier skip)', () => {
+  // ── New behavior: modifier as qTokens[0] skips to next identifier ─────────
+
+  it('"fresh jackfruit" passes for USDA "Jackfruit, raw" (fresh → skip, jackfruit hits)', () => {
+    expect(passesQualityGate(makeFood('Jackfruit, raw'), 'fresh jackfruit')).toBe(true)
+  })
+
+  it('"fresh strawberries" passes for USDA "Strawberries, raw"', () => {
+    expect(passesQualityGate(makeFood('Strawberries, raw'), 'fresh strawberries')).toBe(true)
+  })
+
+  it('"fresh taro" passes for USDA "Taro, raw" (held-out food)', () => {
+    expect(passesQualityGate(makeFood('Taro, raw'), 'fresh taro')).toBe(true)
+  })
+
+  it('"fresh cassava" passes for USDA "Cassava, raw" (held-out food)', () => {
+    expect(passesQualityGate(makeFood('Cassava, raw'), 'fresh cassava')).toBe(true)
+  })
+
+  it('"organic spinach" passes for "Spinach, raw" (organic → skip, spinach hits)', () => {
+    expect(passesQualityGate(makeFood('Spinach, raw'), 'organic spinach')).toBe(true)
+  })
+
+  it('"frozen edamame" passes for "Edamame, frozen" (frozen hits in name so was already passing)', () => {
+    expect(passesQualityGate(makeFood('Edamame, frozen'), 'frozen edamame')).toBe(true)
+  })
+
+  // ── Regression: brand-name disambiguation still blocks wrong matches ──────
+
+  it('"Raising Cane\'s" still rejects "Sugar Cane, Raw" (raising is not a modifier)', () => {
+    expect(passesQualityGate(makeFood('Sugar Cane, Raw'), "Raising Cane's")).toBe(false)
+  })
+
+  it('"fresh jackfruit" still rejects a completely different food', () => {
+    expect(passesQualityGate(makeFood('Beef, ground, raw'), 'fresh jackfruit')).toBe(false)
+  })
+
+  it('"organic spinach" still rejects a food with no matching tokens', () => {
+    expect(passesQualityGate(makeFood('Salmon, raw'), 'organic spinach')).toBe(false)
+  })
+
+  // ── Edge cases ────────────────────────────────────────────────────────────
+
+  it('all-modifier query falls back to first token when every token is a stop word', () => {
+    // "raw frozen" — both tokens are modifiers; falls back to qTokens[0]
+    // "raw" hits "Beef, raw" → should pass (anchor = 'raw' as fallback)
+    expect(passesQualityGate(makeFood('Beef, raw'), 'raw frozen')).toBe(true)
+  })
+
+  it('"fresh jackfruit" still rejects "Jackfruit, dried" (anchor passes but hits < ceil)', () => {
+    // anchor = 'jackfruit', hits 'Jackfruit, dried' ✓
+    // 'fresh' does not hit 'Jackfruit, dried' → hits = ['jackfruit'] = 1 ≥ ceil(2/2) = 1
+    // PASSES the quality gate (identity guard handles form conflict separately)
+    expect(passesQualityGate(makeFood('Jackfruit, dried'), 'fresh jackfruit')).toBe(true)
+  })
+})
+
+// ── passesQualityGate — identity-token threshold ──────────────────────────────
+//
+// Threshold is ceil(identityCount/2) where identityCount = non-stop-word tokens.
+// Multi-modifier queries must not fail just because modifiers don't hit the DB name.
+
+describe('passesQualityGate — identity-token threshold', () => {
+  it('"fresh organic spinach" passes for "Spinach, raw" (2 stop-word modifiers, identityCount=1, threshold=1)', () => {
+    expect(passesQualityGate(makeFood('Spinach, raw'), 'fresh organic spinach')).toBe(true)
+  })
+
+  it('"fresh organic jackfruit" passes for "Jackfruit, raw" (identityCount=1, threshold=1)', () => {
+    expect(passesQualityGate(makeFood('Jackfruit, raw'), 'fresh organic jackfruit')).toBe(true)
+  })
+
+  it('"small medium plum" passes for "Plums, raw" (small and medium are stop words, identityCount=1)', () => {
+    expect(passesQualityGate(makeFood('Plums, raw'), 'small medium plum')).toBe(true)
+  })
+
+  it('"frozen natural low fat yogurt" passes for "Yogurt, plain, low fat" (identityCount=1 → threshold=1)', () => {
+    expect(passesQualityGate(makeFood('Yogurt, plain, low fat'), 'frozen natural low fat yogurt')).toBe(true)
+  })
+
+  it('"chicken breast tenders" (no stop words) still needs ≥2 of 3 identity hits — passes for "Chicken, breast, raw"', () => {
+    // identityCount=3 (chicken, breast, tenders — none are stop words), threshold=ceil(3/2)=2
+    // 'chicken' and 'breast' both hit 'Chicken, breast, raw' → 2 ≥ 2 → PASSES
+    expect(passesQualityGate(makeFood('Chicken, breast, raw'), 'chicken breast tenders')).toBe(true)
+  })
+
+  it('"Raising Cane\'s" threshold regression: "raising" not a stop word → still rejects "Sugar Cane, Raw"', () => {
+    // identityCount=2 (both 'raising' and 'canes'), threshold=1; anchor='raising' misses → FAILS
+    expect(passesQualityGate(makeFood('Sugar Cane, Raw'), "Raising Cane's")).toBe(false)
+  })
+})
+
 // ── scoreResult ───────────────────────────────────────────────────────────────
 
 describe('scoreResult', () => {

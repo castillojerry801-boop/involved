@@ -31,6 +31,7 @@ export interface IngredientResult {
   userDescription: string       // e.g. "3 eggs"
   matchedFoodName: string       // e.g. "Egg, whole, raw, fresh"
   matchConfidence: 'confident' | 'plausible' | 'ambiguous' | 'no_match'
+  matchedFoodProvider?: string  // e.g. 'usda_fooddata', 'fatsecret' — present when resolved
   calories: number
   proteinG: number
   carbG: number
@@ -157,10 +158,17 @@ const COOKED_STATE_WORDS = [
 
 type PrepState = 'raw_or_dry' | 'cooked' | 'neutral'
 
-function extractPrepState(name: string): PrepState {
+// Exported for unit testing. Not part of the public module API.
+export function extractPrepState(name: string): PrepState {
   const lower = name.toLowerCase()
-  if (/\braw\b/.test(lower) || /\bdry\b/.test(lower)) return 'raw_or_dry'
+  // Cooked-state words take priority. "Fresh grilled salmon" is cooked, not raw.
   if (COOKED_STATE_WORDS.some(w => lower.includes(w))) return 'cooked'
+  // Only EXPLICIT uncooked markers ("raw", "dry") imply an unprocessed nutrition reference.
+  // "fresh" is a freshness/provenance qualifier — it does NOT assert raw preparation.
+  // "fresh bread" means recently baked, not raw dough; "fresh jackfruit" means the ripe
+  // whole fruit regardless of how it will be eaten. Guard 4 independently blocks dried
+  // forms when the request contains "fresh" or "raw" via a direct string check.
+  if (/\braw\b/.test(lower) || /\bdry\b/.test(lower)) return 'raw_or_dry'
   return 'neutral'
 }
 
@@ -209,7 +217,8 @@ function hasStrongCompoundIndicator(name: string): boolean {
 // to avoid false positives on USDA names that use 'and' descriptively.
 // Guard 5 is bidirectional: prefers a preparation-compatible record when one exists
 // rather than silently applying raw-food macros to a cooked-food quantity.
-function topMatchPassesIdentityCheck(requestedName: string, topMatchName: string): boolean {
+// Exported for unit testing. Not part of the public module API.
+export function topMatchPassesIdentityCheck(requestedName: string, topMatchName: string): boolean {
   const reqNorm = requestedName.toLowerCase()
   const topNorm = topMatchName.toLowerCase()
 
@@ -793,6 +802,7 @@ export async function calculateNutrition(
       matchedFoodName: topMatch.name,
       // Fallback results cap at 'plausible' — we couldn't use the best match
       matchConfidence: usedFallback ? 'plausible' : match.confidence,
+      matchedFoodProvider: topMatch.provider,
       calories,
       proteinG,
       carbG,
