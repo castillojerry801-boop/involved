@@ -1521,4 +1521,372 @@ describe('calculateNutrition — alternative candidate fallback (Part C)', () =>
       expect(result.totals.calories).toBe(0)
     })
   })
+
+  // ── Priority B: topMatch identity validation ──────────────────────────────
+  describe('topMatch identity check — wrong-form topMatch is demoted before enrichment', () => {
+    function makeFatSecretTopMatchResult(overrides: {
+      externalId: string
+      name: string
+      score?: number
+      servingSize?: number
+      calories?: number
+      proteinG?: number
+      carbohydrateG?: number
+      fatG?: number
+      alternatives?: MatchResult['alternatives']
+    }): MatchResult {
+      return {
+        confidence: 'ambiguous',
+        topMatch: {
+          provider: 'fatsecret',
+          externalId: overrides.externalId,
+          internalId: undefined,
+          name: overrides.name,
+          servingSize: overrides.servingSize ?? 100,
+          servingUnit: 'g',
+          householdUnit: undefined,
+          unitsPerServing: undefined,
+          householdServingText: undefined,
+          calories: overrides.calories ?? 80,
+          proteinG: overrides.proteinG ?? 1.5,
+          carbohydrateG: overrides.carbohydrateG ?? 20,
+          fatG: overrides.fatG ?? 0.3,
+          isGeneric: true,
+          matchScore: overrides.score ?? 59,
+          matchReasons: ['FatSecret search'],
+          fdcDataType: undefined,
+        },
+        alternatives: overrides.alternatives ?? [],
+        rawResults: [],
+      }
+    }
+
+    it('dried form rejected when raw food was requested (ho-003 jackfruit pattern)', async () => {
+      // "jackfruit raw" → FatSecret topMatch "Dried Jackfruit" (score 59, dehydrated form)
+      // Guard 4: topMatch has "dried" + request has "raw" → rejected
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretTopMatchResult({
+          externalId: 'fs-dried-jackfruit',
+          name: 'Dried Jackfruit',
+          score: 59,
+          calories: 287,
+          proteinG: 2.8,
+          carbohydrateG: 72,
+          fatG: 0.4,
+          alternatives: [],
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'jackfruit raw', quantity: 100, unit: 'g' }],
+      })
+
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+      expect(result.completeness).toBe('incomplete')
+    })
+
+    it('juice form rejected when whole food was requested (p2b-010 spinach juice pattern)', async () => {
+      // "spinach raw" → FatSecret topMatch "Organic Raw Spinach Juice" (score 61)
+      // Guard 2: topMatch has "juice" + request lacks "juice" → rejected
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretTopMatchResult({
+          externalId: 'fs-spinach-juice',
+          name: 'Organic Raw Spinach Juice',
+          score: 61,
+          calories: 30,
+          proteinG: 2,
+          carbohydrateG: 4,
+          fatG: 0.5,
+          alternatives: [],
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'spinach raw', quantity: 100, unit: 'g' }],
+      })
+
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+      expect(result.completeness).toBe('incomplete')
+    })
+
+    it('compound dish topMatch rejected when standalone ingredient requested', async () => {
+      // "chicken breast" → FatSecret topMatch "Chicken Soup Bowl" (score 55)
+      // Guard 1: topMatch has "bowl" (strong compound) + request has no compound → rejected
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretTopMatchResult({
+          externalId: 'fs-chicken-bowl',
+          name: 'Chicken Soup Bowl',
+          score: 55,
+          calories: 220,
+          proteinG: 18,
+          carbohydrateG: 25,
+          fatG: 5,
+          alternatives: [],
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'chicken breast', quantity: 200, unit: 'g' }],
+      })
+
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.completeness).toBe('incomplete')
+    })
+
+    it('powder form rejected when whole food requested', async () => {
+      // "beet" → FatSecret topMatch "Beet Powder" (score 58)
+      // Guard 3: topMatch has "powder" + request lacks "powder" → rejected
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretTopMatchResult({
+          externalId: 'fs-beet-powder',
+          name: 'Beet Powder',
+          score: 58,
+          calories: 340,
+          proteinG: 12,
+          carbohydrateG: 76,
+          fatG: 1,
+          alternatives: [],
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'beet', quantity: 100, unit: 'g' }],
+      })
+
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.completeness).toBe('incomplete')
+    })
+
+    it('rejected topMatch with passing alt: alt is used and resolves', async () => {
+      // topMatch: "Dried Jackfruit" (dried form — Guard 4 rejects it for "jackfruit raw")
+      // alt: "Jackfruit" (FatSecret, neutral name, resolves via gram serving)
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous',
+        topMatch: {
+          provider: 'fatsecret',
+          externalId: 'fs-dried-jackfruit',
+          internalId: undefined,
+          name: 'Dried Jackfruit',
+          servingSize: 100,
+          servingUnit: 'g',
+          householdUnit: undefined,
+          unitsPerServing: undefined,
+          householdServingText: undefined,
+          calories: 287,
+          proteinG: 2.8,
+          carbohydrateG: 72,
+          fatG: 0.4,
+          isGeneric: true,
+          matchScore: 59,
+          matchReasons: ['FatSecret search'],
+          fdcDataType: undefined,
+        },
+        alternatives: [
+          {
+            provider: 'fatsecret',
+            externalId: 'fs-jackfruit',
+            internalId: undefined,
+            name: 'Jackfruit',
+            servingSize: 100,
+            servingUnit: 'g',
+            householdUnit: undefined,
+            unitsPerServing: undefined,
+            householdServingText: undefined,
+            calories: 95,
+            proteinG: 1.7,
+            carbohydrateG: 23,
+            fatG: 0.6,
+            isGeneric: true,
+            matchScore: 52,
+            matchReasons: ['FatSecret search'],
+            fdcDataType: undefined,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'jackfruit raw', quantity: 100, unit: 'g' }],
+      })
+
+      // topMatch "Dried Jackfruit" rejected, alt "Jackfruit" (neutral form) passes and resolves
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].matchedFoodName).toBe('Jackfruit')
+      expect(result.ingredients[0].matchConfidence).toBe('plausible')
+      expect(result.ingredients[0].calories).toBe(95)
+    })
+
+    it('raw USDA topMatch rejected for cooked request — unresolved when no cooked alt exists', async () => {
+      // "chicken breast cooked" → USDA topMatch "Chicken Breast, Raw" (raw macros)
+      // Guard 5 (bidirectional): reqPrepState='cooked' vs topPrepState='raw_or_dry' → conflict.
+      // Applying raw macros to a cooked-weight quantity is nutritionally wrong.
+      // No alternatives → unresolved. V must not silently return raw nutrition.
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'confident',
+        topMatch: {
+          provider: 'usda_fooddata',
+          externalId: 'usda-174608',
+          internalId: undefined,
+          name: 'Chicken, Broiler or Fryers, Breast, Raw',
+          servingSize: 100,
+          servingUnit: 'g',
+          householdUnit: undefined,
+          unitsPerServing: undefined,
+          householdServingText: undefined,
+          calories: 120,
+          proteinG: 22,
+          carbohydrateG: 0,
+          fatG: 2.6,
+          isGeneric: true,
+          matchScore: 180,
+          matchReasons: ['Foundation'],
+          fdcDataType: 'Foundation' as const,
+        },
+        alternatives: [],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'chicken breast cooked', quantity: 150, unit: 'g' }],
+      })
+
+      // Raw USDA entry must be rejected when customer states cooked form with no cooked alt
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.totals.calories).toBe(0)
+      expect(result.completeness).toBe('incomplete')
+    })
+
+    it('raw USDA topMatch rejected; cooked alt resolves correctly', async () => {
+      // "chicken breast cooked" → topMatch "Chicken Breast, Raw" (rejected by G5)
+      // alt "Chicken Breast, Roasted" → passes identity check (both cooked) → resolves
+      mockMatchIngredient.mockResolvedValue({
+        confidence: 'ambiguous',
+        topMatch: {
+          provider: 'usda_fooddata',
+          externalId: 'usda-174608',
+          internalId: undefined,
+          name: 'Chicken, Broiler or Fryers, Breast, Raw',
+          servingSize: 100,
+          servingUnit: 'g',
+          householdUnit: undefined,
+          unitsPerServing: undefined,
+          householdServingText: undefined,
+          calories: 120,
+          proteinG: 22,
+          carbohydrateG: 0,
+          fatG: 2.6,
+          isGeneric: true,
+          matchScore: 180,
+          matchReasons: ['Foundation'],
+          fdcDataType: 'Foundation' as const,
+        },
+        alternatives: [
+          {
+            provider: 'fatsecret',
+            externalId: 'fs-chicken-roasted',
+            internalId: undefined,
+            name: 'Chicken Breast, Roasted',
+            servingSize: 100,
+            servingUnit: 'g',
+            householdUnit: undefined,
+            unitsPerServing: undefined,
+            householdServingText: undefined,
+            calories: 165,
+            proteinG: 31,
+            carbohydrateG: 0,
+            fatG: 3.6,
+            isGeneric: true,
+            matchScore: 140,
+            matchReasons: ['FatSecret search'],
+            fdcDataType: undefined,
+          },
+        ],
+        rawResults: [],
+      })
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'chicken breast cooked', quantity: 150, unit: 'g' }],
+      })
+
+      // Raw topMatch rejected, cooked alt used — correct macros for cooked weight
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].matchedFoodName).toBe('Chicken Breast, Roasted')
+      expect(result.ingredients[0].matchConfidence).toBe('plausible')
+      expect(result.ingredients[0].calories).toBe(Math.round(165 * 1.5))
+    })
+
+    it('compound dish request matches compound topMatch without rejection', async () => {
+      // "chicken burrito" → topMatch "Chicken Burrito" — both have compound indicator → Guard 1 skipped
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretTopMatchResult({
+          externalId: 'fs-chicken-burrito',
+          name: 'Chicken Burrito',
+          score: 88,
+          servingSize: 220,
+          calories: 480,
+          proteinG: 26,
+          carbohydrateG: 52,
+          fatG: 16,
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'chicken burrito', quantity: 220, unit: 'g' }],
+      })
+
+      // Both request and topMatch have compound indicators → Guard 1 does not fire → accepted
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].matchedFoodName).toBe('Chicken Burrito')
+    })
+
+    it('explicitly requested juice matches juice topMatch without rejection', async () => {
+      // "orange juice" → topMatch "Orange Juice" — request has "juice" → Guard 2 skipped
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretTopMatchResult({
+          externalId: 'fs-oj',
+          name: 'Orange Juice',
+          score: 90,
+          servingSize: 100,
+          calories: 45,
+          proteinG: 0.7,
+          carbohydrateG: 10,
+          fatG: 0.2,
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'orange juice', quantity: 100, unit: 'g' }],
+      })
+
+      // Request explicitly asked for juice → Guard 2 does not fire → accepted
+      expect(result.ingredients[0].resolved).toBe(true)
+      expect(result.ingredients[0].matchedFoodName).toBe('Orange Juice')
+    })
+
+    it('cooked topMatch rejected when raw food explicitly requested', async () => {
+      // "raw salmon" → topMatch "Salmon, Smoked" (cooked state)
+      // Guard 5 (one-way): reqPrepState='raw_or_dry' + topPrepState='cooked' → rejected
+      mockMatchIngredient.mockResolvedValue(
+        makeFatSecretTopMatchResult({
+          externalId: 'fs-smoked-salmon',
+          name: 'Salmon, Smoked',
+          score: 70,
+          calories: 117,
+          proteinG: 18.3,
+          carbohydrateG: 0,
+          fatG: 4.3,
+          alternatives: [],
+        }),
+      )
+
+      const result = await calculateNutrition({
+        ingredients: [{ name: 'raw salmon', quantity: 100, unit: 'g' }],
+      })
+
+      expect(result.ingredients[0].resolved).toBe(false)
+      expect(result.completeness).toBe('incomplete')
+    })
+  })
 })

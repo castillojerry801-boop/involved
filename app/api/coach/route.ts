@@ -681,7 +681,10 @@ export async function POST(req: NextRequest) {
 
         for (const call of choice.message.tool_calls) {
           const fn = (call as unknown as { function: { name: string; arguments: string } }).function
-          let result: string
+          // Initialized to a safe fallback so every tool_call_id receives exactly one
+          // response even if an unexpected error bypasses all handler branches.
+          let result: string = JSON.stringify({ status: 'error', message: 'Tool execution failed unexpectedly.' })
+          try {
 
           if (fn.name === 'search_exercises') {
             // Only reachable in plain-chat / workout mode — program generation does
@@ -960,6 +963,11 @@ export async function POST(req: NextRequest) {
 
           } else {
             result = JSON.stringify({ error: 'Unknown tool' })
+          }
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Unexpected error'
+            console.error('[V-tool-uncaught]', { toolName: fn.name, error: msg })
+            result = JSON.stringify({ status: 'error', message: 'Tool execution failed. Please try again.' })
           }
 
           chatMessages.push({ role: 'tool', tool_call_id: call.id, content: result })

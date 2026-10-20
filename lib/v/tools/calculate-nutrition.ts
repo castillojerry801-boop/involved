@@ -183,6 +183,66 @@ function altPassesIdentityCheck(topMatchName: string, altName: string, requested
   return true
 }
 
+// Stronger compound-dish indicators for topMatch validation.
+// Excludes 'and', 'with', 'over' from COMPOUND_INDICATORS because USDA food names
+// routinely use these words in single-food descriptions (e.g. "separable lean and fat",
+// "cooked with salt") — catching them as compound dishes would over-reject valid USDA matches.
+const STRONG_COMPOUND_INDICATORS = new Set([
+  'bowl', 'salad', 'soup', 'stew', 'casserole', 'chili',
+  'pasta', 'risotto', 'lasagna',
+  'sandwich', 'pizza', 'burrito', 'taco', 'wrap',
+  'combo', 'meal', 'dinner', 'entree', 'dish', 'medley', 'platter',
+])
+
+function hasStrongCompoundIndicator(name: string): boolean {
+  const lower = name.toLowerCase()
+  const words = lower.split(/[\s,]+/)
+  return words.some(w => STRONG_COMPOUND_INDICATORS.has(w))
+}
+
+// Validates whether the topMatch candidate is a plausible food for the customer's
+// request before committing to enrichment and conversion. Applied to every topMatch,
+// not just alternatives — prevents wrong-form foods from being accepted silently when
+// they happen to rank highest in the provider results.
+//
+// Uses stricter compound checks (STRONG_COMPOUND_INDICATORS) than altPassesIdentityCheck
+// to avoid false positives on USDA names that use 'and' descriptively.
+// Guard 5 is bidirectional: prefers a preparation-compatible record when one exists
+// rather than silently applying raw-food macros to a cooked-food quantity.
+function topMatchPassesIdentityCheck(requestedName: string, topMatchName: string): boolean {
+  const reqNorm = requestedName.toLowerCase()
+  const topNorm = topMatchName.toLowerCase()
+
+  // Guard 1: compound dish when a standalone ingredient was requested.
+  // Uses strong indicators (no 'and'/'with') to avoid USDA false positives.
+  if (!hasStrongCompoundIndicator(reqNorm) && hasStrongCompoundIndicator(topNorm)) return false
+
+  // Guard 2: juice form when the whole food was requested
+  if (/\bjuice\b/.test(topNorm) && !/\bjuice\b/.test(reqNorm)) return false
+
+  // Guard 3: powder/extract form when not requested
+  if (/\b(powder|powdered|extract)\b/.test(topNorm) && !/\b(powder|extract)\b/.test(reqNorm)) return false
+
+  // Guard 4: dehydrated form conflicts with an explicit raw or fresh request.
+  // "Dried Jackfruit" is not a match for "jackfruit raw" — concentrated macros differ
+  // significantly. Does NOT apply when the request uses "dry" without "raw" (e.g. "rolled
+  // oats dry") — that describes uncooked grains, not dehydration.
+  if (/\bdried\b/.test(topNorm) && /\b(raw|fresh)\b/.test(reqNorm)) return false
+
+  // Guard 5: preparation-state conflict — bidirectional.
+  // A raw USDA entry must NOT be silently used for a cooked quantity: 100g of grilled
+  // chicken and 100g of raw chicken have meaningfully different macros and weights.
+  // When the customer specifies a cooked form, prefer a preparation-compatible record
+  // (e.g. "Grilled Chicken Breast" from FatSecret or USDA cooked variant). If no
+  // compatible record exists in alternatives either, leave unresolved rather than
+  // returning raw-food macros for a stated cooked portion.
+  const reqPrepState = extractPrepState(reqNorm)
+  const topPrepState = extractPrepState(topNorm)
+  if (reqPrepState !== 'neutral' && topPrepState !== 'neutral' && reqPrepState !== topPrepState) return false
+
+  return true
+}
+
 // ── Helper: enrich a FatSecret match that lacks household serving data ─────────
 // Called when a FatSecret search result has no householdUnit/householdServingText
 // and the user requested a count-based unit (piece/strip/egg/etc.).
@@ -441,111 +501,139 @@ export async function calculateNutrition(
     }
 
     let topMatch = match.topMatch
+    let topMatchRejected = false
 
-    // ── Part B: FatSecret detail enrichment ───────────────────────────────────
-    // When the search result lacks a usable household unit and the user wants a
-    // count-based unit (piece/strip/egg/tortilla/etc.), fetch the FatSecret detail
-    // API to get the canonical serving description (e.g. "1 strip", "1 large", "1 tortilla").
-    //
-    // Skip condition: householdUnit is already a usable (non-generic) serving unit.
-    // "1 large" (size qualifier) and "1 strip" (count noun) are both usable.
-    // Do NOT skip when householdUnit is a generic non-count word like "serving" —
-    // e.g. "1 serving" from the search result is useless for count resolution and the
-    // detail API may return a more specific "1 strip" or "1 tortilla" serving.
-    const resolvedUnitForEnrichCheck = normalizeIngredientUnit(ing.unit)
-    const hasUsableHouseholdUnit =
-      !!topMatch.householdUnit && isUsableHouseholdUnit(topMatch.householdUnit)
-    const hadEstimatedServingSize = topMatch.servingSizeIsEstimated === true
-    let enrichmentSucceeded = false
-
-    if (
-      topMatch.provider === 'fatsecret' &&
-      !hasUsableHouseholdUnit &&
-      (isCountUnit(resolvedUnitForEnrichCheck) || isVolumeUnit(resolvedUnitForEnrichCheck) || hadEstimatedServingSize)
-    ) {
-      const enriched = await enrichFatSecretMatch(topMatch, resolvedUnitForEnrichCheck)
-      if (enriched) {
-        enrichmentSucceeded = true
-        topMatch = enriched
-        console.log('[V-nutrition] fatsecret-enriched', {
-          externalId: topMatch.externalId,
-          householdUnit: topMatch.householdUnit,
-          householdServingText: topMatch.householdServingText,
-          servingSize: topMatch.servingSize,
-        })
-        assumptions.push(`Food ID details fetched from FatSecret for "${ing.name}" (id ${topMatch.externalId})`)
-      }
+    // ── Identity check: validate topMatch before enrichment and conversion ────
+    // If the top provider result is the wrong food form (dried fruit when raw was
+    // requested, juice instead of whole food, compound dish for a standalone ingredient),
+    // demote it and attempt alternatives first rather than returning wrong nutrition.
+    if (!topMatchPassesIdentityCheck(ing.name, topMatch.name)) {
+      topMatchRejected = true
+      console.log('[V-nutrition] topMatch-identity-rejected', {
+        index: ingredientResults.length,
+        requestedName: ing.name,
+        topMatchName: topMatch.name,
+        topMatchScore: match.topMatch.matchScore,
+        topMatchProvider: match.topMatch.provider,
+      })
     }
 
-    // When enrichment was triggered because the serving size was estimated (no gram
-    // parenthetical in the search description) but the detail API returned no usable
-    // serving data, the 100g default is fabricated. Do not return nutrition based on it.
-    // Weight-unit inputs fall through here; count-unit inputs already fail conversion below.
-    if (hadEstimatedServingSize && !enrichmentSucceeded && !isCountUnit(resolvedUnitForEnrichCheck)) {
-      ingredientResults.push({
-        userDescription: userDesc,
-        matchedFoodName: topMatch.name,
-        matchConfidence: match.confidence,
-        calories: 0, proteinG: 0, carbG: 0, fatG: 0,
-        resolved: false,
-        errorReason: `Serving weight unknown for "${topMatch.name}" — no gram measurement in product description.`,
-      })
-      unresolvedIngredients.push({
-        name: ing.name,
-        reason: 'conversion_error',
-        suggestion: `Try specifying the exact amount, e.g. "1.69 oz bag of ${ing.name}".`,
-      })
-      continue
-    }
-
-    const foodForConversion = buildFoodForConversion(topMatch)
-
-    console.log('[V-nutrition] match-result', {
-      index: ingredientResults.length,
-      confidence: match.confidence,
-      topMatchProvider: topMatch.provider,
-      topMatchId: topMatch.externalId,
-      fdcDataType: topMatch.fdcDataType ?? null,
-      hasHouseholdUnit: !!topMatch.householdUnit,
-    })
-
-    // Resolve factor — normalize size qualifiers (large/medium/small/xl) to
-    // 'piece' so the factor engine's broadened count-unit fallback can find
-    // the food-specific USDA portion (e.g. 'large egg', 'egg', 'strip').
+    // resolvedUnit is used in both topMatch conversion and Part C alternative resolution.
     const resolvedUnit = normalizeIngredientUnit(ing.unit)
     let conversionResult: Awaited<ReturnType<typeof resolveIngredientFactor>>
-    try {
-      conversionResult = await resolveIngredientFactor(
-        foodForConversion,
-        ing.quantity,
-        resolvedUnit,
-      )
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Conversion error'
-      ingredientResults.push({
-        userDescription: userDesc,
-        matchedFoodName: topMatch.name,
-        matchConfidence: match.confidence,
-        calories: 0,
-        proteinG: 0,
-        carbG: 0,
-        fatG: 0,
-        resolved: false,
-        errorReason: msg,
+
+    if (!topMatchRejected) {
+      // ── Part B: FatSecret detail enrichment ─────────────────────────────────
+      // When the search result lacks a usable household unit and the user wants a
+      // count-based unit (piece/strip/egg/tortilla/etc.), fetch the FatSecret detail
+      // API to get the canonical serving description (e.g. "1 strip", "1 large", "1 tortilla").
+      //
+      // Skip condition: householdUnit is already a usable (non-generic) serving unit.
+      // "1 large" (size qualifier) and "1 strip" (count noun) are both usable.
+      // Do NOT skip when householdUnit is a generic non-count word like "serving" —
+      // e.g. "1 serving" from the search result is useless for count resolution and the
+      // detail API may return a more specific "1 strip" or "1 tortilla" serving.
+      const resolvedUnitForEnrichCheck = resolvedUnit
+      const hasUsableHouseholdUnit =
+        !!topMatch.householdUnit && isUsableHouseholdUnit(topMatch.householdUnit)
+      const hadEstimatedServingSize = topMatch.servingSizeIsEstimated === true
+      let enrichmentSucceeded = false
+
+      if (
+        topMatch.provider === 'fatsecret' &&
+        !hasUsableHouseholdUnit &&
+        (isCountUnit(resolvedUnitForEnrichCheck) || isVolumeUnit(resolvedUnitForEnrichCheck) || hadEstimatedServingSize)
+      ) {
+        const enriched = await enrichFatSecretMatch(topMatch, resolvedUnitForEnrichCheck)
+        if (enriched) {
+          enrichmentSucceeded = true
+          topMatch = enriched
+          console.log('[V-nutrition] fatsecret-enriched', {
+            externalId: topMatch.externalId,
+            householdUnit: topMatch.householdUnit,
+            householdServingText: topMatch.householdServingText,
+            servingSize: topMatch.servingSize,
+          })
+          assumptions.push(`Food ID details fetched from FatSecret for "${ing.name}" (id ${topMatch.externalId})`)
+        }
+      }
+
+      // When enrichment was triggered because the serving size was estimated (no gram
+      // parenthetical in the search description) but the detail API returned no usable
+      // serving data, the 100g default is fabricated. Do not return nutrition based on it.
+      // Weight-unit inputs fall through here; count-unit inputs already fail conversion below.
+      if (hadEstimatedServingSize && !enrichmentSucceeded && !isCountUnit(resolvedUnitForEnrichCheck)) {
+        ingredientResults.push({
+          userDescription: userDesc,
+          matchedFoodName: topMatch.name,
+          matchConfidence: match.confidence,
+          calories: 0, proteinG: 0, carbG: 0, fatG: 0,
+          resolved: false,
+          errorReason: `Serving weight unknown for "${topMatch.name}" — no gram measurement in product description.`,
+        })
+        unresolvedIngredients.push({
+          name: ing.name,
+          reason: 'conversion_error',
+          suggestion: `Try specifying the exact amount, e.g. "1.69 oz bag of ${ing.name}".`,
+        })
+        continue
+      }
+
+      const foodForConversion = buildFoodForConversion(topMatch)
+
+      console.log('[V-nutrition] match-result', {
+        index: ingredientResults.length,
+        confidence: match.confidence,
+        topMatchProvider: topMatch.provider,
+        topMatchId: topMatch.externalId,
+        fdcDataType: topMatch.fdcDataType ?? null,
+        hasHouseholdUnit: !!topMatch.householdUnit,
       })
-      unresolvedIngredients.push({
-        name: ing.name,
-        reason: 'conversion_error',
-        suggestion: undefined,
-      })
-      continue
+
+      // Resolve factor — normalize size qualifiers (large/medium/small/xl) to
+      // 'piece' so the factor engine's broadened count-unit fallback can find
+      // the food-specific USDA portion (e.g. 'large egg', 'egg', 'strip').
+      try {
+        conversionResult = await resolveIngredientFactor(
+          foodForConversion,
+          ing.quantity,
+          resolvedUnit,
+        )
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Conversion error'
+        ingredientResults.push({
+          userDescription: userDesc,
+          matchedFoodName: topMatch.name,
+          matchConfidence: match.confidence,
+          calories: 0,
+          proteinG: 0,
+          carbG: 0,
+          fatG: 0,
+          resolved: false,
+          errorReason: msg,
+        })
+        unresolvedIngredients.push({
+          name: ing.name,
+          reason: 'conversion_error',
+          suggestion: undefined,
+        })
+        continue
+      }
+    } else {
+      // topMatch rejected by identity check — synthesize a ConversionError to route
+      // into the Part C alternatives loop below.
+      conversionResult = {
+        kind: 'conversion_error',
+        errorCode: 'identity_rejected',
+        message: `"${topMatch.name}" does not match the food form or preparation state requested for "${ing.name}".`,
+      }
     }
 
     // ── Part C: Alternative candidate fallback ────────────────────────────────
     // When the top match fails conversion (e.g. library food with no portion data,
-    // or FatSecret record whose only serving is "meal"/"serving"), try the pre-ranked
-    // alternatives from the matcher in order. Apply the same enrichment logic as
-    // topMatch. Stop at the first alternative that resolves.
+    // or FatSecret record whose only serving is "meal"/"serving") OR when the topMatch
+    // was identity-rejected, try the pre-ranked alternatives from the matcher in order.
+    // Apply the same enrichment logic as topMatch. Stop at the first alternative that resolves.
     //
     // Fallback results are marked 'plausible' regardless of the alt's original score —
     // we couldn't use the best match so confidence is conservatively capped.

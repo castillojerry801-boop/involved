@@ -130,8 +130,20 @@ const VOLUME_UNITS = new Set([
  * Macro values are uniform placeholders. The eval tests pipeline mechanics, not
  * exact nutritional accuracy.
  */
+// Words that describe a cooked preparation state (subset of COOKED_STATE_WORDS).
+// When the query already contains one of these, the fixture name should NOT append
+// ', raw' — that would create a contradictory name (e.g. "oatmeal cooked, raw") that
+// the topMatch identity check correctly rejects as a prep-state conflict.
+const COOKED_QUERY_WORDS = new Set([
+  'cooked', 'grilled', 'baked', 'roasted', 'broiled', 'fried',
+  'poached', 'steamed', 'smoked', 'canned', 'prepared',
+])
+
 function buildUsdaFixtureForQuery(query: string, inputUnit = 'g'): ExternalFoodResult {
-  const name = query.toLowerCase().trim().replace(/\s+/g, ' ') + ', raw'
+  const queryNorm = query.toLowerCase().trim().replace(/\s+/g, ' ')
+  const queryWords = queryNorm.split(/[\s,]+/)
+  const alreadyCooked = queryWords.some(w => COOKED_QUERY_WORDS.has(w))
+  const name = alreadyCooked ? queryNorm : queryNorm + ', raw'
   const id = `test-${query.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}-usda`
   const unitLower = inputUnit.toLowerCase()
   const isVolume = VOLUME_UNITS.has(unitLower)

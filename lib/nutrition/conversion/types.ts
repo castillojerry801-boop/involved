@@ -18,6 +18,7 @@ export type ConversionError = {
     | 'portion_not_found'     // household unit not in DB and not USDA-fetchable
     | 'density_unavailable'   // volume→weight but no density data
     | 'ambiguous_preparation' // multiple prep-state variants exist, user must specify
+    | 'identity_rejected'     // topMatch failed food-form or preparation-state identity check
   message: string
   suggestions?: string[]
 }
