@@ -2,6 +2,7 @@ import 'server-only'
 import { matchIngredient } from '@/lib/nutrition/matching/matcher'
 import { resolveIngredientFactor } from '@/lib/nutrition/conversion/factor'
 import { isConversionError } from '@/lib/nutrition/conversion/types'
+import type { ConversionError as ConversionErrorType } from '@/lib/nutrition/conversion/types'
 import type { Decimal } from '@prisma/client/runtime/library'
 import { FatSecretProvider } from '@/lib/nutrition/providers/fatsecret'
 import {
@@ -87,6 +88,41 @@ function isCountUnit(unit: string): boolean {
 function isVolumeUnit(unit: string): boolean {
   const u = unit.toLowerCase().trim()
   return CUP_UNITS.has(u) || TBSP_UNITS.has(u) || TSP_UNITS.has(u) || FL_OZ_UNITS.has(u)
+}
+
+// ── Helper: extract base food name from preparation-method compound names ─────
+// Used as a last-resort fallback when a count-unit ingredient cannot be resolved
+// because the topMatch is a prepared form with no count-unit portion (e.g.
+// "scrambled eggs" → USDA Survey "Eggs, scrambled" with no per-egg serving).
+// Strips a known preparation-method prefix to yield the base food name ("eggs")
+// for a secondary matchIngredient call.
+//
+// Returns null when the name has no recognized preparation prefix, or when the
+// remaining base food contains a compound-dish indicator (e.g. "scrambled egg
+// salad" → not a simple base food after stripping "scrambled").
+//
+// The caller is responsible for disclosing that base-food macros (e.g. raw egg)
+// do not reflect preparation additions (e.g. cooking fat from scrambling).
+
+const PREPARATION_COUNT_PREFIXES: string[] = [
+  'scrambled',
+  'poached',
+  'hard-boiled',
+  'hard boiled',
+  'soft-boiled',
+  'soft boiled',
+]
+
+// Exported for unit testing. Not part of the public module API.
+export function extractBaseCountFood(name: string): string | null {
+  const lower = name.toLowerCase().trim()
+  for (const prefix of PREPARATION_COUNT_PREFIXES) {
+    if (lower.startsWith(prefix + ' ')) {
+      const base = lower.slice(prefix.length).trim()
+      if (base && !hasCompoundIndicator(base)) return base
+    }
+  }
+  return null
 }
 
 // ── Helper: is a household unit from a FatSecret search result "usable"? ──────
@@ -639,13 +675,22 @@ export async function calculateNutrition(
     }
 
     // ── Part C: Alternative candidate fallback ────────────────────────────────
-    // When the top match fails conversion (e.g. library food with no portion data,
-    // or FatSecret record whose only serving is "meal"/"serving") OR when the topMatch
-    // was identity-rejected, try the pre-ranked alternatives from the matcher in order.
-    // Apply the same enrichment logic as topMatch. Stop at the first alternative that resolves.
+    // When the topMatch fails conversion OR was identity-rejected, four ordered
+    // sub-paths attempt resolution:
     //
-    // Fallback results are marked 'plausible' regardless of the alt's original score —
-    // we couldn't use the best match so confidence is conservatively capped.
+    //   Pre)     USDA volume promotion — FatSecret topMatch fails a volume unit;
+    //            promote a USDA Foundation/SR Legacy alt that can trigger Step 7
+    //            (USDA portion fetch). Bypasses relative quality gate; requires
+    //            both identity guards instead.
+    //
+    //   Std)     Standard alt loop — existing relative quality + identity gates.
+    //
+    //   PBorrow) Portion-borrow for count units — borrow only the count-to-gram
+    //            portion weight from a USDA SR Legacy/Foundation alt while
+    //            retaining the topMatch's prepared-food per-100g macros.
+    //            Prevents raw-food macro substitution for prepared foods.
+    //
+    // All paths mark results 'plausible'.
     let usedFallback = false
     if (isConversionError(conversionResult) && match.alternatives.length > 0) {
       console.log('[V-nutrition] trying-alternatives', {
@@ -660,101 +705,255 @@ export async function calculateNutrition(
           householdUnit: a.householdUnit ?? null,
         })),
       })
-      for (const alt of match.alternatives) {
-        // Semantic safety gate: skip alternatives with matchScore below the minimum
-        // 'worthwhile' threshold (40). Prevents resolving "chicken patty" via a
-        // poor-scoring unrelated food just to get a number.
-        if (alt.matchScore < 40) continue
-        // Relative quality gate: alternative must score ≥ 80% of the top match's
-        // score. Prevents a semantically wrong food (e.g. a compound dish that
-        // merely contains the query ingredient) from substituting for a correct top
-        // match that happened to lack serving conversion data.
-        if (alt.matchScore < match.topMatch.matchScore * 0.80) {
-          // USDA Foundation and SR Legacy foods structurally never carry household
-          // serving data (mapFood only extracts it for Branded foods). Their elevated
-          // match scores partly reflect data-type bonuses, not superior food identity.
-          // Apply a relaxed 50% floor for these so serving-compatible FatSecret
-          // alternatives can still resolve while very low-scoring entries are still blocked.
-          const topIsNonBrandedUsda =
-            match.topMatch.provider === 'usda_fooddata' &&
-            (match.topMatch.fdcDataType === 'Foundation' || match.topMatch.fdcDataType === 'SR Legacy')
-          if (!topIsNonBrandedUsda) continue
-          if (alt.matchScore < match.topMatch.matchScore * 0.50) continue
-        }
 
-        // Structural identity check: reject compound dishes and preparation-state
-        // substitutions regardless of which gate path was used.
-        if (!altPassesIdentityCheck(match.topMatch.name, alt.name, ing.name)) {
-          console.log('[V-nutrition] alt-identity-rejected', {
-            index: ingredientResults.length,
-            altId: alt.externalId,
-            altName: alt.name,
-            topName: match.topMatch.name,
-          })
-          continue
-        }
+      // ── Part C-Pre: USDA volume promotion ──────────────────────────────────
+      // FatSecret earns a +3 provider scoring bonus, which can displace USDA
+      // Foundation/SR Legacy foods. FatSecret records carry no volume-unit USDA
+      // portions — only USDA Foundation/SR Legacy trigger Step 7 portion fetch.
+      // When a FatSecret topMatch fails a volume unit, try USDA alts first.
+      // The relative quality gate is bypassed; both identity guards are required.
+      if (
+        isVolumeUnit(resolvedUnit) &&
+        (conversionResult as ConversionErrorType).errorCode === 'unit_incompatible' &&
+        match.topMatch.provider === 'fatsecret'
+      ) {
+        for (const alt of match.alternatives) {
+          if (usedFallback) break
+          if (alt.matchScore < 40) continue
+          if (alt.provider !== 'usda_fooddata') continue
+          if (alt.fdcDataType !== 'Foundation' && alt.fdcDataType !== 'SR Legacy') continue
+          // Use topMatchPassesIdentityCheck (STRONG_COMPOUND_INDICATORS) rather than
+          // altPassesIdentityCheck for USDA alts. USDA names routinely include "with"
+          // as a preparation descriptor (e.g. "Oatmeal, cooked with water") — not a
+          // compound-dish indicator — and altPassesIdentityCheck's COMPOUND_INDICATORS
+          // set includes 'with', which would over-reject valid USDA equivalents.
+          if (!topMatchPassesIdentityCheck(ing.name, alt.name)) continue
 
-        let altMatch = alt
-
-        // Apply same enrichment logic: if FatSecret + count/volume unit + no usable household unit
-        const altHasUsable = !!altMatch.householdUnit && isUsableHouseholdUnit(altMatch.householdUnit)
-        if (altMatch.provider === 'fatsecret' && !altHasUsable && (isCountUnit(resolvedUnit) || isVolumeUnit(resolvedUnit))) {
-          const enriched = await enrichFatSecretMatch(altMatch, resolvedUnit)
-          if (enriched) {
-            altMatch = enriched
-            console.log('[V-nutrition] alt-enriched', {
-              externalId: altMatch.externalId,
-              householdUnit: altMatch.householdUnit,
-              servingSize: altMatch.servingSize,
+          let altResult: Awaited<ReturnType<typeof resolveIngredientFactor>>
+          try {
+            altResult = await resolveIngredientFactor(
+              buildFoodForConversion(alt),
+              ing.quantity,
+              resolvedUnit,
+            )
+          } catch (err) {
+            console.log('[V-nutrition] usda-vol-alt-threw', {
+              index: ingredientResults.length,
+              altId: alt.externalId,
+              error: err instanceof Error ? err.message : String(err),
             })
+            continue
           }
-        }
+          if (isConversionError(altResult)) continue
 
-        let altResult: Awaited<ReturnType<typeof resolveIngredientFactor>>
-        try {
-          altResult = await resolveIngredientFactor(
-            buildFoodForConversion(altMatch),
-            ing.quantity,
-            resolvedUnit,
-          )
-        } catch (err) {
-          console.log('[V-nutrition] alt-conversion-threw', {
-            index: ingredientResults.length,
-            altId: altMatch.externalId,
-            altProvider: altMatch.provider,
-            error: err instanceof Error ? err.message : String(err),
-          })
-          continue
-        }
-
-        if (isConversionError(altResult)) {
-          console.log('[V-nutrition] alt-conversion-failed', {
-            index: ingredientResults.length,
-            altId: altMatch.externalId,
-            altProvider: altMatch.provider,
-            altName: altMatch.name,
-            errorCode: altResult.errorCode,
-            householdUnit: altMatch.householdUnit ?? null,
-          })
-          continue
-        }
-
-        if (!isConversionError(altResult)) {
-          console.log('[V-nutrition] alt-match-used', {
-            index: ingredientResults.length,
-            altProvider: altMatch.provider,
-            altId: altMatch.externalId,
-            altName: altMatch.name,
-            originalError: conversionResult.errorCode,
-          })
-          topMatch = altMatch
+          topMatch = alt
           conversionResult = altResult
           usedFallback = true
-          // Surface the substitution in assumptions so V can disclose it to the user
           assumptions.push(
-            `"${ing.name}": no serving conversion for best match — used comparable reference "${altMatch.name}" (${altMatch.provider}, confidence: plausible)`
+            `"${ing.name}": volume portion from USDA "${alt.name}" (${altResult.portionDescription}) — primary match "${match.topMatch.name}" lacked volume serving data`
           )
+          console.log('[V-nutrition] usda-volume-promotion', {
+            index: ingredientResults.length,
+            fatsecretMatch: match.topMatch.name,
+            usdaAlt: alt.name,
+            portionDescription: altResult.portionDescription,
+          })
+        }
+      }
+
+      // ── Part C-Standard: relative quality + identity gate loop ─────────────
+      if (!usedFallback) {
+        for (const alt of match.alternatives) {
+          // Semantic safety gate: skip alternatives with matchScore below the minimum
+          // 'worthwhile' threshold (40). Prevents resolving "chicken patty" via a
+          // poor-scoring unrelated food just to get a number.
+          if (alt.matchScore < 40) continue
+          // Relative quality gate: alternative must score ≥ 80% of the top match's
+          // score. Prevents a semantically wrong food (e.g. a compound dish that
+          // merely contains the query ingredient) from substituting for a correct top
+          // match that happened to lack serving conversion data.
+          if (alt.matchScore < match.topMatch.matchScore * 0.80) {
+            // USDA Foundation and SR Legacy foods structurally never carry household
+            // serving data (mapFood only extracts it for Branded foods). Their elevated
+            // match scores partly reflect data-type bonuses, not superior food identity.
+            // Apply a relaxed 50% floor for these so serving-compatible FatSecret
+            // alternatives can still resolve while very low-scoring entries are still blocked.
+            const topIsNonBrandedUsda =
+              match.topMatch.provider === 'usda_fooddata' &&
+              (match.topMatch.fdcDataType === 'Foundation' || match.topMatch.fdcDataType === 'SR Legacy')
+            if (!topIsNonBrandedUsda) continue
+            if (alt.matchScore < match.topMatch.matchScore * 0.50) continue
+          }
+
+          // Structural identity check: reject compound dishes and preparation-state
+          // substitutions regardless of which gate path was used.
+          if (!altPassesIdentityCheck(match.topMatch.name, alt.name, ing.name)) {
+            console.log('[V-nutrition] alt-identity-rejected', {
+              index: ingredientResults.length,
+              altId: alt.externalId,
+              altName: alt.name,
+              topName: match.topMatch.name,
+            })
+            continue
+          }
+
+          let altMatch = alt
+
+          // Apply same enrichment logic: if FatSecret + count/volume unit + no usable household unit
+          const altHasUsable = !!altMatch.householdUnit && isUsableHouseholdUnit(altMatch.householdUnit)
+          if (altMatch.provider === 'fatsecret' && !altHasUsable && (isCountUnit(resolvedUnit) || isVolumeUnit(resolvedUnit))) {
+            const enriched = await enrichFatSecretMatch(altMatch, resolvedUnit)
+            if (enriched) {
+              altMatch = enriched
+              console.log('[V-nutrition] alt-enriched', {
+                externalId: altMatch.externalId,
+                householdUnit: altMatch.householdUnit,
+                servingSize: altMatch.servingSize,
+              })
+            }
+          }
+
+          let altResult: Awaited<ReturnType<typeof resolveIngredientFactor>>
+          try {
+            altResult = await resolveIngredientFactor(
+              buildFoodForConversion(altMatch),
+              ing.quantity,
+              resolvedUnit,
+            )
+          } catch (err) {
+            console.log('[V-nutrition] alt-conversion-threw', {
+              index: ingredientResults.length,
+              altId: altMatch.externalId,
+              altProvider: altMatch.provider,
+              error: err instanceof Error ? err.message : String(err),
+            })
+            continue
+          }
+
+          if (isConversionError(altResult)) {
+            console.log('[V-nutrition] alt-conversion-failed', {
+              index: ingredientResults.length,
+              altId: altMatch.externalId,
+              altProvider: altMatch.provider,
+              altName: altMatch.name,
+              errorCode: altResult.errorCode,
+              householdUnit: altMatch.householdUnit ?? null,
+            })
+            continue
+          }
+
+          if (!isConversionError(altResult)) {
+            console.log('[V-nutrition] alt-match-used', {
+              index: ingredientResults.length,
+              altProvider: altMatch.provider,
+              altId: altMatch.externalId,
+              altName: altMatch.name,
+              originalError: (conversionResult as ConversionErrorType).errorCode,
+            })
+            topMatch = altMatch
+            conversionResult = altResult
+            usedFallback = true
+            // Surface the substitution in assumptions so V can disclose it to the user
+            assumptions.push(
+              `"${ing.name}": no serving conversion for best match — used comparable reference "${altMatch.name}" (${altMatch.provider}, confidence: plausible)`
+            )
+            break
+          }
+        }
+      }
+
+      // ── Part C-PBorrow: Portion-borrow for count units ──────────────────────
+      // When all alternatives failed for a count unit: if the topMatch is a
+      // prepared-form food with per-100g macros but no count-unit serving (e.g.
+      // USDA Survey "Eggs, scrambled"), try to borrow ONLY the count-to-gram
+      // portion weight from a USDA SR Legacy/Foundation alt. The prepared food's
+      // per-100g macros are retained — macros reflect the prepared form (e.g.
+      // cooking-fat calories already included in Survey reference values).
+      // topMatch is not reassigned here; only conversionResult is replaced.
+      if (!usedFallback && isCountUnit(resolvedUnit)) {
+        const preparedTopMatch = topMatch
+        for (const alt of match.alternatives) {
+          if (alt.matchScore < 40) continue
+          if (alt.provider !== 'usda_fooddata') continue
+          if (alt.fdcDataType !== 'Foundation' && alt.fdcDataType !== 'SR Legacy') continue
+          // Identity check for base food compatibility; prep-state Guard 2 is
+          // intentionally lenient here because we borrow only portion weight.
+          if (!altPassesIdentityCheck(preparedTopMatch.name, alt.name, ing.name)) continue
+
+          let altFactor: Awaited<ReturnType<typeof resolveIngredientFactor>>
+          try {
+            altFactor = await resolveIngredientFactor(
+              buildFoodForConversion(alt),
+              ing.quantity,
+              resolvedUnit,
+            )
+          } catch {
+            continue
+          }
+          if (isConversionError(altFactor)) continue
+
+          // Keep topMatch (prepared-food macros). Only replace conversionResult
+          // so that: calories = preparedTopMatch.calories × altFactor.factor
+          conversionResult = altFactor
+          usedFallback = true
+          assumptions.push(
+            `"${ing.name}": count-to-gram from "${alt.name}" (${altFactor.portionDescription}); macros from prepared food "${preparedTopMatch.name}"`
+          )
+          console.log('[V-nutrition] portion-borrow-used', {
+            index: ingredientResults.length,
+            preparedFood: preparedTopMatch.name,
+            portionSource: alt.name,
+            portionDescription: altFactor.portionDescription,
+          })
           break
+        }
+      }
+    }
+
+    // ── Part C-BaseFallback: Base-food disclosed fallback for count units ──────
+    // Last resort when alternatives are exhausted or absent. When the ingredient
+    // name is a preparation-method compound ("scrambled eggs", "hard-boiled egg"),
+    // strip the preparation prefix and retry matchIngredient with the base food.
+    // The base food's macros do NOT include preparation additions (e.g. cooking
+    // fat) — this is explicitly disclosed in the assumption note so the customer
+    // can understand the limitation before confirming a log entry.
+    if (!usedFallback && isCountUnit(resolvedUnit) && isConversionError(conversionResult)) {
+      const baseFood = extractBaseCountFood(ing.name)
+      if (baseFood) {
+        try {
+          const baseMatch = await matchIngredient({
+            ingredientName: baseFood,
+            quantity: ing.quantity,
+            unit: resolvedUnit,
+          })
+          if (baseMatch?.topMatch && topMatchPassesIdentityCheck(baseFood, baseMatch.topMatch.name)) {
+            const baseFactor = await resolveIngredientFactor(
+              buildFoodForConversion(baseMatch.topMatch),
+              ing.quantity,
+              resolvedUnit,
+            )
+            if (!isConversionError(baseFactor)) {
+              topMatch = baseMatch.topMatch
+              conversionResult = baseFactor
+              usedFallback = true
+              assumptions.push(
+                `"${ing.name}": resolved as base food "${baseFood}" — macros do not include preparation-specific additions (e.g. cooking fat)`
+              )
+              console.log('[V-nutrition] base-food-fallback-used', {
+                index: ingredientResults.length,
+                originalName: ing.name,
+                baseFood,
+                baseFoodMatch: baseMatch.topMatch.name,
+              })
+            }
+          }
+        } catch (err) {
+          console.log('[V-nutrition] base-food-fallback-failed', {
+            index: ingredientResults.length,
+            originalName: ing.name,
+            baseFood,
+            error: err instanceof Error ? err.message : String(err),
+          })
         }
       }
     }
