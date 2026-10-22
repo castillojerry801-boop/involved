@@ -3,6 +3,7 @@
 
 import type { ExternalFoodResult } from '@/lib/nutrition/providers/types'
 import type { FoodMatch, MatchRequest } from './types'
+import { tokenSynonyms } from '@/lib/nutrition/search-utils'
 
 // Stopwords excluded from word matching
 const STOPWORDS = new Set([
@@ -169,9 +170,16 @@ export function scoreForIngredient(
 
     // Extra significant words in food name that don't appear in query AND not prep/cut modifiers.
     // Progressive scale penalizes compound dishes (5+ extra words) much more than simple variants.
-    const extraWords = foodWords.filter(
-      w => !wordInText(w, req.ingredientName) && !PREP_MODIFIER_WORDS.has(w),
-    )
+    // Synonym-aware: a food word is not "extra" if it is a synonym for a word in the query
+    // (e.g. "oats" in "Cereals, oats, cooked..." is not extra for a "cooked oatmeal" query).
+    const queryWordsList = significantWords(req.ingredientName)
+    const extraWords = foodWords.filter(w => {
+      if (PREP_MODIFIER_WORDS.has(w)) return false
+      if (wordInText(w, req.ingredientName)) return false
+      // w is covered if it appears in the synonyms of any query word
+      if (queryWordsList.some(qw => tokenSynonyms(qw).some(syn => w === syn || w.startsWith(syn)))) return false
+      return true
+    })
     if (extraWords.length > 0) {
       const n = extraWords.length
       const penalty = n === 1 ? 3 : n === 2 ? 8 : n === 3 ? 15 : n === 4 ? 23 : 32

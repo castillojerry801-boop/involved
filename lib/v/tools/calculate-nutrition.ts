@@ -2,6 +2,7 @@ import 'server-only'
 import { matchIngredient } from '@/lib/nutrition/matching/matcher'
 import { resolveIngredientFactor } from '@/lib/nutrition/conversion/factor'
 import { isConversionError } from '@/lib/nutrition/conversion/types'
+import { tokenHitsText, tokenHitsTextExpanded, SYNONYM_BASE_FORM_KEYS } from '@/lib/nutrition/search-utils'
 import type { ConversionError as ConversionErrorType } from '@/lib/nutrition/conversion/types'
 import type { Decimal } from '@prisma/client/runtime/library'
 import { FatSecretProvider } from '@/lib/nutrition/providers/fatsecret'
@@ -88,6 +89,73 @@ function isCountUnit(unit: string): boolean {
 function isVolumeUnit(unit: string): boolean {
   const u = unit.toLowerCase().trim()
   return CUP_UNITS.has(u) || TBSP_UNITS.has(u) || TSP_UNITS.has(u) || FL_OZ_UNITS.has(u)
+}
+
+// ── Guard: portion-size conflict ──────────────────────────────────────────────
+// Prevents a resolved portion description from being accepted when it explicitly
+// describes a size category that conflicts with the ingredient name's own size
+// qualifier (e.g. "1 thin slice (yield after cooking)" for "thick-cut bacon").
+// Only explicit antonymous pairs trigger rejection; neutral terms like "strip"
+// or "piece" do not. This is intentionally narrow — we only block obvious cases
+// where the serving description itself states a conflicting thickness or size.
+const PORTION_SIZE_CONFLICT_PAIRS: [string, string][] = [
+  ['thick', 'thin'],   // "thick-cut bacon" with "thin slice" portion
+  ['thin',  'thick'],  // "thin crust" with "thick slice" portion
+]
+
+function portionSizeConflict(ingredientName: string, portionDescription: string): boolean {
+  const ing  = ingredientName.toLowerCase()
+  const port = portionDescription.toLowerCase()
+  for (const [ingWord, portWord] of PORTION_SIZE_CONFLICT_PAIRS) {
+    if (ing.includes(ingWord) && port.includes(portWord)) return true
+  }
+  return false
+}
+
+// ── Guard: synonym-expanded preparation-form conflict ─────────────────────────
+// When an alternative was found through a BASE-FORM synonym bridge (e.g. "oatmeal"
+// expanding to "oats" to find "Oats, rolled, dry"), Guard 5 leaves a gap: it only
+// fires when both the request AND the candidate carry explicit preparation states.
+// A preparation-neutral request like "oatmeal" or "quick oatmeal" does not carry
+// explicit state, so Guard 5 ignores it — yet using dry-grain macros for a
+// cooked-porridge quantity produces a ~2× calorie error.
+//
+// SYNONYM_BASE_FORM_KEYS (from search-utils) distinguishes two synonym types:
+//   • Base-form synonyms: key = prepared form, values = base/unprocessed ingredient
+//     (e.g. "oatmeal" → "oats"). Guard APPLIES — preparation matters.
+//   • Same-form synonyms: regional name equivalents for the same preparation
+//     (e.g. "arugula" → "rocket"). Guard does NOT apply — these are the same food.
+//
+// Non-synonym-key modifier tokens (e.g. "quick", "instant", "rolled") do not
+// disable the guard when the food-identity token ("oatmeal") still only bridges
+// via the synonym. This closes the "quick oatmeal" → "Oats, quick, dry" gap.
+//
+// Exported for unit testing. Not part of the public module API.
+export function matchedViaSynonymOnly(ingredientName: string, altName: string): boolean {
+  const tokens = ingredientName
+    .toLowerCase()
+    .split(/\s+/)
+    .map(t => t.replace(/[^a-z0-9]/g, ''))
+    .filter(t => t.length >= 3)
+  for (const token of tokens) {
+    if (!SYNONYM_BASE_FORM_KEYS.has(token)) continue  // skip non-base-form tokens
+    if (tokenHitsText(token, altName)) return false   // base-form key hits directly → no bridge
+    if (tokenHitsTextExpanded(token, altName)) return true  // base-form key bridges via synonym
+  }
+  return false
+}
+
+// Fires when all three conditions hold:
+//   1. The ingredient request is preparation-neutral (Guard 5 would not fire)
+//   2. The alternative food is explicitly raw or dry (extractPrepState = raw_or_dry)
+//   3. The food-identity connection runs through a base-form synonym bridge
+// Does not fire for same-form regional synonyms (arugula/rocket etc.) because
+// those keys are absent from SYNONYM_BASE_FORM_KEYS.
+// Exported for unit testing. Not part of the public module API.
+export function synonymExpandedDryFormConflict(ingredientName: string, altName: string): boolean {
+  if (extractPrepState(ingredientName) !== 'neutral') return false
+  if (extractPrepState(altName) !== 'raw_or_dry') return false
+  return matchedViaSynonymOnly(ingredientName, altName)
 }
 
 // ── Helper: extract base food name from preparation-method compound names ─────
@@ -674,6 +742,26 @@ export async function calculateNutrition(
       }
     }
 
+    // ── Portion-size conflict guard ───────────────────────────────────────────
+    // When the topMatch resolves successfully, verify that the resolved portion
+    // description doesn't explicitly conflict with a size qualifier in the
+    // ingredient name (e.g. "thin slice" for "thick-cut bacon"). If a conflict
+    // exists, demote to a ConversionError so Part C can try alternatives.
+    if (!isConversionError(conversionResult) && portionSizeConflict(ing.name, conversionResult.portionDescription)) {
+      console.log('[V-nutrition] portion-size-conflict', {
+        index: ingredientResults.length,
+        ingredientName: ing.name,
+        portionDescription: conversionResult.portionDescription,
+        topMatchName: topMatch.name,
+      })
+      conversionResult = {
+        kind: 'conversion_error',
+        errorCode: 'portion_not_found',
+        message: `Portion "${conversionResult.portionDescription}" conflicts with requested size "${ing.name}" — cannot use a thin-slice serving for a thick-cut ingredient`,
+        suggestions: ['Specify amount in grams or ounces for an accurate result'],
+      }
+    }
+
     // ── Part C: Alternative candidate fallback ────────────────────────────────
     // When the topMatch fails conversion OR was identity-rejected, four ordered
     // sub-paths attempt resolution:
@@ -707,16 +795,25 @@ export async function calculateNutrition(
       })
 
       // ── Part C-Pre: USDA volume promotion ──────────────────────────────────
-      // FatSecret earns a +3 provider scoring bonus, which can displace USDA
-      // Foundation/SR Legacy foods. FatSecret records carry no volume-unit USDA
-      // portions — only USDA Foundation/SR Legacy trigger Step 7 portion fetch.
-      // When a FatSecret topMatch fails a volume unit, try USDA alts first.
-      // The relative quality gate is bypassed; both identity guards are required.
-      if (
+      // Two provider paths can end up with a topMatch that carries no volume-unit
+      // portion data:
+      //   • FatSecret (+15 bonus): beats USDA on scoring but has no USDA FDC
+      //     portion lookup (Step 7 skips non-USDA foods).
+      //   • USDA Survey / FNDDS: wins topMatch when FatSecret returns no strong
+      //     result; Survey foods also lack USDA FDC portion data in Step 7 because
+      //     Step 7 requires Foundation or SR Legacy fdcDataType.
+      // In both cases, a USDA Foundation/SR Legacy alt can trigger Step 7 and
+      // resolve the volume unit. The relative quality gate is bypassed; both
+      // identity guards are required.
+      const topMatchLacksVolumeData =
         isVolumeUnit(resolvedUnit) &&
         (conversionResult as ConversionErrorType).errorCode === 'unit_incompatible' &&
-        match.topMatch.provider === 'fatsecret'
-      ) {
+        (
+          match.topMatch.provider === 'fatsecret' ||
+          (match.topMatch.provider === 'usda_fooddata' &&
+           match.topMatch.fdcDataType === 'Survey (FNDDS)')
+        )
+      if (topMatchLacksVolumeData) {
         for (const alt of match.alternatives) {
           if (usedFallback) break
           if (alt.matchScore < 40) continue
@@ -728,6 +825,14 @@ export async function calculateNutrition(
           // compound-dish indicator — and altPassesIdentityCheck's COMPOUND_INDICATORS
           // set includes 'with', which would over-reject valid USDA equivalents.
           if (!topMatchPassesIdentityCheck(ing.name, alt.name)) continue
+          if (synonymExpandedDryFormConflict(ing.name, alt.name)) {
+            console.log('[V-nutrition] synonym-dry-form-guard-pre', {
+              index: ingredientResults.length,
+              ingredientName: ing.name,
+              altName: alt.name,
+            })
+            continue
+          }
 
           let altResult: Awaited<ReturnType<typeof resolveIngredientFactor>>
           try {
@@ -796,6 +901,14 @@ export async function calculateNutrition(
             })
             continue
           }
+          if (synonymExpandedDryFormConflict(ing.name, alt.name)) {
+            console.log('[V-nutrition] synonym-dry-form-guard-std', {
+              index: ingredientResults.length,
+              ingredientName: ing.name,
+              altName: alt.name,
+            })
+            continue
+          }
 
           let altMatch = alt
 
@@ -843,6 +956,16 @@ export async function calculateNutrition(
           }
 
           if (!isConversionError(altResult)) {
+            // Portion-size conflict: if the alt's portion description conflicts
+            // with the ingredient's own size qualifier, skip this alt too.
+            if (portionSizeConflict(ing.name, altResult.portionDescription)) {
+              console.log('[V-nutrition] alt-portion-size-conflict', {
+                index: ingredientResults.length,
+                altName: altMatch.name,
+                portionDescription: altResult.portionDescription,
+              })
+              continue
+            }
             console.log('[V-nutrition] alt-match-used', {
               index: ingredientResults.length,
               altProvider: altMatch.provider,
@@ -879,6 +1002,14 @@ export async function calculateNutrition(
           // Identity check for base food compatibility; prep-state Guard 2 is
           // intentionally lenient here because we borrow only portion weight.
           if (!altPassesIdentityCheck(preparedTopMatch.name, alt.name, ing.name)) continue
+          if (synonymExpandedDryFormConflict(ing.name, alt.name)) {
+            console.log('[V-nutrition] synonym-dry-form-guard-pborrow', {
+              index: ingredientResults.length,
+              ingredientName: ing.name,
+              altName: alt.name,
+            })
+            continue
+          }
 
           let altFactor: Awaited<ReturnType<typeof resolveIngredientFactor>>
           try {
@@ -891,6 +1022,18 @@ export async function calculateNutrition(
             continue
           }
           if (isConversionError(altFactor)) continue
+
+          // Portion-size conflict: a conflicting size descriptor (e.g. "thin slice"
+          // for a "thick-cut" ingredient) is wrong even when used only for gram-
+          // weight. Skip this alt rather than borrowing a size-incompatible portion.
+          if (portionSizeConflict(ing.name, altFactor.portionDescription)) {
+            console.log('[V-nutrition] pborrow-portion-size-conflict', {
+              index: ingredientResults.length,
+              altName: alt.name,
+              portionDescription: altFactor.portionDescription,
+            })
+            continue
+          }
 
           // Keep topMatch (prepared-food macros). Only replace conversionResult
           // so that: calories = preparedTopMatch.calories × altFactor.factor

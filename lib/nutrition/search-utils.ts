@@ -48,6 +48,53 @@ const SCORING_STOP_WORDS = new Set([
   'fresh', 'frozen', 'dried', 'organic', 'natural', 'low', 'fat',
 ])
 
+// Common US consumer food names that USDA and other databases index under a
+// different canonical term. Used in the quality gate and scoring so that
+// queries like "oatmeal" can surface USDA "oats" foods, and vice versa.
+// This is a vocabulary-normalization table only — no nutrition values here.
+//
+// NOT included: cilantro ↔ coriander. In the US, "cilantro" = fresh herb (~23 cal/100g)
+// and "coriander" can refer to dried seeds (~298 cal/100g). Synonym expansion between
+// them risks routing "cilantro" queries to high-density seed entries. Direct-name
+// matching in FatSecret/USDA is sufficient for both terms.
+export const FOOD_NAME_SYNONYMS: Map<string, string[]> = new Map([
+  ['oatmeal', ['oats', 'oat']],
+  ['arugula', ['rocket']],
+  ['eggplant', ['aubergine']],
+  ['zucchini', ['courgette']],
+])
+
+// Subset of FOOD_NAME_SYNONYMS keys where the KEY is the PREPARED/cooked form
+// and the synonyms are the BASE/unprocessed ingredient form. Used by the
+// preparation-form conflict guard to distinguish two fundamentally different
+// synonym relationships:
+//
+//   Base-form (this set): "oatmeal" (cooked porridge) ↔ "oats" (dry grain).
+//     Nutrition differs substantially by preparation — the guard must apply.
+//
+//   Same-form (not in this set): "arugula" ↔ "rocket", "eggplant" ↔ "aubergine",
+//     "zucchini" ↔ "courgette". These are regional name equivalents for the same
+//     preparation form — the guard must NOT apply, even when the food is "raw".
+export const SYNONYM_BASE_FORM_KEYS: Set<string> = new Set(['oatmeal'])
+
+/** Returns alternate terms for a query token, or empty array if none exist. */
+export function tokenSynonyms(token: string): string[] {
+  return FOOD_NAME_SYNONYMS.get(normalizeToken(token)) ?? []
+}
+
+/**
+ * Like tokenHitsText, but also checks FOOD_NAME_SYNONYMS.
+ * Allows "oatmeal" to match a food named "Cereals, Oats, cooked..." and
+ * similar vocabulary gaps between consumer language and USDA canonical names.
+ */
+export function tokenHitsTextExpanded(token: string, text: string): boolean {
+  if (tokenHitsText(token, text)) return true
+  for (const syn of tokenSynonyms(token)) {
+    if (tokenHitsText(syn, text)) return true
+  }
+  return false
+}
+
 // ── Quality gate ──────────────────────────────────────────────────────────────
 //
 // Applied AFTER aggregation, scoring, and deduplication.
@@ -96,7 +143,7 @@ export function passesQualityGate(result: ExternalFoodResult, query: string): bo
 
   if (qTokens.length === 0) return true  // nothing left after stripping — don't gate
 
-  const hits = qTokens.filter(t => tokenHitsText(t, combined))
+  const hits = qTokens.filter(t => tokenHitsTextExpanded(t, combined))
 
   if (qTokens.length === 1) return hits.length >= 1
 
@@ -105,10 +152,11 @@ export function passesQualityGate(result: ExternalFoodResult, query: string): bo
   // Using identity count (not total) prevents multi-modifier queries like
   // "fresh organic spinach" (identityCount=1 → threshold=1) from failing against
   // "Spinach, raw" — the stop-word modifiers add no discriminating power to the gate.
+  // tokenHitsTextExpanded: also accepts USDA canonical synonyms (e.g. "oatmeal"→"oats").
   const anchorToken = qTokens.find(t => !SCORING_STOP_WORDS.has(t)) ?? qTokens[0]
   const identityCount = qTokens.filter(t => !SCORING_STOP_WORDS.has(t)).length
   const threshold = Math.ceil(Math.max(1, identityCount) / 2)
-  return tokenHitsText(anchorToken, combined) && hits.length >= threshold
+  return tokenHitsTextExpanded(anchorToken, combined) && hits.length >= threshold
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
@@ -158,7 +206,7 @@ export function scoreResult(r: ExternalFoodResult, query: string): number {
     // Word coverage via variant-aware matching
     const qTokens = query.toLowerCase().split(/\s+/).filter(w => w.length >= 2)
     if (qTokens.length > 0) {
-      const matched = qTokens.filter(t => tokenHitsText(t, r.name + ' ' + (r.brand ?? '')))
+      const matched = qTokens.filter(t => tokenHitsTextExpanded(t, r.name + ' ' + (r.brand ?? '')))
       score += Math.round((matched.length / qTokens.length) * 40)
     }
   }
