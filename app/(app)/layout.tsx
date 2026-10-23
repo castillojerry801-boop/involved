@@ -13,9 +13,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <TimezoneSync />
       <BackgroundCarousel />
       <AppNav isTrainer={isTrainer} />
-      {/* Desktop: offset content for sidebar; Mobile: add bottom padding for nav */}
-      {/* Mobile: top bar (12) + bottom nav (20); Desktop: sidebar (64) only */}
-      <div className="md:ml-64 pt-12 pb-20 md:pt-0 md:pb-0">
+      {/* Desktop: offset content for sidebar; Mobile: bottom nav only */}
+      <div className="md:ml-64 pb-20 md:pb-0">
         {children}
       </div>
     </div>

@@ -97,11 +97,6 @@ export function AppNav({ isTrainer = false }: { isTrainer?: boolean }) {
         </div>
       </aside>
 
-      {/* Mobile: top bar with theme toggle */}
-      <header className="md:hidden fixed top-0 left-0 right-0 z-50 flex items-center justify-end px-4 h-12 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-b border-zinc-200/50 dark:border-zinc-700/50">
-        <ThemeToggle className="py-1.5 text-xs gap-1.5" />
-      </header>
-
       {/* Mobile bottom nav — 5 items */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex border-t border-zinc-200/50 bg-white/80 backdrop-blur-md dark:border-zinc-700/50 dark:bg-zinc-950/80">
         {MOBILE_PRIMARY.map(({ href, label, icon: Icon }) => {
@@ -233,6 +228,11 @@ export function AppNav({ isTrainer = false }: { isTrainer?: boolean }) {
                 </div>
               </div>
 
+            </div>
+
+            {/* Appearance */}
+            <div className="px-4 pt-2 pb-1 border-t border-zinc-100 dark:border-zinc-800 mt-1">
+              <ThemeToggle className="w-full justify-between rounded-xl px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900" />
             </div>
 
             {/* Bottom padding for home indicator */}
