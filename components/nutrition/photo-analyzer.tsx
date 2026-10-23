@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Camera, Upload, Loader2, CheckCircle, CheckCircle2, AlertCircle, RotateCcw, Mic, MicOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { getSupportedAudioMimeType, audioMimeTypeToExtension } from '@/lib/audio/recorder'
 
 interface FoodEstimate {
   name: string
@@ -50,7 +51,14 @@ export function PhotoAnalyzer({ mealType, logDate, onLogged, onClose }: Props) {
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach(t => t.stop())
+    }
+  }, [])
 
   const handleFile = (file: File) => {
     const reader = new FileReader()
@@ -79,36 +87,55 @@ export function PhotoAnalyzer({ mealType, logDate, onLogged, onClose }: Props) {
 
   const startRecording = async () => {
     setMicError(null)
+    let stream: MediaStream
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const recorder = new MediaRecorder(stream)
-      audioChunksRef.current = []
-      recorder.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
-      recorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop())
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        const fd = new FormData()
-        fd.append('audio', blob)
-        setTranscribing(true)
-        try {
-          const res = await fetch('/api/v/voice/transcribe', { method: 'POST', body: fd })
-          if (res.status === 403) { setMicError('Voice input requires Involved+'); return }
-          if (res.status === 429) { setMicError('Voice limit reached for today'); return }
-          if (!res.ok) { setMicError('Transcription failed — type your notes instead'); return }
-          const { transcript } = await res.json() as { transcript: string }
-          if (transcript?.trim()) {
-            setUserContext(prev => prev.trim() ? `${prev.trim()} ${transcript.trim()}` : transcript.trim())
-          }
-        } finally {
-          setTranscribing(false)
-        }
-      }
-      recorder.start()
-      mediaRecorderRef.current = recorder
-      setIsRecording(true)
-    } catch {
-      setMicError('Microphone access denied')
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (err) {
+      setMicError(err instanceof Error && err.name === 'NotAllowedError'
+        ? 'Microphone access denied'
+        : 'Microphone unavailable')
+      return
     }
+    streamRef.current = stream
+
+    const mimeType = getSupportedAudioMimeType()
+    audioChunksRef.current = []
+
+    let recorder: MediaRecorder
+    try {
+      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {})
+    } catch {
+      stream.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+      setMicError('Recording not supported on this device')
+      return
+    }
+
+    recorder.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
+    recorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+      const blob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/mp4' })
+      const ext = audioMimeTypeToExtension(mimeType)
+      const fd = new FormData()
+      fd.append('audio', blob, `audio.${ext}`)
+      setTranscribing(true)
+      try {
+        const res = await fetch('/api/v/voice/transcribe', { method: 'POST', body: fd })
+        if (res.status === 403) { setMicError('Voice input requires Involved+'); return }
+        if (res.status === 429) { setMicError('Voice limit reached for today'); return }
+        if (!res.ok) { setMicError('Transcription failed — type your notes instead'); return }
+        const { transcript } = await res.json() as { transcript: string }
+        if (transcript?.trim()) {
+          setUserContext(prev => prev.trim() ? `${prev.trim()} ${transcript.trim()}` : transcript.trim())
+        }
+      } finally {
+        setTranscribing(false)
+      }
+    }
+    recorder.start()
+    mediaRecorderRef.current = recorder
+    setIsRecording(true)
   }
 
   const stopRecording = () => {

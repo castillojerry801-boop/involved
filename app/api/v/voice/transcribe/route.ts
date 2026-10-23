@@ -8,6 +8,17 @@ import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage } from '@/lib/v/usage'
 import { toFile } from 'openai'
 
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024
+
+const ALLOWED_AUDIO_PREFIXES = [
+  'audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/aac',
+  'audio/ogg', 'audio/wav', 'audio/flac', 'audio/x-m4a',
+]
+
+function audioExtension(mimeType: string): string {
+  return mimeType.startsWith('audio/webm') ? 'webm' : 'mp4'
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -31,8 +42,20 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'audio file is required' }, { status: 400 })
   }
 
+  if (audioFile.size > MAX_AUDIO_BYTES) {
+    return Response.json({ error: 'Audio file too large (max 25 MB)' }, { status: 400 })
+  }
+
+  const audioType = (audioFile.type || '').toLowerCase()
+  if (audioType !== '' && !ALLOWED_AUDIO_PREFIXES.some(p => audioType.startsWith(p))) {
+    return Response.json({ error: 'Unsupported audio format' }, { status: 400 })
+  }
+
+  const effectiveType = audioType || 'audio/mp4'
+  const ext = audioExtension(effectiveType)
+
   const openai = getOpenAI()
-  const file = await toFile(audioFile, 'audio.webm', { type: audioFile.type || 'audio/webm' })
+  const file = await toFile(audioFile, `audio.${ext}`, { type: effectiveType })
 
   const transcription = await openai.audio.transcriptions.create({
     model: MODELS.voice.transcription,

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { Mic, MicOff, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getSupportedAudioMimeType, audioMimeTypeToExtension } from '@/lib/audio/recorder'
 
 export interface VoiceMicInputProps {
   onTranscript: (text: string) => void
@@ -14,8 +15,16 @@ type MicState = 'idle' | 'recording' | 'processing' | 'error'
 
 export function VoiceMicInput({ onTranscript, disabled, className }: VoiceMicInputProps) {
   const [state, setState] = useState<MicState>('idle')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
+
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach(t => t.stop())
+    }
+  }, [])
 
   const stopAndProcess = useCallback(() => {
     const mr = mediaRecorderRef.current
@@ -25,17 +34,34 @@ export function VoiceMicInput({ onTranscript, disabled, className }: VoiceMicInp
 
   const startRecording = useCallback(async () => {
     setState('idle')
+    setErrorMsg(null)
 
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error && err.name === 'NotAllowedError'
+        ? 'Microphone access denied'
+        : 'Microphone unavailable'
+      setErrorMsg(msg)
       setState('error')
       return
     }
+    streamRef.current = stream
 
+    const mimeType = getSupportedAudioMimeType()
     chunksRef.current = []
-    const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+
+    let mr: MediaRecorder
+    try {
+      mr = new MediaRecorder(stream, mimeType ? { mimeType } : {})
+    } catch {
+      stream.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+      setErrorMsg('Recording not supported on this device')
+      setState('error')
+      return
+    }
     mediaRecorderRef.current = mr
 
     mr.ondataavailable = e => {
@@ -44,17 +70,19 @@ export function VoiceMicInput({ onTranscript, disabled, className }: VoiceMicInp
 
     mr.onstop = async () => {
       stream.getTracks().forEach(t => t.stop())
+      streamRef.current = null
       setState('processing')
 
-      const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+      const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/mp4' })
       if (blob.size < 1000) {
         setState('idle')
         return
       }
 
       try {
+        const ext = audioMimeTypeToExtension(mimeType)
         const fd = new FormData()
-        fd.append('audio', blob, 'audio.webm')
+        fd.append('audio', blob, `audio.${ext}`)
         const res = await fetch('/api/v/voice/transcribe', { method: 'POST', body: fd })
         if (!res.ok) {
           setState('error')
@@ -83,7 +111,11 @@ export function VoiceMicInput({ onTranscript, disabled, className }: VoiceMicInp
       type="button"
       onClick={handleClick}
       disabled={disabled || state === 'processing'}
-      title={state === 'recording' ? 'Tap to stop recording' : 'Speak your message'}
+      title={
+        state === 'recording' ? 'Tap to stop recording'
+        : state === 'error' ? (errorMsg ?? 'Voice input unavailable — tap to retry')
+        : 'Speak your message'
+      }
       className={cn(
         'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors disabled:opacity-40',
         state === 'recording'

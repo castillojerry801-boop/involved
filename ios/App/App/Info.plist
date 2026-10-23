@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Involved uses the camera to scan food barcodes and support photo-based nutrition logging.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Involved uses the microphone to let you log workouts and meals by voice.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Involved reads your workouts, weight, and resting heart rate from Apple Health to show your training history in one place. No data is written back to Health.</string>
 	<key>NSHealthUpdateUsageDescription</key>
