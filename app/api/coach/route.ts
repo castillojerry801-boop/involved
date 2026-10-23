@@ -30,6 +30,9 @@ import type { GetMealLogArgs } from '@/lib/v/tools/get-meal-log'
 import { buildMealLogToken, verifyMealLogToken, selectTokenIngredients, TOKEN_TTL_SECONDS } from '@/lib/v/meal-log-token'
 import { storeMealCalculationRef, resolveMealCalculationRef } from '@/lib/v/meal-calculation-ref'
 import type OpenAI from 'openai'
+import { after } from 'next/server'
+import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
+import type { PendingRequestLog, OperationType } from '@/lib/ai/request-logger'
 
 // One Luna draft + one targeted Luna correction, then escalate to Sol (which also
 // gets a draft + one correction). Kept at 1 so a correction round is cheap and the
@@ -374,6 +377,9 @@ export async function POST(req: NextRequest) {
       return
     }
 
+    // Per-request log entries — flushed to DB in finally.
+    const requestLogs: PendingRequestLog[] = []
+
     // Token + timing telemetry, accumulated across all rounds.
     let promptTokens = 0
     let completionTokens = 0
@@ -475,6 +481,18 @@ export async function POST(req: NextRequest) {
           if (res.usage) {
             promptTokens += res.usage.prompt_tokens ?? 0
             completionTokens += res.usage.completion_tokens ?? 0
+            // Derive the operation type from current phase so each round is
+            // attributed accurately (chat vs program draft vs Sol escalation).
+            const opType: OperationType = !useTools
+              ? 'chat_prose'
+              : !programGenerationMode
+                ? 'chat_intake'
+                : genPhase === 'escalation'
+                  ? (qualityRetries > 0 ? 'quality_escalation_correction' : 'quality_escalation')
+                  : (qualityRetries > 0 ? 'program_correction' : 'program_draft')
+            requestLogs.push(
+              buildTokenLog(user.id, 'coach_message', opType, selectedModel, res.usage)
+            )
           }
           return res
         } catch (err: unknown) {
@@ -1141,6 +1159,14 @@ export async function POST(req: NextRequest) {
       emitRaw({ type: 'done' })
     } finally {
       await writer.close().catch(() => {})
+      // after() registers with Vercel's waitUntil so the function stays alive until
+      // the DB write completes after the stream closes. Falls back to a direct await
+      // in environments without a request context (e.g. tests).
+      try {
+        after(() => flushRequestLogs(requestLogs))
+      } catch {
+        await flushRequestLogs(requestLogs)
+      }
     }
   })()
 

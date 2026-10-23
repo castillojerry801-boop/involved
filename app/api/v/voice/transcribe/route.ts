@@ -7,6 +7,7 @@ import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage } from '@/lib/v/usage'
 import { toFile } from 'openai'
+import { buildAudioLog, flushRequestLogs } from '@/lib/ai/request-logger'
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024
 
@@ -63,6 +64,10 @@ export async function POST(req: NextRequest) {
     language: 'en',
     response_format: 'json',
   })
+
+  await flushRequestLogs([
+    buildAudioLog(user.id, 'voice_transcription', 'voice_transcription', MODELS.voice.transcription, audioFile.size),
+  ])
 
   return Response.json({ transcript: transcription.text })
 }

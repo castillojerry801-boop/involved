@@ -9,6 +9,8 @@ import type { ShorteningPlan } from '@/lib/ai/tools/shorten'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage } from '@/lib/v/usage'
+import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
+import type { PendingRequestLog } from '@/lib/ai/request-logger'
 import type OpenAI from 'openai'
 
 export async function POST(
@@ -96,6 +98,7 @@ RULES:
   ]
 
   let plan: ShorteningPlan | null = null
+  const requestLogs: PendingRequestLog[] = []
 
   for (let round = 0; round < 3; round++) {
     const response = await openai.chat.completions.create({
@@ -108,6 +111,9 @@ RULES:
     })
 
     const choice = response.choices[0]
+    if (response.usage) {
+      requestLogs.push(buildTokenLog(user.id, 'workout_adjustment', 'workout_shortening', model, response.usage))
+    }
     messages.push(choice.message)
 
     if (!choice.message.tool_calls?.length) break
@@ -159,6 +165,8 @@ RULES:
     }
     if (plan) break
   }
+
+  await flushRequestLogs(requestLogs)
 
   if (!plan) {
     return Response.json({ error: 'V could not produce a shortening plan. Please try again.' }, { status: 422 })

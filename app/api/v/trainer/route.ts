@@ -6,6 +6,7 @@ import { buildVTrainerContext, trainerContextToPrompt } from '@/lib/v/trainer-co
 import { prisma } from '@/lib/prisma'
 import { getOpenAI } from '@/lib/ai/client'
 import { MODELS } from '@/lib/ai/models'
+import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
 
 /**
  * POST /api/v/trainer
@@ -64,6 +65,10 @@ CRITICAL RULES:
         { role: 'user',   content: body.message },
       ],
     })
+
+    await flushRequestLogs([
+      buildTokenLog(user.id, 'trainer_query', 'trainer_query', MODELS.coach.plus, response.usage),
+    ])
 
     const text = response.choices[0]?.message?.content ?? ''
 

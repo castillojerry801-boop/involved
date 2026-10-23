@@ -6,6 +6,7 @@ import { MODELS } from '@/lib/ai/models'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage } from '@/lib/v/usage'
+import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
 
 export type VoiceIntent =
   | { action: 'log_set'; weightKg?: number; reps?: number; durationSeconds?: number; distanceM?: number; rpe?: number; rir?: number }
@@ -109,6 +110,10 @@ export async function POST(req: NextRequest) {
 
   const choice = response.choices[0]
   const toolCall = choice.message.tool_calls?.[0]
+
+  await flushRequestLogs([
+    buildTokenLog(user.id, 'voice_intent', 'voice_intent', MODELS.voice.intent, response.usage),
+  ])
 
   if (!toolCall) {
     return Response.json({ intent: { action: 'unknown', rawTranscript: body.transcript } satisfies VoiceIntent })

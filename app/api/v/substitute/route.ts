@@ -9,6 +9,8 @@ import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage } from '@/lib/v/usage'
 import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training-context'
+import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
+import type { PendingRequestLog } from '@/lib/ai/request-logger'
 import type OpenAI from 'openai'
 
 const PROPOSE_SUBSTITUTION_TOOL = {
@@ -101,6 +103,7 @@ USER CONTEXT:\n${contextSnippet}`,
   const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_SUBSTITUTION_TOOL]
   let substitutes: Array<{ exercise_id: string; reason: string }> | null = null
   const MAX_ROUNDS = 5
+  const requestLogs: PendingRequestLog[] = []
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const response = await openai.chat.completions.create({
@@ -113,6 +116,9 @@ USER CONTEXT:\n${contextSnippet}`,
     })
 
     const choice = response.choices[0]
+    if (response.usage) {
+      requestLogs.push(buildTokenLog(user.id, 'substitution', 'substitution', model, response.usage))
+    }
     messages.push(choice.message)
 
     if (!choice.message.tool_calls?.length) break
@@ -145,6 +151,8 @@ USER CONTEXT:\n${contextSnippet}`,
 
     if (substitutes) break
   }
+
+  await flushRequestLogs(requestLogs)
 
   if (!substitutes || substitutes.length === 0) {
     return Response.json({ error: 'V could not find valid substitutes. Please try again.' }, { status: 422 })

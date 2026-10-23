@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/ai/client'
+import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
 import type OpenAI from 'openai'
 
 const SYSTEM_PROMPT = `You are a nutrition expert and dietitian. When given a photo of food, analyze it and estimate the nutritional content as accurately as possible.
@@ -44,6 +46,13 @@ Respond ONLY with a JSON object in this exact format (no markdown, no extra text
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await req.json() as { imageBase64?: string; userContext?: string }
     const { imageBase64, userContext } = body
 
@@ -74,6 +83,11 @@ export async function POST(req: NextRequest) {
         { role: 'user', content: userContent },
       ],
     })
+
+    const visionModel = process.env.AI_MODEL_VISION ?? 'gpt-4o'
+    await flushRequestLogs([
+      buildTokenLog(user.id, 'meal_photo', 'photo_analysis', visionModel, response.usage),
+    ])
 
     let text = response.choices[0]?.message?.content ?? ''
     text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()

@@ -38,6 +38,7 @@ model Profile {
   // Core relations
   goals               Goal[]
   aiUsageLogs         AiUsageLog[]
+  aiRequestLogs       AiRequestLog[]
   subscription        UserSubscription?
   entitlements        UserEntitlement[]
 
@@ -137,6 +138,41 @@ model AiUsageLog {
   @@unique([userId, billingPeriod, feature])
   @@index([userId])
   @@map("ai_usage_logs")
+}
+
+// Per-request AI telemetry — one row per individual OpenAI API call.
+// Never stores message content, prompts, or personal payload data.
+// Cost fields are marked estimates unless the model's pricing is confirmed.
+model AiRequestLog {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  billingPeriod     String    @map("billing_period") @db.VarChar(7)
+  feature           AiFeature
+  operationType     String    @map("operation_type") @db.VarChar(64)
+  model             String    @db.VarChar(100)
+
+  // Token counts — null for audio models (e.g. whisper-1)
+  inputTokens       Int?      @map("input_tokens")
+  outputTokens      Int?      @map("output_tokens")
+  cachedInputTokens Int?      @map("cached_input_tokens")
+
+  // Audio byte count — non-null only for audio-transcription calls
+  audioBytes        Int?      @map("audio_bytes")
+
+  // Cost estimate — null when model pricing is unknown
+  estimatedCostUsd  Decimal?  @map("estimated_cost_usd") @db.Decimal(10, 8)
+  // "confirmed" | "estimated" | "unknown"
+  pricingStatus     String    @default("unknown") @map("pricing_status") @db.VarChar(20)
+
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, billingPeriod])
+  @@index([billingPeriod])
+  @@index([model])
+  @@index([createdAt])
+  @@map("ai_request_logs")
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -1296,6 +1332,7 @@ enum AiFeature {
   voice_intent
   workout_adjustment
   substitution
+  trainer_query
 }
 
 // ─── Training ─────────────────────────────────────────────────────────

@@ -15,6 +15,8 @@ import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
 import { getSportRules } from '@/lib/v/sport-rules'
 import { buildAdaptationPrompt } from '@/lib/v/adaptation'
 import type { AdaptationTrigger } from '@/lib/v/adaptation'
+import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
+import type { PendingRequestLog } from '@/lib/ai/request-logger'
 import type OpenAI from 'openai'
 
 function buildModifySystemPrompt(sport?: string): string {
@@ -121,6 +123,7 @@ export async function POST(req: NextRequest) {
   let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
   let pendingDraft: ProgramDraft | null = null
   const MAX_ROUNDS = 12
+  const requestLogs: PendingRequestLog[] = []
 
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -133,6 +136,9 @@ export async function POST(req: NextRequest) {
       })
 
       const choice = response.choices[0]
+      if (response.usage) {
+        requestLogs.push(buildTokenLog(user.id, 'workout_generation', 'workout_modification', model, response.usage))
+      }
       messages.push(choice.message)
 
       if (!choice.message.tool_calls?.length) break
@@ -167,9 +173,12 @@ export async function POST(req: NextRequest) {
       if (pendingProgram?.valid) break
     }
   } catch {
+    await flushRequestLogs(requestLogs)
     await decrementVUsage(user.id, 'workout_generation')
     return Response.json({ error: 'V encountered an error. Please try again.' }, { status: 503 })
   }
+
+  await flushRequestLogs(requestLogs)
 
   if (!pendingProgram?.valid || !pendingProgram.program || !pendingDraft) {
     await decrementVUsage(user.id, 'workout_generation')

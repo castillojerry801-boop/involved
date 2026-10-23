@@ -11,6 +11,8 @@ import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage } from '@/lib/v/usage'
 import { buildVTrainingContext, trainingContextToPrompt } from '@/lib/v/training-context'
+import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
+import type { PendingRequestLog } from '@/lib/ai/request-logger'
 import type OpenAI from 'openai'
 
 type TrackingType = 'strength' | 'bodyweight' | 'assisted' | 'cardio' | 'carry' | 'isometric' | 'intervals'
@@ -77,6 +79,7 @@ export async function POST(req: NextRequest) {
   const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL]
   let pendingWorkout: ReturnType<typeof validateWorkoutDraft> | null = null
   const MAX_ROUNDS = 6
+  const requestLogs: PendingRequestLog[] = []
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const response = await openai.chat.completions.create({
@@ -89,6 +92,9 @@ export async function POST(req: NextRequest) {
     })
 
     const choice = response.choices[0]
+    if (response.usage) {
+      requestLogs.push(buildTokenLog(user.id, 'workout_generation', 'workout_generation', model, response.usage))
+    }
     messages.push(choice.message)
 
     if (!choice.message.tool_calls?.length) break
@@ -121,6 +127,8 @@ export async function POST(req: NextRequest) {
 
     if (pendingWorkout?.valid) break
   }
+
+  await flushRequestLogs(requestLogs)
 
   if (!pendingWorkout?.valid || !pendingWorkout.workout) {
     return Response.json({ error: 'V could not generate a valid workout. Please try again.' }, { status: 422 })

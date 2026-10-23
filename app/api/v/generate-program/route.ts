@@ -14,6 +14,8 @@ import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
 import { getSportRules } from '@/lib/v/sport-rules'
 import { validateProgramQuality } from '@/lib/v/program-quality'
 import { assessIntakeGaps } from '@/lib/v/intake'
+import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
+import type { PendingRequestLog } from '@/lib/ai/request-logger'
 import type OpenAI from 'openai'
 
 function buildSystemPrompt(sport?: string): string {
@@ -160,6 +162,7 @@ export async function POST(req: NextRequest) {
   let qualityRetries = 0
   let qualityFailed = false
   const allowedEquipment = ctx.equipment?.items
+  const requestLogs: PendingRequestLog[] = []
 
   // Credit was consumed above. If the AI loop fails (model error or exhausts
   // MAX_ROUNDS without a valid program), we return the credit. A valid program
@@ -176,6 +179,10 @@ export async function POST(req: NextRequest) {
       })
 
       const choice = response.choices[0]
+      if (response.usage) {
+        const opType = qualityRetries > 0 ? 'program_correction' : 'workout_generation'
+        requestLogs.push(buildTokenLog(user.id, 'workout_generation', opType, model, response.usage))
+      }
       messages.push(choice.message)
 
       if (!choice.message.tool_calls?.length) break
@@ -233,10 +240,12 @@ export async function POST(req: NextRequest) {
       if (pendingProgram?.valid || qualityFailed) break
     }
   } catch {
-    // OpenAI API failure — return the credit
+    await flushRequestLogs(requestLogs)
     await decrementVUsage(user.id, 'workout_generation')
     return Response.json({ error: 'V encountered an error. Please try again.' }, { status: 503 })
   }
+
+  await flushRequestLogs(requestLogs)
 
   // Hard quality errors remained after all retries — refund credit, surface clean message
   if (qualityFailed) {
