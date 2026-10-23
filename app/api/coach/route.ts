@@ -902,8 +902,9 @@ export async function POST(req: NextRequest) {
                     verified.reason === 'no_key'            ? 'Meal logging is temporarily unavailable. Tell the user to try again later.' :
                     verified.reason === 'expired'           ? 'The calculation has expired (older than 2 hours). Call calculate_nutrition again to get a fresh result.' :
                     verified.reason === 'wrong_user'        ? 'Ownership mismatch — cannot log a calculation belonging to another session.' :
-                    /* malformed / invalid_signature */       'The calculationToken is invalid — do not modify the token returned by calculate_nutrition.'
+                    /* malformed / invalid_signature */       'The calculationToken is invalid or was corrupted in transit. Call get_meal_log again (for a repeat meal) or calculate_nutrition again (for a new food) to obtain a fresh token, then pass it here in the next response. Do not modify the token string.'
                   result = JSON.stringify({ status: 'error', reason: verified.reason, message: hint })
+                  console.log('[V-meal-log-verify-fail]', { userId: user.id, reason: verified.reason })
                 } else {
                   const { payload } = verified
                   const includeIndexes = Array.isArray(logArgs.includeIngredientIndexes)
@@ -973,6 +974,13 @@ export async function POST(req: NextRequest) {
               }
               // Return the full result to V (calculationToken included so V can call prepare_meal_log).
               result = JSON.stringify(logResult)
+              console.log('[V-get-meal-log]', {
+                userId:      user.id,
+                status:      logResult.status,
+                itemCount:   logResult.itemCount ?? 0,
+                tokenPresent: !!logResult.calculationToken,
+                tokenLength: logResult.calculationToken?.length ?? 0,
+              })
             } catch (err) {
               const msg = err instanceof Error ? err.message : 'Failed to retrieve meal log'
               console.error('[V-get-meal-log-error]', { userId: user.id, error: msg })

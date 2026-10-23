@@ -26,6 +26,17 @@
  *   No side effects on verification failure
  *    12. foodLogEntry.create never called when token verification fails
  *    13. No meal_log_pending for any of the three primary failure modes
+ *
+ *   Corrected token-invalid hint (Part A diagnostics)
+ *    14. malformed token → hint names both get_meal_log and calculate_nutrition
+ *    15. invalid_signature token → hint names both get_meal_log and calculate_nutrition
+ *    16. [V-meal-log-verify-fail] logged with reason on invalid_signature
+ *    17. [V-meal-log-verify-fail] does not log raw token or macro data
+ *
+ *   get_meal_log diagnostic logging (Part A diagnostics)
+ *    18. [V-get-meal-log] logged with status/itemCount/tokenPresent/tokenLength on found
+ *    19. [V-get-meal-log] logged with tokenPresent: false on empty result
+ *    20. [V-get-meal-log] never logs the raw token value
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -380,6 +391,193 @@ describe('prepare_meal_log guard', () => {
 
         const events = await callRoute(USER_MSG)
         expect(events.find(e => e.type === 'meal_log_pending')).toBeUndefined()
+      }
+    })
+  })
+
+  describe('corrected token-invalid hint', () => {
+    it('malformed token — error message names get_meal_log AND calculate_nutrition as recovery paths', async () => {
+      // Token without signature: base64url body only, no "." separator → malformed
+      const bodyOnly = buildToken().split('.')[0]
+
+      let messagesOnRound1: Array<Record<string, unknown>> = []
+      mockCreate
+        .mockImplementationOnce(async () =>
+          makeTool('prepare_meal_log', { calculationToken: bodyOnly, mealType: 'lunch', logDate: '2026-10-22' })
+        )
+        .mockImplementationOnce(async (params: Record<string, unknown>) => {
+          messagesOnRound1 = params.messages as Array<Record<string, unknown>>
+          return makeText('Cannot log.')
+        })
+
+      await callRoute(USER_MSG)
+
+      const toolMsg = messagesOnRound1.find(m => m.role === 'tool')
+      expect(toolMsg).toBeDefined()
+      const parsed = JSON.parse(toolMsg!.content as string) as Record<string, unknown>
+      expect(parsed.status).toBe('error')
+      expect(parsed.reason).toBe('malformed')
+      expect(parsed.message as string).toContain('get_meal_log')
+      expect(parsed.message as string).toContain('calculate_nutrition')
+    })
+
+    it('invalid_signature token — error message names get_meal_log AND calculate_nutrition as recovery paths', async () => {
+      const token = buildToken()
+      const tampered = token.slice(0, -1) + (token.endsWith('a') ? 'b' : 'a')
+
+      let messagesOnRound1: Array<Record<string, unknown>> = []
+      mockCreate
+        .mockImplementationOnce(async () =>
+          makeTool('prepare_meal_log', { calculationToken: tampered, mealType: 'lunch', logDate: '2026-10-22' })
+        )
+        .mockImplementationOnce(async (params: Record<string, unknown>) => {
+          messagesOnRound1 = params.messages as Array<Record<string, unknown>>
+          return makeText('Cannot log.')
+        })
+
+      await callRoute(USER_MSG)
+
+      const toolMsg = messagesOnRound1.find(m => m.role === 'tool')
+      expect(toolMsg).toBeDefined()
+      const parsed = JSON.parse(toolMsg!.content as string) as Record<string, unknown>
+      expect(parsed.status).toBe('error')
+      expect(parsed.reason).toBe('invalid_signature')
+      expect(parsed.message as string).toContain('get_meal_log')
+      expect(parsed.message as string).toContain('calculate_nutrition')
+    })
+
+    it('[V-meal-log-verify-fail] is logged with the reason code on verification failure', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      try {
+        const token = buildToken()
+        const tampered = token.slice(0, -1) + (token.endsWith('a') ? 'b' : 'a')
+
+        mockCreate
+          .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationToken: tampered, mealType: 'lunch', logDate: '2026-10-22' }))
+          .mockResolvedValueOnce(makeText('Cannot log.'))
+
+        await callRoute(USER_MSG)
+
+        const verifyCall = consoleSpy.mock.calls.find(([tag]) => tag === '[V-meal-log-verify-fail]')
+        expect(verifyCall).toBeDefined()
+        expect(verifyCall![1]).toMatchObject({ userId: mockUser.id, reason: 'invalid_signature' })
+      } finally {
+        consoleSpy.mockRestore()
+      }
+    })
+
+    it('[V-meal-log-verify-fail] does not log raw token, macro values, or food details', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      try {
+        const wrongUserToken = buildToken('other-user-id')
+
+        mockCreate
+          .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationToken: wrongUserToken, mealType: 'lunch', logDate: '2026-10-22' }))
+          .mockResolvedValueOnce(makeText('Cannot log.'))
+
+        await callRoute(USER_MSG)
+
+        const verifyCall = consoleSpy.mock.calls.find(([tag]) => tag === '[V-meal-log-verify-fail]')
+        expect(verifyCall).toBeDefined()
+        const logged = verifyCall![1] as Record<string, unknown>
+        expect(Object.keys(logged).sort()).toEqual(['reason', 'userId'].sort())
+        expect(logged).not.toHaveProperty('token')
+        expect(logged).not.toHaveProperty('calories')
+        expect(logged).not.toHaveProperty('ingredients')
+      } finally {
+        consoleSpy.mockRestore()
+      }
+    })
+  })
+
+  describe('get_meal_log diagnostic logging', () => {
+    it('[V-get-meal-log] logged with status/itemCount/tokenPresent/tokenLength on found result', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      try {
+        const token = buildToken()
+        mockGetMealLog.mockResolvedValue({
+          status: 'found',
+          calculationToken: token,
+          sourceDate: '2026-10-21',
+          sourceMealType: 'lunch',
+          itemCount: 3,
+          totals: { calories: 748, proteinG: 58, carbG: 40, fatG: 22 },
+          message: 'Found 3 items from 2026-10-21 lunch.',
+        })
+
+        mockCreate
+          .mockResolvedValueOnce(makeTool('get_meal_log', { sourceDate: '2026-10-21', sourceMealType: 'lunch' }))
+          .mockResolvedValueOnce(makeText('Found your lunch.'))
+
+        await callRoute(USER_MSG)
+
+        const getLogCall = consoleSpy.mock.calls.find(([tag]) => tag === '[V-get-meal-log]')
+        expect(getLogCall).toBeDefined()
+        const logged = getLogCall![1] as Record<string, unknown>
+        expect(logged.status).toBe('found')
+        expect(logged.itemCount).toBe(3)
+        expect(logged.tokenPresent).toBe(true)
+        expect(typeof logged.tokenLength).toBe('number')
+        expect(logged.tokenLength as number).toBeGreaterThan(0)
+      } finally {
+        consoleSpy.mockRestore()
+      }
+    })
+
+    it('[V-get-meal-log] logged with tokenPresent: false and tokenLength: 0 on empty result', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      try {
+        mockGetMealLog.mockResolvedValue({
+          status: 'empty',
+          sourceDate: '2026-10-21',
+          sourceMealType: 'lunch',
+          message: 'No lunch entries found for 2026-10-21.',
+        })
+
+        mockCreate
+          .mockResolvedValueOnce(makeTool('get_meal_log', { sourceDate: '2026-10-21', sourceMealType: 'lunch' }))
+          .mockResolvedValueOnce(makeText('No lunch found for that date.'))
+
+        await callRoute(USER_MSG)
+
+        const getLogCall = consoleSpy.mock.calls.find(([tag]) => tag === '[V-get-meal-log]')
+        expect(getLogCall).toBeDefined()
+        const logged = getLogCall![1] as Record<string, unknown>
+        expect(logged.status).toBe('empty')
+        expect(logged.tokenPresent).toBe(false)
+        expect(logged.tokenLength).toBe(0)
+      } finally {
+        consoleSpy.mockRestore()
+      }
+    })
+
+    it('[V-get-meal-log] never logs the raw token value', async () => {
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+      try {
+        const token = buildToken()
+        mockGetMealLog.mockResolvedValue({
+          status: 'found',
+          calculationToken: token,
+          sourceDate: '2026-10-21',
+          sourceMealType: 'lunch',
+          itemCount: 1,
+          totals: { calories: 248, proteinG: 46.3, carbG: 0, fatG: 5.4 },
+          message: 'Found 1 item.',
+        })
+
+        mockCreate
+          .mockResolvedValueOnce(makeTool('get_meal_log', { sourceDate: '2026-10-21', sourceMealType: 'lunch' }))
+          .mockResolvedValueOnce(makeText('Found your lunch.'))
+
+        await callRoute(USER_MSG)
+
+        const getLogCall = consoleSpy.mock.calls.find(([tag]) => tag === '[V-get-meal-log]')
+        expect(getLogCall).toBeDefined()
+        // Serialize the logged object and confirm the token body is not present
+        const loggedJson = JSON.stringify(getLogCall![1])
+        expect(loggedJson).not.toContain(token)
+      } finally {
+        consoleSpy.mockRestore()
       }
     })
   })
