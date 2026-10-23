@@ -458,7 +458,7 @@ export async function POST(req: NextRequest) {
       const params = {
         model: selectedModel,
         messages,
-        ...(useTools ? { tools: shape.tools, tool_choice: shape.tool_choice } : {}),
+        ...(useTools ? { tools: shape.tools, tool_choice: shape.tool_choice, parallel_tool_calls: false } : {}),
         ...buildModelParamShape(selectedModel, useTools, maxTokens),
       } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -894,7 +894,7 @@ export async function POST(req: NextRequest) {
               }
 
               if (!logArgs.calculationToken) {
-                result = JSON.stringify({ status: 'error', message: 'Missing calculationToken — call calculate_nutrition first and pass its calculationToken here.' })
+                result = JSON.stringify({ status: 'error', message: 'Missing calculationToken. For a repeat meal call get_meal_log first; for a new food call calculate_nutrition first. Then pass the exact token from that result here in a subsequent response — never generate this call and the prior lookup simultaneously.' })
               } else {
                 const verified = verifyMealLogToken(logArgs.calculationToken, user.id)
                 if (!verified.ok) {
