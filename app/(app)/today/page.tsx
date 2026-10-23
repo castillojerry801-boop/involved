@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { ChevronRight, Plus, ArrowRight, Dumbbell, PlayCircle, CheckCircle2, Calendar } from 'lucide-react'
+import { ChevronRight, Plus, ArrowRight, Dumbbell, PlayCircle, Calendar } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { headers, cookies } from 'next/headers'
@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { ActivityDetailSheet } from '@/components/today/ActivityDetailSheet'
 import { WaterWidget } from '@/components/today/WaterWidget'
 import { HealthSyncTrigger } from '@/components/today/HealthSyncTrigger'
+import { getNextWorkout, formatWorkoutDate } from '@/lib/today/next-workout'
 
 export const metadata: Metadata = { title: 'Today' }
 
@@ -205,30 +206,10 @@ export default async function TodayPage() {
     'America/New_York'
   const { dateStr, start: todayStart, end: todayEnd, greeting, displayDate } = getLocalDayInfo(tz)
 
-  const [nutrition, profile, todayWorkout, health, waterAgg] = await Promise.all([
+  const [nutrition, profile, nextWorkout, health, waterAgg] = await Promise.all([
     getTodayNutrition(user.id, dateStr),
     prisma.profile.findUnique({ where: { id: user.id }, select: { displayName: true, fitnessLevel: true, biologicalSex: true, waterTargetOz: true } }).catch(() => null),
-    prisma.workout.findFirst({
-      where: {
-        userId: user.id,
-        OR: [
-          { status: 'in_progress' },
-          {
-            status: 'planned',
-            scheduledDate: { gte: todayStart, lte: todayEnd },
-          },
-          {
-            status: 'completed',
-            completedAt: { gte: todayStart },
-          },
-        ],
-      },
-      orderBy: [
-        { status: 'asc' },
-        { scheduledDate: 'asc' },
-      ],
-      include: { exercises: { select: { exerciseId: true }, take: 5 } },
-    }).catch(() => null),
+    getNextWorkout(user.id, dateStr).catch(() => null),
     getTodayHealth(user.id, todayStart, todayEnd),
     prisma.healthMetric.aggregate({
       where: { userId: user.id, metricType: 'water_ml', recordedAt: { gte: todayStart, lte: todayEnd } },
@@ -252,26 +233,38 @@ export default async function TodayPage() {
   const calorieStatus = target ? getCalorieStatus(totals.calories, target.calories) : 'under'
   const statusCfg = CALORIE_STATUS_CFG[calorieStatus]
 
+  const totalActivitySeconds = health.activities.reduce((sum, a) => sum + (a.durationSeconds ?? 0), 0)
+  const activeMinutes = totalActivitySeconds > 0 ? Math.round(totalActivitySeconds / 60) : null
+
   return (
-    <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 md:py-8">
+    <div className="mx-auto max-w-2xl px-4 py-4 md:px-8 md:py-8">
       <HealthSyncTrigger />
 
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-3">
         <p className="text-sm font-medium text-zinc-500">{greeting}, {displayName}</p>
         <p className="text-xs text-zinc-400 mt-0.5">{displayDate}</p>
       </div>
 
       {/* ── NUTRITION ─────────────────────────────────────────────────── */}
-      <Card className="mb-4">
+      <Card className="mb-3 p-4 md:p-6">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Nutrition</p>
-          <Link
-            href="/nutrition"
-            className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
-          >
-            Full log <ChevronRight className="size-3" />
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/nutrition"
+              className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
+            >
+              <Plus className="size-3" />
+              Add food
+            </Link>
+            <Link
+              href="/nutrition"
+              className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
+            >
+              Full log <ChevronRight className="size-3" />
+            </Link>
+          </div>
         </div>
 
         {!target ? (
@@ -294,12 +287,6 @@ export default async function TodayPage() {
                 / {target.calories.toLocaleString()} cal
               </span>
             </div>
-            {/* Status message — visible once something is logged */}
-            {totals.calories > 0 && (
-              <p className={cn('mb-1 text-xs font-medium', statusCfg.text)}>
-                {statusCfg.message}
-              </p>
-            )}
 
             <p className="mb-2 text-sm text-zinc-500">
               {calRemaining > 0
@@ -324,7 +311,7 @@ export default async function TodayPage() {
             )}
 
             {/* Macro rows */}
-            <div className="mb-3 flex flex-col gap-2">
+            <div className="flex flex-col gap-2">
               {[
                 { label: 'Protein', consumed: totals.proteinG,  target: target.proteinG, color: 'bg-sky-400' },
                 { label: 'Carbs',   consumed: totals.carbsG,    target: target.carbsG,   color: 'bg-amber-400' },
@@ -343,26 +330,12 @@ export default async function TodayPage() {
                 </div>
               ))}
             </div>
-
-            <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
-              <Link href="/nutrition">
-                <Button variant="secondary" size="sm" className="w-full">
-                  <Plus className="size-4" />
-                  {hasEntries ? 'Add more food' : 'Log your first meal'}
-                </Button>
-              </Link>
-            </div>
           </>
         )}
       </Card>
 
-      {/* ── WATER ─────────────────────────────────────────────────────── */}
-      <Card className="mb-4">
-        <WaterWidget initialTotalMl={totalWaterMl} goalOz={waterGoalOz} />
-      </Card>
-
-      {/* ── ACTIVITY ──────────────────────────────────────────────────── */}
-      <Card className="mb-4">
+      {/* ── ACTIVITY + TRAINING ───────────────────────────────────────── */}
+      <Card className="mb-3 p-4 md:p-6">
         <div className="mb-3 flex items-center justify-between">
           <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Activity</p>
           <Link
@@ -381,60 +354,63 @@ export default async function TodayPage() {
           basalKcal={health.basalKcal}
           totalBurnKcal={health.totalBurnKcal}
           stepCount={health.stepCount}
+          activeMinutes={activeMinutes}
         />
-      </Card>
 
-      {/* ── TRAINING ──────────────────────────────────────────────────── */}
-      <Card className="mb-4">
-        <div className="mb-4 flex items-center justify-between">
-          <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Training</p>
-          <Link
-            href="/training"
-            className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
-          >
-            All <ChevronRight className="size-3" />
-          </Link>
-        </div>
-
-        {todayWorkout ? (
-          <div>
-            <div className="flex items-center gap-3 mb-3">
-              <div className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${todayWorkout.status === 'in_progress' ? 'bg-emerald-50 dark:bg-emerald-900/30' : todayWorkout.status === 'completed' ? 'bg-zinc-50 dark:bg-zinc-800' : 'bg-sky-50 dark:bg-sky-900/30'}`}>
-                {todayWorkout.status === 'in_progress' && <PlayCircle className="size-5 text-emerald-600 dark:text-emerald-400" />}
-                {todayWorkout.status === 'completed' && <CheckCircle2 className="size-5 text-zinc-500" />}
-                {todayWorkout.status === 'planned' && <Calendar className="size-5 text-sky-600 dark:text-sky-400" />}
+        {/* Up next — next scheduled or in-progress workout */}
+        <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+          <p className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-2">Up next</p>
+          {nextWorkout ? (
+            <div className="flex items-center gap-3">
+              <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-xl',
+                nextWorkout.status === 'in_progress' ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'bg-sky-50 dark:bg-sky-900/30'
+              )}>
+                {nextWorkout.status === 'in_progress'
+                  ? <PlayCircle className="size-4 text-emerald-600 dark:text-emerald-400" />
+                  : <Calendar className="size-4 text-sky-600 dark:text-sky-400" />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-zinc-900 dark:text-white truncate">{todayWorkout.title}</p>
-                <p className="text-xs text-zinc-400">{todayWorkout.exercises.length} exercise{todayWorkout.exercises.length !== 1 ? 's' : ''}</p>
+                <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{nextWorkout.title}</p>
+                <p className="text-xs text-zinc-400">
+                  {nextWorkout.status === 'planned' && nextWorkout.scheduledDate
+                    ? (() => {
+                        const label = formatWorkoutDate(nextWorkout.scheduledDate, dateStr)
+                        return label !== 'Today'
+                          ? `${label} · ${nextWorkout.exercises.length} exercise${nextWorkout.exercises.length !== 1 ? 's' : ''}`
+                          : `${nextWorkout.exercises.length} exercise${nextWorkout.exercises.length !== 1 ? 's' : ''}`
+                      })()
+                    : `${nextWorkout.exercises.length} exercise${nextWorkout.exercises.length !== 1 ? 's' : ''}`
+                  }
+                </p>
               </div>
-              {todayWorkout.status === 'completed' && (
-                <span className="text-xs font-medium text-zinc-400">Done</span>
-              )}
+              <Link href={`/training/workout/${nextWorkout.id}`}>
+                <Button size="sm" variant="primary">
+                  {nextWorkout.status === 'in_progress'
+                    ? <><PlayCircle className="size-3.5" /> Resume</>
+                    : <><PlayCircle className="size-3.5" /> Start</>}
+                </Button>
+              </Link>
             </div>
-            <Link href={`/training/workout/${todayWorkout.id}`} className="w-full block">
-              <Button size="sm" className="w-full" variant={todayWorkout.status === 'completed' ? 'secondary' : 'primary'}>
-                {todayWorkout.status === 'in_progress' && <><PlayCircle className="size-4" /> Resume</>}
-                {todayWorkout.status === 'planned' && <><PlayCircle className="size-4" /> Start workout</>}
-                {todayWorkout.status === 'completed' && 'View workout'}
-              </Button>
-            </Link>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center py-4 text-center">
-            <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-zinc-100 dark:bg-zinc-800">
-              <Dumbbell className="size-6 text-zinc-400" />
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
+                <Dumbbell className="size-4 text-zinc-400" />
+              </div>
+              <p className="flex-1 text-sm text-zinc-500">No upcoming workouts</p>
+              <Link
+                href="/training"
+                className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
+              >
+                Training <ChevronRight className="size-3" />
+              </Link>
             </div>
-            <p className="font-semibold text-zinc-900 dark:text-white mb-1">No workout today</p>
-            <p className="text-sm text-zinc-400 mb-4">Log a workout or plan ahead.</p>
-            <Link href="/training/log" className="w-full">
-              <Button variant="secondary" size="sm" className="w-full">
-                <Plus className="size-4" />
-                Log workout
-              </Button>
-            </Link>
-          </div>
-        )}
+          )}
+        </div>
+      </Card>
+
+      {/* ── WATER ─────────────────────────────────────────────────────── */}
+      <Card className="mb-4">
+        <WaterWidget initialTotalMl={totalWaterMl} goalOz={waterGoalOz} />
       </Card>
 
       {/* ── COACH ─────────────────────────────────────────────────────── */}

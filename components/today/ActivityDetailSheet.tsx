@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import {
   X, Flame, Footprints, Activity, Dumbbell,
-  PersonStanding, Waves, Zap, Heart, Clock, ChevronRight,
+  PersonStanding, Waves, Zap, Heart, Clock, ChevronRight, Timer,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -28,6 +28,7 @@ interface Props {
   basalKcal: number | null
   totalBurnKcal: number | null
   stepCount: number | null
+  activeMinutes: number | null
 }
 
 const ACTIVITY_ICONS: Record<string, React.ElementType> = {
@@ -115,47 +116,15 @@ function StatTile({
 
 export function ActivityDetailSheet({
   connected, lastSyncedAt, provider, activities,
-  allDayActiveKcal, basalKcal, totalBurnKcal, stepCount,
+  allDayActiveKcal, basalKcal, totalBurnKcal, stepCount, activeMinutes,
 }: Props) {
   const [open, setOpen] = useState(false)
   const hasData = activities.length > 0
 
   return (
     <>
-      {/* ── Inline summary: 3 metrics full-width, button below ─────────── */}
+      {/* ── Inline summary: Steps | Active min | Active kcal ───────────── */}
       <div className="flex items-center gap-4">
-
-        {/* Active Calories — all-day HealthKit metric */}
-        <div className="flex items-center gap-1.5">
-          <div className={cn(
-            'flex size-7 shrink-0 items-center justify-center rounded-lg',
-            allDayActiveKcal != null ? 'bg-orange-500/15' : 'bg-zinc-100 dark:bg-zinc-800'
-          )}>
-            <Flame className={cn('size-3.5', allDayActiveKcal != null ? 'text-orange-400' : 'text-zinc-400')} />
-          </div>
-          <div>
-            <p className={cn('text-sm font-bold leading-tight', allDayActiveKcal != null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400')}>
-              {allDayActiveKcal != null ? allDayActiveKcal.toLocaleString() : '—'}
-            </p>
-            <p className="text-[10px] text-zinc-400 leading-tight">Active kcal</p>
-          </div>
-        </div>
-
-        {/* Total Calories Burned */}
-        <div className="flex items-center gap-1.5">
-          <div className={cn(
-            'flex size-7 shrink-0 items-center justify-center rounded-lg',
-            totalBurnKcal != null ? 'bg-amber-500/15' : 'bg-zinc-100 dark:bg-zinc-800'
-          )}>
-            <Zap className={cn('size-3.5', totalBurnKcal != null ? 'text-amber-400' : 'text-zinc-400')} />
-          </div>
-          <div>
-            <p className={cn('text-sm font-bold leading-tight', totalBurnKcal != null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400')}>
-              {totalBurnKcal != null ? totalBurnKcal.toLocaleString() : '—'}
-            </p>
-            <p className="text-[10px] text-zinc-400 leading-tight">Total burn</p>
-          </div>
-        </div>
 
         {/* Steps */}
         <div className="flex items-center gap-1.5">
@@ -170,6 +139,38 @@ export function ActivityDetailSheet({
               {stepCount != null ? stepCount.toLocaleString() : '—'}
             </p>
             <p className="text-[10px] text-zinc-400 leading-tight">Steps</p>
+          </div>
+        </div>
+
+        {/* Active Minutes — sum of workout durations */}
+        <div className="flex items-center gap-1.5">
+          <div className={cn(
+            'flex size-7 shrink-0 items-center justify-center rounded-lg',
+            activeMinutes != null ? 'bg-emerald-500/15' : 'bg-zinc-100 dark:bg-zinc-800'
+          )}>
+            <Timer className={cn('size-3.5', activeMinutes != null ? 'text-emerald-400' : 'text-zinc-400')} />
+          </div>
+          <div>
+            <p className={cn('text-sm font-bold leading-tight', activeMinutes != null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400')}>
+              {activeMinutes != null ? activeMinutes.toLocaleString() : '—'}
+            </p>
+            <p className="text-[10px] text-zinc-400 leading-tight">Active min</p>
+          </div>
+        </div>
+
+        {/* Active Calories */}
+        <div className="flex items-center gap-1.5">
+          <div className={cn(
+            'flex size-7 shrink-0 items-center justify-center rounded-lg',
+            allDayActiveKcal != null ? 'bg-orange-500/15' : 'bg-zinc-100 dark:bg-zinc-800'
+          )}>
+            <Flame className={cn('size-3.5', allDayActiveKcal != null ? 'text-orange-400' : 'text-zinc-400')} />
+          </div>
+          <div>
+            <p className={cn('text-sm font-bold leading-tight', allDayActiveKcal != null ? 'text-zinc-900 dark:text-white' : 'text-zinc-400')}>
+              {allDayActiveKcal != null ? allDayActiveKcal.toLocaleString() : '—'}
+            </p>
+            <p className="text-[10px] text-zinc-400 leading-tight">Active kcal</p>
           </div>
         </div>
 
