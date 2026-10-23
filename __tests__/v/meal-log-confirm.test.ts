@@ -52,7 +52,7 @@ import { PREPARE_MEAL_LOG_TOOL } from '../../app/api/coach/constants'
 const { mockPrisma, mockUser, mockSupabase } = vi.hoisted(() => {
   const mockUser = { id: 'user-uuid-auth-001', email: 'test@example.com' }
   const mockPrisma = {
-    foodLogEntry: { create: vi.fn(), findUnique: vi.fn() },
+    foodLogEntry: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
     $transaction: vi.fn(),
   }
   const mockSupabase = {
@@ -71,7 +71,8 @@ vi.stubEnv('MEAL_LOG_SIGNING_KEY', 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2
 
 import { NextRequest } from 'next/server'
 import { POST } from '../../app/api/coach/meal-log/route'
-import { signMealLogToken, verifyMealLogToken, buildMealLogToken } from '../../lib/v/meal-log-token'
+import { signMealLogToken, verifyMealLogToken, buildMealLogToken, selectTokenIngredients } from '../../lib/v/meal-log-token'
+import { getMealLog } from '../../lib/v/tools/get-meal-log'
 import type { MealLogTokenPayload } from '../../lib/v/meal-log-token'
 import type { IngredientResult, UnresolvedIngredient } from '../../lib/v/tools/calculate-nutrition'
 import { Prisma } from '@prisma/client'
@@ -146,6 +147,44 @@ function makeRequest(body: unknown) {
 }
 
 const TODAY = new Date().toISOString().slice(0, 10)
+const YESTERDAY = (() => {
+  const d = new Date()
+  d.setDate(d.getDate() - 1)
+  return d.toISOString().slice(0, 10)
+})()
+
+// Source FoodLogEntry fixtures — represent real DB rows that getMealLog will read.
+// All created by the confirm endpoint (servingMultiplier=1 invariant, macros already
+// reflect the actual consumed amount). Typed as `any` because the mock accepts any shape.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeSourceEntry(overrides: Record<string, unknown> = {}): any {
+  return {
+    id: 'src-001',
+    userId: mockUser.id,
+    mealType: 'dinner',
+    logDate: new Date(YESTERDAY + 'T00:00:00Z'),
+    loggedAt: new Date(),
+    snapshotFoodName: 'Grilled Salmon Fillet',
+    snapshotServingSize: new Prisma.Decimal(1),
+    snapshotServingUnit: 'serving',
+    snapshotCaloriesPerServing: new Prisma.Decimal(350),
+    snapshotProteinGPerServing: new Prisma.Decimal(45),
+    snapshotCarbohydrateGPerServing: new Prisma.Decimal(0),
+    snapshotFatGPerServing: new Prisma.Decimal(18),
+    servingMultiplier: new Prisma.Decimal(1),
+    estimateSourceNote: 'Coach V — grilled salmon fillet',
+    foodItemId: null,
+    recipeId: null,
+    notes: null,
+    snapshotNutrientsJson: null,
+    optionalIngredientOverrides: null,
+    recipeLogMode: null,
+    idempotencyKey: 'prev-calc-001-0',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  }
+}
 
 // Factory: tokens are created at call-time (after vi.stubEnv is in effect)
 function validBody(overrides: Record<string, unknown> = {}) {
@@ -614,5 +653,259 @@ describe('buildMealLogToken', () => {
     expect(verified.payload.userId).toBe(mockUser.id)
     expect(verified.payload.expiresAt - verified.payload.issuedAt).toBe(7200)
     expect(verified.payload.totals.calories).toBe(360)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Integration — getMealLog() token → confirm endpoint (repeat-meal chain)
+//
+// These tests exercise the complete repeat-meal path end-to-end using a real
+// signed token produced by getMealLog(), piped through the actual confirm
+// endpoint (with a mocked Prisma client). They complement the unit tests in
+// get-meal-log.test.ts by verifying that the token produced by getMealLog()
+// is structurally accepted by the existing verification and selection logic and
+// produces the correct FoodLogEntry rows.
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('Integration — getMealLog() token → confirm endpoint', () => {
+  // ── Fixtures ──────────────────────────────────────────────────────────────
+  // Two DB rows representing yesterday's dinner (the source).
+  // servingMultiplier=1 because ALL entries written by this codebase use that
+  // invariant (meal-log/route.ts always sets it to 1 when creating entries).
+  const getSalmon = () => makeSourceEntry({
+    id: 'src-salmon',
+    snapshotFoodName: 'Grilled Salmon Fillet',
+    snapshotCaloriesPerServing: new Prisma.Decimal(350),
+    snapshotProteinGPerServing: new Prisma.Decimal(45),
+    snapshotCarbohydrateGPerServing: new Prisma.Decimal(0),
+    snapshotFatGPerServing: new Prisma.Decimal(18),
+    estimateSourceNote: 'Coach V — grilled salmon fillet',
+    idempotencyKey: 'prev-calc-001-0',
+  })
+  const getBroccoli = () => makeSourceEntry({
+    id: 'src-broccoli',
+    snapshotFoodName: 'Roasted Broccoli',
+    snapshotCaloriesPerServing: new Prisma.Decimal(80),
+    snapshotProteinGPerServing: new Prisma.Decimal(5),
+    snapshotCarbohydrateGPerServing: new Prisma.Decimal(10),
+    snapshotFatGPerServing: new Prisma.Decimal(3),
+    estimateSourceNote: 'Coach V — roasted broccoli',
+    idempotencyKey: 'prev-calc-001-1',
+  })
+
+  it('token accepted by confirm endpoint — creates correct number of FoodLogEntry rows with correct nutrition snapshots', async () => {
+    // getMealLog reads the two source rows
+    mockPrisma.foodLogEntry.findMany.mockResolvedValue([getSalmon(), getBroccoli()])
+
+    const logResult = await getMealLog(mockUser.id, {
+      sourceDate:     YESTERDAY,
+      sourceMealType: 'dinner',
+    })
+    expect(logResult.status).toBe('found')
+    expect(logResult.calculationToken).toBeTruthy()
+
+    // Pass the token to the confirm endpoint (destination: today's lunch)
+    const res  = await POST(makeRequest({
+      calculationToken: logResult.calculationToken!,
+      mealType:         'lunch',
+      logDate:          TODAY,
+    }))
+    const json = await res.json() as { ok: boolean; loggedCount: number }
+    expect(res.status).toBe(200)
+    expect(json.ok).toBe(true)
+    expect(json.loggedCount).toBe(2)   // one row per source entry
+
+    expect(mockPrisma.foodLogEntry.create).toHaveBeenCalledTimes(2)
+
+    // Verify nutrition snapshots come from the source DB rows, not recalculated
+    const firstCreate  = mockPrisma.foodLogEntry.create.mock.calls[0][0].data
+    const secondCreate = mockPrisma.foodLogEntry.create.mock.calls[1][0].data
+
+    expect(firstCreate.snapshotFoodName).toBe('Grilled Salmon Fillet')
+    expect(Number(firstCreate.snapshotCaloriesPerServing)).toBe(350)
+    expect(Number(firstCreate.snapshotProteinGPerServing)).toBe(45)
+    expect(Number(firstCreate.snapshotCarbohydrateGPerServing)).toBe(0)
+    expect(Number(firstCreate.snapshotFatGPerServing)).toBe(18)
+
+    expect(secondCreate.snapshotFoodName).toBe('Roasted Broccoli')
+    expect(Number(secondCreate.snapshotCaloriesPerServing)).toBe(80)
+    expect(Number(secondCreate.snapshotProteinGPerServing)).toBe(5)
+    expect(Number(secondCreate.snapshotCarbohydrateGPerServing)).toBe(10)
+    expect(Number(secondCreate.snapshotFatGPerServing)).toBe(3)
+  })
+
+  it('destination date and meal category are applied — source date and source meal type never written', async () => {
+    mockPrisma.foodLogEntry.findMany.mockResolvedValue([getSalmon(), getBroccoli()])
+
+    const logResult = await getMealLog(mockUser.id, {
+      sourceDate:     YESTERDAY,
+      sourceMealType: 'dinner',
+    })
+
+    await POST(makeRequest({
+      calculationToken: logResult.calculationToken!,
+      mealType:         'lunch',
+      logDate:          TODAY,
+    }))
+
+    const firstCreate = mockPrisma.foodLogEntry.create.mock.calls[0][0].data
+    const expectedLogDate = new Date(TODAY + 'T00:00:00Z')
+
+    // Destination values must appear in the written rows
+    expect(firstCreate.mealType).toBe('lunch')               // destination meal category
+    expect(firstCreate.logDate.getTime()).toBe(expectedLogDate.getTime())   // destination date
+
+    // Source values must NOT appear in the written rows
+    const sourceLogDate = new Date(YESTERDAY + 'T00:00:00Z')
+    expect(firstCreate.logDate.getTime()).not.toBe(sourceLogDate.getTime())
+    expect(firstCreate.mealType).not.toBe('dinner')
+  })
+
+  it('source entries are read-only — findMany called with source selectors, no create touches source date', async () => {
+    mockPrisma.foodLogEntry.findMany.mockResolvedValue([getSalmon()])
+
+    const logResult = await getMealLog(mockUser.id, {
+      sourceDate:     YESTERDAY,
+      sourceMealType: 'dinner',
+    })
+    await POST(makeRequest({
+      calculationToken: logResult.calculationToken!,
+      mealType:         'breakfast',
+      logDate:          TODAY,
+    }))
+
+    // findMany was called once to read the source
+    expect(mockPrisma.foodLogEntry.findMany).toHaveBeenCalledOnce()
+    const findCall = mockPrisma.foodLogEntry.findMany.mock.calls[0][0]
+    expect(findCall.where.userId).toBe(mockUser.id)
+    expect(findCall.where.mealType).toBe('dinner')
+    expect(findCall.where.logDate).toEqual(new Date(YESTERDAY + 'T00:00:00Z'))
+
+    // create was called (for the new entries), but with DESTINATION date, not YESTERDAY
+    expect(mockPrisma.foodLogEntry.create).toHaveBeenCalledOnce()
+    const createData = mockPrisma.foodLogEntry.create.mock.calls[0][0].data
+    expect(createData.logDate.getTime()).not.toBe(new Date(YESTERDAY + 'T00:00:00Z').getTime())
+  })
+
+  it('idempotent re-confirmation returns alreadyLogged; a new getMealLog() authorization creates new entries', async () => {
+    const sourceEntries = [getSalmon(), getBroccoli()]
+    mockPrisma.foodLogEntry.findMany.mockResolvedValue(sourceEntries)
+
+    // First authorization — get token
+    const r1 = await getMealLog(mockUser.id, { sourceDate: YESTERDAY, sourceMealType: 'dinner' })
+    expect(r1.status).toBe('found')
+
+    // First confirm — succeeds
+    const res1 = await POST(makeRequest({
+      calculationToken: r1.calculationToken!,
+      mealType: 'lunch',
+      logDate:  TODAY,
+    }))
+    expect((await res1.json() as { ok: boolean }).ok).toBe(true)
+
+    // Second confirm with the SAME token — P2002 → alreadyLogged (idempotent)
+    const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code:          'P2002',
+      clientVersion: '5.0.0',
+    })
+    mockPrisma.$transaction.mockRejectedValueOnce(p2002)
+    const res2 = await POST(makeRequest({
+      calculationToken: r1.calculationToken!,
+      mealType: 'lunch',
+      logDate:  TODAY,
+    }))
+    const j2 = await res2.json() as { ok: boolean; alreadyLogged: boolean }
+    expect(res2.status).toBe(200)
+    expect(j2.ok).toBe(true)
+    expect(j2.alreadyLogged).toBe(true)
+
+    // New getMealLog() call → new calculationId → new token
+    mockPrisma.foodLogEntry.findMany.mockResolvedValue(sourceEntries)
+    const r3 = await getMealLog(mockUser.id, { sourceDate: YESTERDAY, sourceMealType: 'dinner' })
+    expect(r3.status).toBe('found')
+
+    // The two tokens must have different calculationIds
+    const v1 = verifyMealLogToken(r1.calculationToken!, mockUser.id)
+    const v3 = verifyMealLogToken(r3.calculationToken!, mockUser.id)
+    expect(v1.ok && v3.ok).toBe(true)
+    if (!v1.ok || !v3.ok) return
+    expect(v3.payload.calculationId).not.toBe(v1.payload.calculationId)
+
+    // Confirm the new token — succeeds without collision
+    const res3 = await POST(makeRequest({
+      calculationToken: r3.calculationToken!,
+      mealType: 'lunch',
+      logDate:  TODAY,
+    }))
+    const j3 = await res3.json() as { ok: boolean; alreadyLogged?: boolean }
+    expect(res3.status).toBe(200)
+    expect(j3.ok).toBe(true)
+    expect(j3.alreadyLogged).toBeUndefined()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// selectTokenIngredients — undefined vs explicit full-list equivalence
+//
+// The prepare_meal_log route always emits includeIngredientIndexes as an
+// explicit index array (e.g. [0,1,2]), even when no partial selection was
+// requested. The confirm endpoint re-runs selectTokenIngredients with that
+// explicit list. This suite proves the two call forms are equivalent for a
+// fully resolved payload so that future changes to selectTokenIngredients
+// cannot silently break the full-list case.
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe('selectTokenIngredients — undefined vs explicit full-list equivalence', () => {
+  // Build a 3-item fully-resolved payload matching what getMealLog() would produce
+  const THREE_ITEMS = [
+    { ...RESOLVED_ING, calories: 300, proteinG: 25, carbG: 10, fatG: 12 },
+    { ...RESOLVED_BUN, calories: 200, proteinG:  8, carbG: 30, fatG:  4 },
+    {
+      userDescription: '1 cup mixed greens',
+      matchedFoodName: 'Mixed Greens Salad',
+      matchConfidence: 'confident' as const,
+      calories: 25,
+      proteinG:  2,
+      carbG:     4,
+      fatG:      0,
+      resolved:  true,
+    },
+  ]
+  const PAYLOAD = makePayload({
+    ingredients: THREE_ITEMS,
+    totals: { calories: 525, proteinG: 35, carbG: 44, fatG: 16 },
+  })
+
+  it('undefined and [0,1,2] return the same number of selected items', () => {
+    const byUndefined = selectTokenIngredients(PAYLOAD, undefined)
+    const byExplicit  = selectTokenIngredients(PAYLOAD, [0, 1, 2])
+    expect(byExplicit.selected.length).toBe(byUndefined.selected.length)
+    expect(byExplicit.selected.length).toBe(3)
+  })
+
+  it('undefined and [0,1,2] return identical totals', () => {
+    const byUndefined = selectTokenIngredients(PAYLOAD, undefined)
+    const byExplicit  = selectTokenIngredients(PAYLOAD, [0, 1, 2])
+    expect(byExplicit.totals.calories).toBe(byUndefined.totals.calories)
+    expect(byExplicit.totals.proteinG).toBe(byUndefined.totals.proteinG)
+    expect(byExplicit.totals.carbG).toBe(byUndefined.totals.carbG)
+    expect(byExplicit.totals.fatG).toBe(byUndefined.totals.fatG)
+  })
+
+  it('undefined and [0,1,2] return items in the same original-index order', () => {
+    const byUndefined = selectTokenIngredients(PAYLOAD, undefined)
+    const byExplicit  = selectTokenIngredients(PAYLOAD, [0, 1, 2])
+    const namesUndef    = byUndefined.selected.map(s => s.ingredient.matchedFoodName)
+    const namesExplicit = byExplicit.selected.map(s => s.ingredient.matchedFoodName)
+    expect(namesExplicit).toEqual(namesUndef)
+  })
+
+  it('requestedSelection differs — undefined sets it false, explicit array sets it true', () => {
+    const byUndefined = selectTokenIngredients(PAYLOAD, undefined)
+    const byExplicit  = selectTokenIngredients(PAYLOAD, [0, 1, 2])
+    // requestedSelection tracks whether an explicit subset was supplied.
+    // Different values here is expected — what matters is the selected items are identical.
+    expect(byUndefined.requestedSelection).toBe(false)
+    expect(byExplicit.requestedSelection).toBe(true)
   })
 })

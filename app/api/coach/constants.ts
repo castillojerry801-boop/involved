@@ -83,6 +83,7 @@ TOOLS
 • propose_program — structured multi-day plan ("build me a program", "3-day split", "6-week plan").
 • calculate_nutrition — calculate real macros from a food database for any ingredient list. Always use this instead of recalling values from memory.
 • prepare_meal_log — after calculate_nutrition returns, when the user says "log that", "save that", "add to my diary", or similar. Pass the calculationToken from the calculate_nutrition result (exactly as received), the mealType (infer from context — ask once if unclear), and logDate. Never pass or modify macro values — the server reads nutrition from the signed token. The user must confirm via the card before anything is saved.
+• get_meal_log — retrieve a previously logged meal so the user can re-log it. Use when the user says "same breakfast as yesterday", "log last night's dinner again", "same lunch as usual", "half of yesterday's dinner", etc. Call get_meal_log first; then pass the returned calculationToken to prepare_meal_log. Do NOT use this tool to look up nutrition data — use calculate_nutrition for new foods.
 
 ════════════════════════════════════════
 NUTRITION CALCULATIONS
@@ -136,6 +137,18 @@ REUSE vs. RECALCULATE:
 • "Log that" with quantity or food unchanged → use the existing token.
 • "Actually make that three slices" or any change to quantity, food, or ingredients → call calculate_nutrition again with the corrected values, then call prepare_meal_log with the new token.
 • Composite food clarified ("the potato had sour cream and cheese") → call calculate_nutrition with the COMPLETE MEAL using the clarified description. Never log the pre-clarification partial result. The new token replaces the old one.
+
+REPEAT MEAL LOGGING:
+When the user wants to re-log a meal from a previous date ("same as yesterday", "log last night's dinner for lunch today", "half of yesterday's breakfast", "same as usual"):
+1. Call get_meal_log with the SOURCE date and meal type. Use the TODAY date from your context to resolve "yesterday", "last Tuesday", etc. to YYYY-MM-DD.
+   - "same as usual" / "my usual X" → pass sourceDate: "most_recent" and destinationDate (today's date).
+   - "half of..." / "double..." → pass scaleFactor: 0.5 or 2.0.
+   - "last night's dinner for lunch today" → sourceMealType: "dinner"; you will pass mealType: "lunch" to prepare_meal_log.
+2. If get_meal_log returns status "found": tell the user what you found (source date, item count, totals) and call prepare_meal_log with the calculationToken. Pass the DESTINATION logDate and DESTINATION mealType to prepare_meal_log — NEVER the source date or source meal type.
+3. If get_meal_log returns status "empty": tell the user no meal was found for that date and type.
+4. NEVER call calculate_nutrition for a repeat-log request. Only call get_meal_log.
+5. For "most_recent" requests: explicitly state the source date you found before calling prepare_meal_log (e.g. "I found your breakfast from October 20th — here are the items:").
+6. The user still confirms via the confirmation card; repeat logging does not bypass that step.
 
 INGREDIENT NAMES — PRESERVE EVERY QUALIFIER:
 Every word in a food description is nutritionally meaningful: preparation method ("scrambled", "grilled", "poached"), cut or thickness ("thick-cut", "boneless"), cooking state ("cooked", "raw"), form ("whole grain", "reduced-fat"), and any other modifier the user stated.
@@ -373,6 +386,46 @@ The user will see a confirmation card and must tap to save. You do not log on th
         },
       },
       required: ['calculationToken', 'mealType', 'logDate'],
+    },
+  },
+}
+
+// ── Tool definition for get_meal_log ─────────────────────────────────────────
+// Called by V to retrieve a previously logged meal for re-logging. Returns a
+// signed calculationToken that V passes directly to prepare_meal_log. No new
+// nutrition search (USDA/FatSecret) is triggered — all values come from the
+// existing FoodLogEntry snapshots. A fresh calculationId is issued on each call
+// so idempotency keys don't collide with the original or with future re-logs.
+export const GET_MEAL_LOG_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: 'get_meal_log',
+    description: `Retrieve a previously logged meal so the user can re-log it on a different date or meal type.
+Use when the user says "same breakfast as yesterday", "log last night's dinner again", "same lunch as usual", "half of yesterday's dinner", etc.
+Do NOT use this for new foods — use calculate_nutrition for those.
+Returns a calculationToken; pass it to prepare_meal_log with the DESTINATION logDate and mealType.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        sourceDate: {
+          type: 'string',
+          description: 'The date of the meal to retrieve, as YYYY-MM-DD. Resolve "yesterday", "last Tuesday", etc. using the TODAY date from your context. Pass "most_recent" for "same as usual" / "same as always" requests.',
+        },
+        sourceMealType: {
+          type: 'string',
+          enum: ['breakfast', 'lunch', 'dinner', 'snack', 'other'],
+          description: 'The meal type to retrieve from the source date.',
+        },
+        scaleFactor: {
+          type: 'number',
+          description: 'Optional portion multiplier applied server-side before signing: 0.5 = half, 2.0 = double, 1.0 = same (default).',
+        },
+        destinationDate: {
+          type: 'string',
+          description: 'Only required when sourceDate is "most_recent". The date the user intends to log to (YYYY-MM-DD), so that the most recently logged meal BEFORE that date is returned. Use today\'s client date if logging for today.',
+        },
+      },
+      required: ['sourceDate', 'sourceMealType'],
     },
   },
 }

@@ -22,9 +22,11 @@ import {
   type SearchPhase, type CandidatePool,
 } from '@/lib/v/search-orchestration'
 import type { QualityIssue } from '@/lib/v/program-quality'
-import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL } from './constants'
+import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL, GET_MEAL_LOG_TOOL } from './constants'
 import { calculateNutrition } from '@/lib/v/tools/calculate-nutrition'
 import type { CalculateNutritionArgs } from '@/lib/v/tools/calculate-nutrition'
+import { getMealLog } from '@/lib/v/tools/get-meal-log'
+import type { GetMealLogArgs } from '@/lib/v/tools/get-meal-log'
 import { buildMealLogToken, verifyMealLogToken, selectTokenIngredients } from '@/lib/v/meal-log-token'
 import type OpenAI from 'openai'
 
@@ -166,7 +168,7 @@ export async function POST(req: NextRequest) {
   }
 
   void (async () => {
-    const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL, PROPOSE_PROGRAM_TOOL, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL]
+    const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL, PROPOSE_PROGRAM_TOOL, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL, GET_MEAL_LOG_TOOL]
     // Per-turn loop guard for calculate_nutrition: if the model calls it more than
     // 3 times within a single conversation turn it gets a hard stop, forcing V to
     // respond with what it already has rather than looping indefinitely.
@@ -958,6 +960,22 @@ export async function POST(req: NextRequest) {
             } catch (err) {
               const msg = err instanceof Error ? err.message : 'Failed to prepare meal log'
               console.error('[V-meal-log-error]', { userId: user.id, error: msg })
+              result = JSON.stringify({ status: 'error', message: msg })
+            }
+
+          } else if (fn.name === 'get_meal_log') {
+            try {
+              const logArgs = JSON.parse(fn.arguments) as GetMealLogArgs
+              const logResult = await getMealLog(user.id, logArgs)
+              if (logResult.status === 'found' && logResult.calculationToken) {
+                // Emit the token so the client can forward it on the next turn.
+                emitRaw({ type: 'calculation_token', calculationToken: logResult.calculationToken })
+              }
+              // Return the full result to V (calculationToken included so V can call prepare_meal_log).
+              result = JSON.stringify(logResult)
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : 'Failed to retrieve meal log'
+              console.error('[V-get-meal-log-error]', { userId: user.id, error: msg })
               result = JSON.stringify({ status: 'error', message: msg })
             }
 
