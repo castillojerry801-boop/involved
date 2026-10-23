@@ -123,7 +123,7 @@ export function ActivityDetailSheet({
 
   return (
     <>
-      {/* ── Inline summary: Steps | Active min | Active kcal ───────────── */}
+      {/* ── Inline summary: Steps | Active min | Active kcal | Details ─── */}
       <div className="flex items-center gap-4">
 
         {/* Steps */}
@@ -174,28 +174,27 @@ export function ActivityDetailSheet({
           </div>
         </div>
 
-      </div>
+        {/* Details / Connect button — pushed to the end of the same row */}
+        <div className="ml-auto shrink-0">
+          {connected ? (
+            <button
+              onClick={() => setOpen(true)}
+              className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 transition-colors"
+            >
+              {hasData ? `${activities.length} workout${activities.length !== 1 ? 's' : ''}` : 'Details'}
+              <ChevronRight className="size-3" />
+            </button>
+          ) : (
+            <Link
+              href="/health"
+              className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 transition-colors"
+            >
+              Connect
+              <ChevronRight className="size-3" />
+            </Link>
+          )}
+        </div>
 
-      {/* Details / Connect button — sits below metrics so nothing gets clipped */}
-      <div className="mt-2 flex items-center justify-between">
-        <div />{/* spacer */}
-        {connected ? (
-          <button
-            onClick={() => setOpen(true)}
-            className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 transition-colors"
-          >
-            {hasData ? `${activities.length} workout${activities.length !== 1 ? 's' : ''}` : 'Details'}
-            <ChevronRight className="size-3" />
-          </button>
-        ) : (
-          <Link
-            href="/health"
-            className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 transition-colors"
-          >
-            Connect
-            <ChevronRight className="size-3" />
-          </Link>
-        )}
       </div>
 
       {/* Sync status line */}

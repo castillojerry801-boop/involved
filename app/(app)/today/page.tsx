@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { ChevronRight, Plus, ArrowRight, Dumbbell, PlayCircle, Calendar } from 'lucide-react'
+import { ChevronRight, Plus, ArrowRight, Dumbbell, PlayCircle } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { headers, cookies } from 'next/headers'
@@ -241,9 +241,39 @@ export default async function TodayPage() {
       <HealthSyncTrigger />
 
       {/* Header */}
-      <div className="mb-3">
-        <p className="text-sm font-medium text-zinc-500">{greeting}, {displayName}</p>
-        <p className="text-xs text-zinc-400 mt-0.5">{displayDate}</p>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-zinc-500">{greeting}, {displayName}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">{displayDate}</p>
+        </div>
+
+        {/* Next workout pill */}
+        {nextWorkout ? (
+          <Link href={`/training/workout/${nextWorkout.id}`} className="shrink-0">
+            <div className="flex items-center gap-1.5 rounded-lg border border-zinc-100 bg-zinc-50 px-2 py-1.5 dark:border-zinc-700/50 dark:bg-zinc-800/60">
+              <div className={cn(
+                'flex size-5 shrink-0 items-center justify-center rounded-md',
+                nextWorkout.status === 'in_progress' ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-sky-100 dark:bg-sky-900/40',
+              )}>
+                {nextWorkout.status === 'in_progress'
+                  ? <PlayCircle className="size-3 text-emerald-600 dark:text-emerald-400" />
+                  : <Dumbbell className="size-3 text-sky-600 dark:text-sky-400" />}
+              </div>
+              <p className="max-w-[110px] truncate text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
+                {nextWorkout.title}
+              </p>
+              <ChevronRight className="size-3 shrink-0 text-zinc-400" />
+            </div>
+          </Link>
+        ) : (
+          <Link href="/training" className="shrink-0">
+            <div className="flex items-center gap-1.5 rounded-lg border border-zinc-100 bg-zinc-50 px-2 py-1.5 dark:border-zinc-700/50 dark:bg-zinc-800/60">
+              <Dumbbell className="size-3 shrink-0 text-zinc-400" />
+              <p className="text-[11px] text-zinc-400">No workouts</p>
+              <ChevronRight className="size-3 shrink-0 text-zinc-400" />
+            </div>
+          </Link>
+        )}
       </div>
 
       {/* ── NUTRITION ─────────────────────────────────────────────────── */}
@@ -357,55 +387,6 @@ export default async function TodayPage() {
           activeMinutes={activeMinutes}
         />
 
-        {/* Up next — next scheduled or in-progress workout */}
-        <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-          <p className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-2">Up next</p>
-          {nextWorkout ? (
-            <div className="flex items-center gap-3">
-              <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-xl',
-                nextWorkout.status === 'in_progress' ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'bg-sky-50 dark:bg-sky-900/30'
-              )}>
-                {nextWorkout.status === 'in_progress'
-                  ? <PlayCircle className="size-4 text-emerald-600 dark:text-emerald-400" />
-                  : <Calendar className="size-4 text-sky-600 dark:text-sky-400" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{nextWorkout.title}</p>
-                <p className="text-xs text-zinc-400">
-                  {nextWorkout.status === 'planned' && nextWorkout.scheduledDate
-                    ? (() => {
-                        const label = formatWorkoutDate(nextWorkout.scheduledDate, dateStr)
-                        return label !== 'Today'
-                          ? `${label} · ${nextWorkout.exercises.length} exercise${nextWorkout.exercises.length !== 1 ? 's' : ''}`
-                          : `${nextWorkout.exercises.length} exercise${nextWorkout.exercises.length !== 1 ? 's' : ''}`
-                      })()
-                    : `${nextWorkout.exercises.length} exercise${nextWorkout.exercises.length !== 1 ? 's' : ''}`
-                  }
-                </p>
-              </div>
-              <Link href={`/training/workout/${nextWorkout.id}`}>
-                <Button size="sm" variant="primary">
-                  {nextWorkout.status === 'in_progress'
-                    ? <><PlayCircle className="size-3.5" /> Resume</>
-                    : <><PlayCircle className="size-3.5" /> Start</>}
-                </Button>
-              </Link>
-            </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
-                <Dumbbell className="size-4 text-zinc-400" />
-              </div>
-              <p className="flex-1 text-sm text-zinc-500">No upcoming workouts</p>
-              <Link
-                href="/training"
-                className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
-              >
-                Training <ChevronRight className="size-3" />
-              </Link>
-            </div>
-          )}
-        </div>
       </Card>
 
       {/* ── WATER ─────────────────────────────────────────────────────── */}
