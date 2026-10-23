@@ -553,3 +553,30 @@ describe('GET_MEAL_LOG_TOOL schema', () => {
     expect(properties).toHaveProperty('destinationDate')
   })
 })
+
+describe('get_meal_log — calculationRefId instruction in V-facing message', () => {
+  // Check 32 — the message returned to V must say calculationRefId, not calculationToken.
+  // Prevents the model from being told to use the old field name after the Option 2 refactor.
+  it('found result message instructs V to use calculationRefId, not calculationToken', async () => {
+    mockPrisma.foodLogEntry.findMany.mockResolvedValue([
+      {
+        id: 'e1', userId: 'user-x', mealType: 'breakfast',
+        logDate: new Date('2026-10-21T00:00:00Z'),
+        loggedAt: new Date('2026-10-21T08:00:00Z'),
+        snapshotFoodName: 'Oats', servingMultiplier: new (require('@prisma/client').Prisma.Decimal)(1),
+        snapshotCaloriesPerServing: new (require('@prisma/client').Prisma.Decimal)(300),
+        snapshotProteinGPerServing: new (require('@prisma/client').Prisma.Decimal)(10),
+        snapshotCarbohydrateGPerServing: new (require('@prisma/client').Prisma.Decimal)(50),
+        snapshotFatGPerServing: new (require('@prisma/client').Prisma.Decimal)(5),
+        estimateSourceNote: 'Coach V — Oats',
+        matchedFoodProvider: null, calculationId: 'calc-1', isImportedEstimate: false,
+      },
+    ])
+
+    const result = await getMealLog('user-x', { sourceDate: '2026-10-21', sourceMealType: 'breakfast' })
+
+    expect(result.status).toBe('found')
+    expect(result.message).toContain('calculationRefId')
+    expect(result.message).not.toContain('calculationToken')
+  })
+})

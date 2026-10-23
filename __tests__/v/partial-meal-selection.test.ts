@@ -46,6 +46,11 @@ const h = vi.hoisted(() => {
       update: vi.fn().mockResolvedValue({}),
     },
     foodLogEntry: { create: vi.fn() },
+    mealCalculationRef: {
+      create:     vi.fn().mockResolvedValue({ id: 'test-ref-id-001' }),
+      findUnique: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
     $transaction: vi.fn(),
   }
 
@@ -180,6 +185,8 @@ beforeEach(() => {
   h.mockPrisma.aiUsageLog.upsert.mockResolvedValue({ interactionCount: 1 })
   h.mockPrisma.$transaction.mockImplementation(async (ops: Promise<unknown>[]) => Promise.all(ops))
   h.mockPrisma.foodLogEntry.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: `e-${Math.random()}`, ...data }))
+  h.mockPrisma.mealCalculationRef.create.mockResolvedValue({ id: 'test-ref-id-001' })
+  h.mockPrisma.mealCalculationRef.deleteMany.mockResolvedValue({ count: 0 })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════

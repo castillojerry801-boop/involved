@@ -82,8 +82,8 @@ TOOLS
 • propose_workout — single training session ("give me a workout", "I have 45 minutes").
 • propose_program — structured multi-day plan ("build me a program", "3-day split", "6-week plan").
 • calculate_nutrition — calculate real macros from a food database for any ingredient list. Always use this instead of recalling values from memory.
-• prepare_meal_log — when the user confirms a meal after calculate_nutrition (new foods) or get_meal_log (repeat meals). Pass the calculationToken exactly as returned by the prior tool — never modify it. Include the destination mealType (infer from context — ask once if unclear) and logDate. Never supply macro values — the server reads all nutrition from the signed token. IMPORTANT: always call this tool in a separate response after the token-generating tool returns its result — never generate both calls in the same response. The user must confirm via the card before anything is saved.
-• get_meal_log — retrieve a previously logged meal so the user can re-log it. Use when the user says "same breakfast as yesterday", "log last night's dinner again", "same lunch as usual", "half of yesterday's dinner", etc. Call get_meal_log first; then pass the returned calculationToken to prepare_meal_log. Do NOT use this tool to look up nutrition data — use calculate_nutrition for new foods.
+• prepare_meal_log — when the user confirms a meal after calculate_nutrition (new foods) or get_meal_log (repeat meals). Pass the calculationRefId exactly as returned by the prior tool — never modify it. Include the destination mealType (infer from context — ask once if unclear) and logDate. Never supply macro values — the server resolves all nutrition from the stored reference. IMPORTANT: always call this tool in a separate response after the reference-generating tool returns its result — never generate both calls in the same response. The user must confirm via the card before anything is saved.
+• get_meal_log — retrieve a previously logged meal so the user can re-log it. Use when the user says "same breakfast as yesterday", "log last night's dinner again", "same lunch as usual", "half of yesterday's dinner", etc. Call get_meal_log first; then pass the returned calculationRefId to prepare_meal_log. Do NOT use this tool to look up nutrition data — use calculate_nutrition for new foods.
 
 ════════════════════════════════════════
 NUTRITION CALCULATIONS
@@ -119,7 +119,7 @@ VAGUE OR ABSENT QUANTITIES ("some", "a handful", "a bit of", "a few", "a little"
 5. After the tool returns, present results conversationally. Show totals clearly. Mention per-serving if servings were specified.
 6. If some ingredients are unresolved, tell the user specifically which ones failed and present the partial result for everything that did calculate. Example: "I couldn't find a portion conversion for [ingredient] — the other ingredients calculated fine." Do NOT ask for brands for generic whole foods (eggs, bacon, tortillas, meat, produce). Only ask for a brand if it's a packaged product where the brand significantly changes the nutrition.
 7. Do not add caveats or warnings beyond what the tool reports. Trust the tool's completeness assessment.
-8. MEAL LOGGING: when the user says "log that", "save that", "add to my food log", "log this meal", or similar after you've shown nutrition results — call prepare_meal_log immediately. If an OUTSTANDING NUTRITION CALCULATION token is present in your context (see section at the bottom of your context data), use that token directly — do NOT re-call calculate_nutrition. If no token is available in context, call calculate_nutrition first to get one, then call prepare_meal_log. Pass the calculationToken exactly as returned by calculate_nutrition or as shown in the OUTSTANDING NUTRITION CALCULATION section (do not modify it), the mealType (infer from context — ask once if unclear), and logDate. The server will read all nutrition values from the signed token. The user will see a confirmation card — they must explicitly confirm before anything is saved.
+8. MEAL LOGGING: when the user says "log that", "save that", "add to my food log", "log this meal", or similar after you've shown nutrition results — call prepare_meal_log immediately. If an OUTSTANDING NUTRITION CALCULATION is present in your context (see section at the bottom of your context data), use the calculationRefId shown there directly — do NOT re-call calculate_nutrition. If no reference is available in context, call calculate_nutrition first to get one, then call prepare_meal_log. Pass the calculationRefId exactly as returned by calculate_nutrition or as shown in the OUTSTANDING NUTRITION CALCULATION section (do not modify it), the mealType (infer from context — ask once if unclear), and logDate. The server will resolve all nutrition values from the stored reference. The user will see a confirmation card — they must explicitly confirm before anything is saved.
 
 PARTIAL MEALS ARE LOGGABLE — DO NOT REFUSE:
 • If SOME ingredients resolved and some did not, you can STILL log the resolved ones. Do NOT refuse to log just because one ingredient (e.g. the bacon) failed to resolve.
@@ -144,7 +144,7 @@ When the user wants to re-log a meal from a previous date ("same as yesterday", 
    - "same as usual" / "my usual X" → pass sourceDate: "most_recent" and destinationDate (today's date).
    - "half of..." / "double..." → pass scaleFactor: 0.5 or 2.0.
    - "last night's dinner for lunch today" → sourceMealType: "dinner"; you will pass mealType: "lunch" to prepare_meal_log.
-2. If get_meal_log returns status "found": in your next response after get_meal_log returns its result, call prepare_meal_log with the exact calculationToken from that result. Also tell the user what you found (source date, item count, totals). Pass the DESTINATION logDate and DESTINATION mealType to prepare_meal_log — NEVER the source date or source meal type. Do NOT generate the prepare_meal_log call in the same response as the get_meal_log call.
+2. If get_meal_log returns status "found": in your next response after get_meal_log returns its result, call prepare_meal_log with the exact calculationRefId from that result. Also tell the user what you found (source date, item count, totals). Pass the DESTINATION logDate and DESTINATION mealType to prepare_meal_log — NEVER the source date or source meal type. Do NOT generate the prepare_meal_log call in the same response as the get_meal_log call.
 3. If get_meal_log returns status "empty": tell the user no meal was found for that date and type.
 4. NEVER call calculate_nutrition for a repeat-log request. Only call get_meal_log.
 5. For "most_recent" requests: explicitly state the source date you found before calling prepare_meal_log (e.g. "I found your breakfast from October 20th — here are the items:").
@@ -347,28 +347,27 @@ If the tool returns unresolved ingredients: calculate and present all the ingred
 }
 
 // ── Tool definition for prepare_meal_log ─────────────────────────────────────
-// Called by V after a successful calculate_nutrition result when the user wants
-// to save the meal to their diary. The calculationToken is an opaque server-signed
-// value from the calculate_nutrition result — V must not modify it or supply macro
-// values independently. The route handler verifies the token's signature, ownership,
-// and expiry before emitting the meal_log_pending SSE event.
+// Called by V after a successful calculate_nutrition or get_meal_log call. The
+// server stores the full signed token and returns only an opaque calculationRefId
+// (UUID). V passes the ref ID here — the server resolves the token internally.
+// V never sees or transmits the raw signed token.
 export const PREPARE_MEAL_LOG_TOOL = {
   type: 'function' as const,
   function: {
     name: 'prepare_meal_log',
     description: `Prepare a calculated meal for the user to log to their food diary.
-Call this after calculate_nutrition returned a result, OR when an OUTSTANDING NUTRITION CALCULATION token is present in your context.
+Call this after calculate_nutrition returned a result, OR when an OUTSTANDING NUTRITION CALCULATION is present in your context.
 A partially resolved meal CAN still be logged — if at least one ingredient resolved, you may call this. Only unresolved ingredients are left out; the server never logs them.
-Pass the calculationToken EXACTLY as provided — do not modify it.
+Pass the calculationRefId exactly as returned by calculate_nutrition or get_meal_log, or as shown in the OUTSTANDING NUTRITION CALCULATION context.
 Pass mealType (inferred from context) and logDate (today as YYYY-MM-DD).
-Do NOT pass any macro values — those come from the server-signed token.
+Do NOT pass any macro values — those come from the server.
 The user will see a confirmation card and must tap to save. You do not log on their behalf.`,
     parameters: {
       type: 'object',
       properties: {
-        calculationToken: {
+        calculationRefId: {
           type: 'string',
-          description: 'The calculationToken from the calculate_nutrition result or the OUTSTANDING NUTRITION CALCULATION context — pass it back exactly as received, unmodified.',
+          description: 'The calculationRefId returned by calculate_nutrition or get_meal_log, or provided in the OUTSTANDING NUTRITION CALCULATION context. Pass it back exactly as received — do not modify it.',
         },
         mealType: {
           type: 'string',
@@ -385,17 +384,17 @@ The user will see a confirmation card and must tap to save. You do not log on th
           description: 'OPTIONAL. The 0-based indexes (from the calculation\'s ingredient list) of the specific ingredients to log. OMIT this to log every resolved ingredient ("log that", "log the meal", "log the resolved items"). Provide it ONLY when the user names specific items ("just the eggs", "the eggs and toast") — list only those items\' indexes. Never include an unresolved item\'s index; the server ignores it. You select WHICH items by index only — you never supply macro values.',
         },
       },
-      required: ['calculationToken', 'mealType', 'logDate'],
+      required: ['calculationRefId', 'mealType', 'logDate'],
     },
   },
 }
 
 // ── Tool definition for get_meal_log ─────────────────────────────────────────
 // Called by V to retrieve a previously logged meal for re-logging. Returns a
-// signed calculationToken that V passes directly to prepare_meal_log. No new
-// nutrition search (USDA/FatSecret) is triggered — all values come from the
-// existing FoodLogEntry snapshots. A fresh calculationId is issued on each call
-// so idempotency keys don't collide with the original or with future re-logs.
+// calculationRefId that V passes directly to prepare_meal_log. No new nutrition
+// search (USDA/FatSecret) is triggered — all values come from existing
+// FoodLogEntry snapshots. A fresh calculationId is issued on each call so
+// idempotency keys don't collide with the original or with future re-logs.
 export const GET_MEAL_LOG_TOOL = {
   type: 'function' as const,
   function: {
@@ -403,7 +402,7 @@ export const GET_MEAL_LOG_TOOL = {
     description: `Retrieve a previously logged meal so the user can re-log it on a different date or meal type.
 Use when the user says "same breakfast as yesterday", "log last night's dinner again", "same lunch as usual", "half of yesterday's dinner", etc.
 Do NOT use this for new foods — use calculate_nutrition for those.
-Returns a calculationToken; pass it to prepare_meal_log with the DESTINATION logDate and mealType.`,
+Returns a calculationRefId; pass it to prepare_meal_log with the DESTINATION logDate and mealType.`,
     parameters: {
       type: 'object',
       properties: {

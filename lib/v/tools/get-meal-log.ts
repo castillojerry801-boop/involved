@@ -221,7 +221,7 @@ export async function getMealLog(userId: string, args: GetMealLogArgs): Promise<
     scaleApplied:   scaleFactor !== 1 ? scaleFactor : undefined,
     message:
       `Found ${entries.length} item(s) from ${sourceDate} ${sourceMealType}${scaleLabel}. ` +
-      `Call prepare_meal_log with the calculationToken, the DESTINATION logDate, and the DESTINATION mealType. ` +
+      `Call prepare_meal_log with the calculationRefId, the DESTINATION logDate, and the DESTINATION mealType. ` +
       `Do not pass the source date or source meal type to prepare_meal_log.`,
   }
 }

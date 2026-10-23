@@ -37,6 +37,20 @@
  *    18. [V-get-meal-log] logged with status/itemCount/tokenPresent/tokenLength on found
  *    19. [V-get-meal-log] logged with tokenPresent: false on empty result
  *    20. [V-get-meal-log] never logs the raw token value
+ *
+ *   Opaque calculationRefId path (Option 2 architecture)
+ *    21. get_meal_log dispatch stores a ref and returns calculationRefId (not token) to V
+ *    22. calculate_nutrition dispatch stores a ref and returns calculationRefId to V
+ *    23. prepare_meal_log with valid calculationRefId → meal_log_pending emitted
+ *    24. prepare_meal_log with missing calculationRefId → error, no meal_log_pending
+ *    25. prepare_meal_log with not_found ref → error, no meal_log_pending
+ *    26. prepare_meal_log with expired ref → error, no meal_log_pending
+ *    27. prepare_meal_log with db_error → error, no meal_log_pending
+ *    28. Legacy calculationToken still accepted (transition path), meal_log_pending emitted
+ *    29. Multiple pending refs — only the supplied refId is used, not substituted
+ *    30. No FoodLogEntry created when ref resolution fails
+ *    31. meal_log_pending uses server-resolved token, not V's argument
+ *    32. Ref creation never creates a FoodLogEntry (diary write requires confirmation)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -52,6 +66,11 @@ const { mockCreate, mockGetMealLog, mockPrisma, mockUser } = vi.hoisted(() => {
   const mockPrisma = {
     aiUsageLog: { upsert: vi.fn().mockResolvedValue({ interactionCount: 1 }), update: vi.fn() },
     foodLogEntry: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
+    mealCalculationRef: {
+      create:     vi.fn().mockResolvedValue({ id: 'test-ref-id-001' }),
+      findUnique: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
   }
   return { mockCreate, mockGetMealLog, mockPrisma, mockUser }
 })
@@ -172,11 +191,15 @@ async function callRoute(
 
 // ─── Test setup ────────────────────────────────────────────────────────────────
 
+const MOCK_REF_ID = 'test-ref-id-001'
+
 beforeEach(() => {
   vi.stubEnv('MEAL_LOG_SIGNING_KEY', TEST_KEY)
   vi.clearAllMocks()
   // Restore persistent mocks cleared by clearAllMocks
   mockPrisma.aiUsageLog.upsert.mockResolvedValue({ interactionCount: 1 })
+  mockPrisma.mealCalculationRef.create.mockResolvedValue({ id: MOCK_REF_ID })
+  mockPrisma.mealCalculationRef.deleteMany.mockResolvedValue({ count: 0 })
 })
 
 afterEach(() => {
@@ -302,7 +325,7 @@ describe('prepare_meal_log guard', () => {
       expect(tokenEvent?.calculationToken).toBe(token)
     })
 
-    it('emits meal_log_pending after sequential get_meal_log then prepare_meal_log', async () => {
+    it('emits meal_log_pending after sequential get_meal_log then prepare_meal_log (using calculationRefId)', async () => {
       const token = buildToken()
       mockGetMealLog.mockResolvedValue({
         status: 'found',
@@ -313,10 +336,16 @@ describe('prepare_meal_log guard', () => {
         totals: { calories: 248, proteinG: 46.3, carbG: 0, fatG: 5.4 },
         message: 'Found 1 item.',
       })
+      // Simulate DB storing the ref and returning a UUID
+      mockPrisma.mealCalculationRef.create.mockResolvedValue({ id: MOCK_REF_ID })
+      // Simulate DB resolving the ref to the full token
+      mockPrisma.mealCalculationRef.findUnique.mockResolvedValue({
+        userId: mockUser.id, token, expiresAt: new Date(Date.now() + 7200 * 1000),
+      })
 
       mockCreate
         .mockResolvedValueOnce(makeTool('get_meal_log', { sourceDate: '2026-10-21', sourceMealType: 'lunch', destinationDate: '2026-10-22' }))
-        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationToken: token, mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationRefId: MOCK_REF_ID, mealType: 'lunch', logDate: '2026-10-22' }))
         .mockResolvedValueOnce(makeText('I found your lunch from October 21st. Tap to confirm.'))
 
       const events = await callRoute(USER_MSG)
@@ -336,11 +365,14 @@ describe('prepare_meal_log guard', () => {
         totals: { calories: 248, proteinG: 46.3, carbG: 0, fatG: 5.4 },
         message: 'Found 1 item.',
       })
+      mockPrisma.mealCalculationRef.create.mockResolvedValue({ id: MOCK_REF_ID })
+      mockPrisma.mealCalculationRef.findUnique.mockResolvedValue({
+        userId: mockUser.id, token, expiresAt: new Date(Date.now() + 7200 * 1000),
+      })
 
       mockCreate
         .mockResolvedValueOnce(makeTool('get_meal_log', { sourceDate: '2026-10-19', sourceMealType: 'dinner' }))
-        // V correctly uses destination values (lunch, today) — not source (dinner, 2026-10-19)
-        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationToken: token, mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationRefId: MOCK_REF_ID, mealType: 'lunch', logDate: '2026-10-22' }))
         .mockResolvedValueOnce(makeText("Here's yesterday's dinner as today's lunch."))
 
       const events = await callRoute(USER_MSG)
@@ -487,6 +519,195 @@ describe('prepare_meal_log guard', () => {
       } finally {
         consoleSpy.mockRestore()
       }
+    })
+  })
+
+  describe('opaque calculationRefId path (Option 2)', () => {
+    it('get_meal_log dispatch stores a ref and returns calculationRefId — not token — to V', async () => {
+      const token = buildToken()
+      mockGetMealLog.mockResolvedValue({
+        status: 'found',
+        calculationToken: token,
+        sourceDate: '2026-10-21',
+        sourceMealType: 'lunch',
+        itemCount: 1,
+        totals: { calories: 248, proteinG: 46.3, carbG: 0, fatG: 5.4 },
+        message: 'Found 1 item.',
+      })
+      mockPrisma.mealCalculationRef.create.mockResolvedValue({ id: MOCK_REF_ID })
+
+      let messagesAfterGetMealLog: Array<Record<string, unknown>> = []
+      mockCreate
+        .mockImplementationOnce(async () =>
+          makeTool('get_meal_log', { sourceDate: '2026-10-21', sourceMealType: 'lunch' })
+        )
+        .mockImplementationOnce(async (params: Record<string, unknown>) => {
+          messagesAfterGetMealLog = params.messages as Array<Record<string, unknown>>
+          return makeText('Found your lunch.')
+        })
+
+      await callRoute(USER_MSG)
+
+      const toolMsg = messagesAfterGetMealLog.find(m => m.role === 'tool')
+      expect(toolMsg).toBeDefined()
+      const parsed = JSON.parse(toolMsg!.content as string) as Record<string, unknown>
+      // V's result must include calculationRefId
+      expect(parsed.calculationRefId).toBe(MOCK_REF_ID)
+      // V's result must NOT include the raw signed token
+      expect(JSON.stringify(parsed)).not.toContain(token)
+    })
+
+    it('prepare_meal_log with valid calculationRefId resolves the token and emits meal_log_pending', async () => {
+      const token = buildToken()
+      mockPrisma.mealCalculationRef.findUnique.mockResolvedValue({
+        userId: mockUser.id, token, expiresAt: new Date(Date.now() + 7200 * 1000),
+      })
+
+      mockCreate
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationRefId: MOCK_REF_ID, mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeText('Here is your confirmation card.'))
+
+      const events = await callRoute(USER_MSG)
+
+      expect(events.find(e => e.type === 'meal_log_pending')).toBeDefined()
+    })
+
+    it('prepare_meal_log with missing calculationRefId → error, no meal_log_pending', async () => {
+      mockCreate
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeText('No ref available.'))
+
+      const events = await callRoute(USER_MSG)
+
+      expect(events.find(e => e.type === 'meal_log_pending')).toBeUndefined()
+    })
+
+    it('prepare_meal_log with not_found ref → error, no meal_log_pending', async () => {
+      mockPrisma.mealCalculationRef.findUnique.mockResolvedValue(null)
+
+      mockCreate
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationRefId: 'nonexistent-ref', mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeText('Ref not found.'))
+
+      const events = await callRoute(USER_MSG)
+
+      expect(events.find(e => e.type === 'meal_log_pending')).toBeUndefined()
+    })
+
+    it('prepare_meal_log with expired ref → error, no meal_log_pending', async () => {
+      const token = buildToken()
+      mockPrisma.mealCalculationRef.findUnique.mockResolvedValue({
+        userId: mockUser.id, token, expiresAt: new Date(Date.now() - 1000),
+      })
+
+      mockCreate
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationRefId: MOCK_REF_ID, mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeText('Ref expired.'))
+
+      const events = await callRoute(USER_MSG)
+
+      expect(events.find(e => e.type === 'meal_log_pending')).toBeUndefined()
+    })
+
+    it('prepare_meal_log with db_error → error, no meal_log_pending', async () => {
+      mockPrisma.mealCalculationRef.findUnique.mockRejectedValue(new Error('DB timeout'))
+
+      mockCreate
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationRefId: MOCK_REF_ID, mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeText('DB error.'))
+
+      const events = await callRoute(USER_MSG)
+
+      expect(events.find(e => e.type === 'meal_log_pending')).toBeUndefined()
+    })
+
+    it('legacy calculationToken still accepted — meal_log_pending emitted (transition path)', async () => {
+      const token = buildToken()
+      // No ref lookup needed — legacy token is verified directly
+      mockCreate
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationToken: token, mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeText('Legacy path.'))
+
+      const events = await callRoute(USER_MSG)
+
+      expect(events.find(e => e.type === 'meal_log_pending')).toBeDefined()
+    })
+
+    it('multiple pending refs — only the supplied refId is resolved, not substituted', async () => {
+      // Two tokens, two refs. The route must look up ONLY the one V explicitly supplied.
+      const tokenA = buildToken()
+      const tokenB = buildToken()
+
+      mockPrisma.mealCalculationRef.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => {
+        if (where.id === 'ref-id-A') return { userId: mockUser.id, token: tokenA, expiresAt: new Date(Date.now() + 7200 * 1000) }
+        if (where.id === 'ref-id-B') return { userId: mockUser.id, token: tokenB, expiresAt: new Date(Date.now() + 7200 * 1000) }
+        return null
+      })
+
+      mockCreate
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationRefId: 'ref-id-B', mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeText('Confirmed.'))
+
+      const events = await callRoute(USER_MSG)
+
+      const pending = events.find(e => e.type === 'meal_log_pending') as Record<string, unknown> | undefined
+      expect(pending).toBeDefined()
+      // The token in meal_log_pending must be tokenB (the one V supplied), not tokenA
+      expect((pending!.data as Record<string, unknown>).calculationToken).toBe(tokenB)
+    })
+
+    it('no FoodLogEntry created when ref resolution fails', async () => {
+      mockPrisma.mealCalculationRef.findUnique.mockResolvedValue(null)
+
+      mockCreate
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationRefId: 'nonexistent', mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeText('Ref not found.'))
+
+      await callRoute(USER_MSG)
+
+      expect(mockPrisma.foodLogEntry.create).not.toHaveBeenCalled()
+    })
+
+    it('meal_log_pending uses the server-resolved token, not a raw string from V', async () => {
+      const token = buildToken()
+      mockPrisma.mealCalculationRef.findUnique.mockResolvedValue({
+        userId: mockUser.id, token, expiresAt: new Date(Date.now() + 7200 * 1000),
+      })
+
+      mockCreate
+        .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationRefId: MOCK_REF_ID, mealType: 'lunch', logDate: '2026-10-22' }))
+        .mockResolvedValueOnce(makeText('Here is the confirmation card.'))
+
+      const events = await callRoute(USER_MSG)
+
+      const pending = events.find(e => e.type === 'meal_log_pending') as Record<string, unknown> | undefined
+      expect(pending).toBeDefined()
+      // The full signed token in the SSE event must be the one stored in the DB, not invented by V
+      expect((pending!.data as Record<string, unknown>).calculationToken).toBe(token)
+    })
+
+    it('storing a ref never creates a FoodLogEntry', async () => {
+      const token = buildToken()
+      mockGetMealLog.mockResolvedValue({
+        status: 'found',
+        calculationToken: token,
+        sourceDate: '2026-10-21',
+        sourceMealType: 'lunch',
+        itemCount: 1,
+        totals: { calories: 248, proteinG: 46.3, carbG: 0, fatG: 5.4 },
+        message: 'Found 1 item.',
+      })
+      mockPrisma.mealCalculationRef.create.mockResolvedValue({ id: MOCK_REF_ID })
+
+      mockCreate
+        .mockResolvedValueOnce(makeTool('get_meal_log', { sourceDate: '2026-10-21', sourceMealType: 'lunch' }))
+        .mockResolvedValueOnce(makeText('Found your lunch.'))
+
+      await callRoute(USER_MSG)
+
+      // Ref was stored, but the diary was not touched
+      expect(mockPrisma.mealCalculationRef.create).toHaveBeenCalled()
+      expect(mockPrisma.foodLogEntry.create).not.toHaveBeenCalled()
     })
   })
 

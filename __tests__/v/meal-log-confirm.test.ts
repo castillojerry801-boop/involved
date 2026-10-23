@@ -217,9 +217,9 @@ beforeEach(() => {
 
 describe('PREPARE_MEAL_LOG_TOOL schema', () => {
   // Check 1
-  it('requires calculationToken, mealType, logDate — no macro fields', () => {
+  it('requires calculationRefId, mealType, logDate — no macro fields', () => {
     const { required, properties } = PREPARE_MEAL_LOG_TOOL.function.parameters
-    expect(required).toContain('calculationToken')
+    expect(required).toContain('calculationRefId')
     expect(required).toContain('mealType')
     expect(required).toContain('logDate')
     // Must NOT include ingredient macro fields

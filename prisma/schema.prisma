@@ -1573,3 +1573,23 @@ model YmoveMapping {
 
   @@map("ymove_mapping")
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// MEAL CALCULATION REFS
+// Short-lived server-side store mapping an opaque UUID to a full signed
+// meal-log token. V receives only the UUID (calculationRefId); the full
+// token never leaves server-controlled paths. Rows expire after 2 hours
+// (matching TOKEN_TTL_SECONDS in meal-log-token.ts). Expired rows are
+// cleaned up lazily on write and may also be swept by a scheduled job.
+// ═════════════════════════════════════════════════════════════════════
+model MealCalculationRef {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+
+  @@index([userId], name: "meal_calculation_refs_user_id_idx")
+  @@index([expiresAt], name: "meal_calculation_refs_expires_at_idx")
+  @@map("meal_calculation_refs")
+}

@@ -27,7 +27,8 @@ import { calculateNutrition } from '@/lib/v/tools/calculate-nutrition'
 import type { CalculateNutritionArgs } from '@/lib/v/tools/calculate-nutrition'
 import { getMealLog } from '@/lib/v/tools/get-meal-log'
 import type { GetMealLogArgs } from '@/lib/v/tools/get-meal-log'
-import { buildMealLogToken, verifyMealLogToken, selectTokenIngredients } from '@/lib/v/meal-log-token'
+import { buildMealLogToken, verifyMealLogToken, selectTokenIngredients, TOKEN_TTL_SECONDS } from '@/lib/v/meal-log-token'
+import { storeMealCalculationRef, resolveMealCalculationRef } from '@/lib/v/meal-calculation-ref'
 import type OpenAI from 'openai'
 
 // One Luna draft + one targeted Luna correction, then escalate to Sol (which also
@@ -270,6 +271,13 @@ export async function POST(req: NextRequest) {
     let pendingCalcContext = ''
     if (pendingCalcVerified?.ok) {
       const p = pendingCalcVerified.payload
+      // Store the verified token server-side and give V only the opaque ref UUID.
+      // The full signed token is never injected into V's system prompt context.
+      const pendingRefId = await storeMealCalculationRef(
+        user.id,
+        pendingCalcRaw!,
+        new Date(p.expiresAt * 1000),
+      )
       // Enumerate ingredients with their STABLE original indexes + resolved status. On a
       // follow-up turn the tool result from the previous turn is NOT in the forwarded history
       // (the client sends only text messages), so this list is V's only source for which
@@ -285,7 +293,7 @@ export async function POST(req: NextRequest) {
         `\n\nOUTSTANDING NUTRITION CALCULATION (verified, active):\n` +
         `Ingredients (use these 0-based indexes for includeIngredientIndexes):\n${ingredientLines}\n` +
         `Resolved total: ${p.totals.calories} kcal, ${p.totals.proteinG}g protein, ${p.totals.carbG}g carbs, ${p.totals.fatG}g fat.\n` +
-        `To log, call prepare_meal_log with this calculationToken (pass it exactly — do not modify): ${pendingCalcRaw}\n` +
+        `To log, call prepare_meal_log with calculationRefId: ${pendingRefId}\n` +
         `• "log that" / "log the meal" / "log the resolved items" → omit includeIngredientIndexes (the server logs every resolved ingredient; unresolved ones are disclosed but never logged).\n` +
         `• The user names specific items ("just the eggs", "the eggs and toast") → pass includeIngredientIndexes with ONLY those resolved items' indexes.\n` +
         `• A partially resolved meal CAN still be logged — at least one resolved ingredient is enough. Tell the user which items were not resolved and will be left out.\n` +
@@ -867,13 +875,20 @@ export async function POST(req: NextRequest) {
                 // Sign the result so prepare_meal_log can reference it by token — V never
                 // touches the actual macro values; the confirm endpoint reads from the token.
                 const calculationToken = buildMealLogToken(user.id, nutritionResult)
-                // Emit the token to the client so it can be forwarded in subsequent turns.
-                // This is what allows "log that" in Turn 2 to work without re-running the
-                // food lookup. A new calculation replaces any previously stored token.
+                // Emit the full token to the client (trusted path — used by MealLogConfirmCard
+                // and the confirm endpoint). The token is never returned to V.
                 if (calculationToken) {
                   emitRaw({ type: 'calculation_token', calculationToken })
+                  // Store server-side and give V only the opaque ref UUID.
+                  const calculationRefId = await storeMealCalculationRef(
+                    user.id,
+                    calculationToken,
+                    new Date(Date.now() + TOKEN_TTL_SECONDS * 1000),
+                  )
+                  result = JSON.stringify({ ...nutritionResult, calculationRefId })
+                } else {
+                  result = JSON.stringify({ ...nutritionResult })
                 }
-                result = JSON.stringify({ ...nutritionResult, calculationToken })
               } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : 'Nutrition calculation failed'
                 console.error('[V-nutrition-tool-error]', { userId: user.id, error: msg })
@@ -887,16 +902,46 @@ export async function POST(req: NextRequest) {
           } else if (fn.name === 'prepare_meal_log') {
             try {
               const logArgs = JSON.parse(fn.arguments) as {
-                calculationToken: string
+                calculationRefId?: string    // primary path — opaque UUID from server
+                calculationToken?: string    // legacy fallback — accepted during transition
                 mealType: string
                 logDate: string
                 includeIngredientIndexes?: number[]
               }
 
-              if (!logArgs.calculationToken) {
-                result = JSON.stringify({ status: 'error', message: 'Missing calculationToken. For a repeat meal call get_meal_log first; for a new food call calculate_nutrition first. Then pass the exact token from that result here in a subsequent response — never generate this call and the prior lookup simultaneously.' })
+              // Resolve the full signed token from the server-managed reference store.
+              // LEGACY PATH — safe to remove once all active sessions have expired (≥2 h after
+              // the Option 2 code ships to production). Sessions started before that deploy may
+              // still carry a raw calculationToken in their React state. The legacy path still
+              // runs verifyMealLogToken, so forged or model-corrupted tokens are rejected.
+              // Removal: delete the `else if (logArgs.calculationToken)` branch and the
+              // `calculationToken?: string` field in the logArgs type assertion above.
+              let resolvedToken: string | null = null
+              let resolutionError: string | null = null
+
+              if (logArgs.calculationRefId) {
+                const refResult = await resolveMealCalculationRef(logArgs.calculationRefId, user.id)
+                if (!refResult.ok) {
+                  const hint =
+                    refResult.reason === 'expired'  ? 'The calculation reference has expired (older than 2 hours). Call get_meal_log again (repeat meal) or calculate_nutrition again (new food) to get a fresh reference.' :
+                    refResult.reason === 'db_error' ? 'Meal logging is temporarily unavailable. Tell the user to try again later.' :
+                    /* not_found */                   'The calculation reference was not found. Call get_meal_log again (repeat meal) or calculate_nutrition again (new food) to get a new reference.'
+                  result = JSON.stringify({ status: 'error', reason: refResult.reason, message: hint })
+                  resolutionError = refResult.reason
+                  console.log('[V-meal-log-resolve-fail]', { userId: user.id, reason: refResult.reason })
+                } else {
+                  resolvedToken = refResult.token
+                }
+              } else if (logArgs.calculationToken) {
+                // Legacy path: accept a raw signed token from sessions that pre-date the ref system.
+                resolvedToken = logArgs.calculationToken
               } else {
-                const verified = verifyMealLogToken(logArgs.calculationToken, user.id)
+                result = JSON.stringify({ status: 'error', message: 'Missing calculationRefId. Call get_meal_log (repeat meal) or calculate_nutrition (new food) first, then pass the returned calculationRefId here in a subsequent response.' })
+                resolutionError = 'missing'
+              }
+
+              if (!resolutionError && resolvedToken) {
+                const verified = verifyMealLogToken(resolvedToken, user.id)
                 if (!verified.ok) {
                   const hint =
                     verified.reason === 'no_key'            ? 'Meal logging is temporarily unavailable. Tell the user to try again later.' :
@@ -929,7 +974,7 @@ export async function POST(req: NextRequest) {
                     emitRaw({
                       type: 'meal_log_pending',
                       data: {
-                        calculationToken: logArgs.calculationToken,
+                        calculationToken: resolvedToken,
                         // Forwarded to the confirm endpoint so the server logs exactly this set.
                         includeIngredientIndexes: selectedIndexes,
                         resolvedIngredients: selected.map(({ ingredient }) => ({
@@ -969,17 +1014,26 @@ export async function POST(req: NextRequest) {
               const logArgs = JSON.parse(fn.arguments) as GetMealLogArgs
               const logResult = await getMealLog(user.id, logArgs)
               if (logResult.status === 'found' && logResult.calculationToken) {
-                // Emit the token so the client can forward it on the next turn.
+                // Emit the full token to the client (trusted path — MealLogConfirmCard + confirm endpoint).
                 emitRaw({ type: 'calculation_token', calculationToken: logResult.calculationToken })
+                // Store server-side and give V only the opaque ref UUID.
+                const calculationRefId = await storeMealCalculationRef(
+                  user.id,
+                  logResult.calculationToken,
+                  new Date(Date.now() + TOKEN_TTL_SECONDS * 1000),
+                )
+                // Strip the token from V's result; expose only the ref ID and metadata.
+                const { calculationToken: _omit, ...resultWithoutToken } = logResult
+                result = JSON.stringify({ ...resultWithoutToken, calculationRefId })
+              } else {
+                result = JSON.stringify(logResult)
               }
-              // Return the full result to V (calculationToken included so V can call prepare_meal_log).
-              result = JSON.stringify(logResult)
               console.log('[V-get-meal-log]', {
-                userId:      user.id,
-                status:      logResult.status,
-                itemCount:   logResult.itemCount ?? 0,
+                userId:       user.id,
+                status:       logResult.status,
+                itemCount:    logResult.itemCount ?? 0,
                 tokenPresent: !!logResult.calculationToken,
-                tokenLength: logResult.calculationToken?.length ?? 0,
+                tokenLength:  logResult.calculationToken?.length ?? 0,
               })
             } catch (err) {
               const msg = err instanceof Error ? err.message : 'Failed to retrieve meal log'

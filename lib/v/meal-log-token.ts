@@ -10,7 +10,8 @@ import type { IngredientResult, UnresolvedIngredient } from './tools/calculate-n
 function getSigningKey() { return process.env.MEAL_LOG_SIGNING_KEY ?? '' }
 
 // 2-hour window — enough for a realistic coaching conversation.
-const TOKEN_TTL_SECONDS = 7200
+// Exported so MealCalculationRef rows use the same expiry.
+export const TOKEN_TTL_SECONDS = 7200
 
 export interface MealLogTokenPayload {
   calculationId: string
