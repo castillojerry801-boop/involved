@@ -41,9 +41,10 @@ vi.mock('@/lib/supabase/server', () => ({
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
+    // $queryRaw is used by checkAndConsumeVUsage (atomic conditional increment).
+    // Return [{ n: 1 }] to simulate an allowed, first-use increment.
+    $queryRaw: vi.fn().mockResolvedValue([{ n: 1 }]),
     aiUsageLog: {
-      upsert: vi.fn().mockResolvedValue({ interactionCount: 1 }),
-      update: vi.fn().mockResolvedValue({}),
       findUnique: vi.fn().mockResolvedValue(null),
     },
     // Program-quality chain (session-composition) — never called on non-program turns

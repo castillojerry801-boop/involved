@@ -20,6 +20,18 @@ vi.mock('@/lib/ai/request-logger', () => ({
   buildTokenLog: vi.fn().mockReturnValue({ userId: 'u1', feature: 'meal_photo', operationType: 'photo_analysis', model: 'gpt-4o', inputTokens: 100, outputTokens: 50, cachedInputTokens: 0, audioBytes: null, estimatedCostUsd: null, pricingStatus: 'confirmed' }),
   flushRequestLogs: vi.fn().mockResolvedValue(undefined),
 }))
+vi.mock('@/lib/subscription/entitlements', () => ({
+  getUserEntitlement: vi.fn().mockResolvedValue({
+    tier: 'plus', isPlus: true, isTrial: false, isFree: false,
+    isTrainer: false, isTrainerSponsored: false, isAdminGrant: false,
+    status: 'active', trialEndsAt: null, trialDaysRemaining: null,
+    currentPeriodEnd: null, cancelAtPeriodEnd: false,
+  }),
+}))
+vi.mock('@/lib/v/usage', () => ({
+  checkAndConsumeVUsage: vi.fn().mockResolvedValue({ allowed: true, count: 1, limit: null }),
+  decrementVUsage: vi.fn().mockResolvedValue(undefined),
+}))
 
 import { createClient } from '@/lib/supabase/server'
 import { flushRequestLogs } from '@/lib/ai/request-logger'

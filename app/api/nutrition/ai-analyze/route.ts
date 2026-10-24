@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/ai/client'
 import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
+import { getUserEntitlement } from '@/lib/subscription/entitlements'
+import { hasFeatureAccess } from '@/lib/subscription/config'
+import { checkAndConsumeVUsage, decrementVUsage } from '@/lib/v/usage'
 import type OpenAI from 'openai'
 
 const SYSTEM_PROMPT = `You are a nutrition expert and dietitian. When given a photo of food, analyze it and estimate the nutritional content as accurately as possible.
@@ -53,6 +56,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Entitlement check — must precede body parsing to avoid wasted work on blocked requests
+    const ent = await getUserEntitlement(user.id)
+    if (!hasFeatureAccess(ent.tier, 'meal_photo_analysis')) {
+      return NextResponse.json(
+        { error: 'Premium subscription required for photo analysis' },
+        { status: 403 },
+      )
+    }
+
     const body = await req.json() as { imageBase64?: string; userContext?: string }
     const { imageBase64, userContext } = body
 
@@ -62,6 +74,12 @@ export async function POST(req: NextRequest) {
 
     const match = imageBase64.match(/^data:([^;]+);base64,(.+)$/)
     if (!match) return NextResponse.json({ error: 'Invalid image data' }, { status: 400 })
+
+    // Usage accounting — only consume for requests that pass validation
+    const usage = await checkAndConsumeVUsage(user.id, ent.tier, 'meal_photo')
+    if (!usage.allowed) {
+      return NextResponse.json({ error: 'Monthly photo analysis limit reached' }, { status: 429 })
+    }
 
     const openai = getOpenAI()
 
@@ -75,14 +93,21 @@ export async function POST(req: NextRequest) {
       text: 'Analyze this food photo and provide nutritional estimates. Apply the confidence hierarchy from the system prompt.',
     })
 
-    const response = await openai.chat.completions.create({
-      model: process.env.AI_MODEL_VISION ?? 'gpt-4o',
-      max_tokens: 1200,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userContent },
-      ],
-    })
+    let response: Awaited<ReturnType<typeof openai.chat.completions.create>>
+    try {
+      response = await openai.chat.completions.create({
+        model: process.env.AI_MODEL_VISION ?? 'gpt-4o',
+        max_tokens: 1200,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userContent },
+        ],
+      })
+    } catch (aiErr) {
+      // Refund the usage credit — the OpenAI call failed before producing any result
+      await decrementVUsage(user.id, 'meal_photo')
+      throw aiErr
+    }
 
     const visionModel = process.env.AI_MODEL_VISION ?? 'gpt-4o'
     await flushRequestLogs([

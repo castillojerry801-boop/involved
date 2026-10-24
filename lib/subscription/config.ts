@@ -13,7 +13,7 @@ export const PRICING = {
   currency: 'USD',
   currencySymbol: '$',
   monthly: {
-    amount: 5.99,
+    amount: 6.99,
     productIds: {
       stripe: 'prod_involved_plus_monthly',
       apple:  'com.involved.plus.monthly',
@@ -41,32 +41,34 @@ export function annualSavings() {
 }
 
 // ─── Trainer tier config ──────────────────────────────────────────────────────
-// Pricing is placeholder — finalize with payment provider before launch.
-// maxClients is enforced at the application layer.
+// Three fixed monthly plans — Apple App Store and Google Play only (no Stripe).
+// maxClients is enforced at the application layer; Studio (50) is the hard ceiling.
+// Product IDs are placeholders — configure in App Store Connect and Google Play
+// Console before enabling billing.
 
 export const TRAINER_TIERS = {
-  trainer_10: { maxClients: 10, monthlyAmount: 29.99, label: 'Starter' },
-  trainer_20: { maxClients: 20, monthlyAmount: 49.99, label: 'Growth' },
-  trainer_50: { maxClients: 50, monthlyAmount: 99.99, label: 'Pro' },
+  trainer_starter: { maxClients:  5, monthlyAmount: 24.99, label: 'Starter' },
+  trainer_pro:     { maxClients: 20, monthlyAmount: 49.99, label: 'Pro'     },
+  trainer_studio:  { maxClients: 50, monthlyAmount: 99.99, label: 'Studio'  },
 } as const
 
 export type TrainerTierKey = keyof typeof TRAINER_TIERS
 
-export const TRAINER_PRODUCT_IDS: Record<TrainerTierKey, { stripe: string; apple: string; google: string }> = {
-  trainer_10: {
-    stripe: 'prod_involved_trainer_starter_monthly',
+// Maximum active clients across all plans — Studio cap is the absolute ceiling.
+export const TRAINER_MAX_CLIENTS_ABSOLUTE = 50
+
+export const TRAINER_PRODUCT_IDS: Record<TrainerTierKey, { apple: string; google: string }> = {
+  trainer_starter: {
     apple:  'com.involved.trainer.starter.monthly',
     google: 'involved_trainer_starter_monthly',
   },
-  trainer_20: {
-    stripe: 'prod_involved_trainer_growth_monthly',
-    apple:  'com.involved.trainer.growth.monthly',
-    google: 'involved_trainer_growth_monthly',
-  },
-  trainer_50: {
-    stripe: 'prod_involved_trainer_pro_monthly',
+  trainer_pro: {
     apple:  'com.involved.trainer.pro.monthly',
     google: 'involved_trainer_pro_monthly',
+  },
+  trainer_studio: {
+    apple:  'com.involved.trainer.studio.monthly',
+    google: 'involved_trainer_studio_monthly',
   },
 }
 
@@ -140,7 +142,7 @@ function envInt(key: string, fallback: number): number {
 
 export const AI_LIMITS: Record<EffectiveTier, AiLimitRecord> = {
   free: {
-    coach_message:       envInt('LIMIT_FREE_COACH',         25),
+    coach_message:       envInt('LIMIT_FREE_COACH',         20),
     workout_generation:  envInt('LIMIT_FREE_WORKOUT',        5),
     meal_photo:          envInt('LIMIT_FREE_MEAL_PHOTO',     0),
     label_scan:          envInt('LIMIT_FREE_LABEL_SCAN',     0),
@@ -212,6 +214,5 @@ export const TRAINER_HIGHLIGHTS = [
   'Assign and customize programs per client',
   'Set nutrition and training targets per client',
   'V AI summaries and draft suggestions for clients',
-  'Seat-based billing — pay for active clients',
   'Clients keep their data if the relationship ends',
 ] as const

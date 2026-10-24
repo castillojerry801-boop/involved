@@ -1,4 +1,5 @@
 import 'server-only'
+import { timingSafeEqual } from 'crypto'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
@@ -7,14 +8,40 @@ import { TRAINER_TIERS, type TrainerTierKey } from '@/lib/subscription/config'
 /**
  * POST /api/trainer/subscribe
  *
- * Provisions a trainer subscription record after payment is confirmed
- * by the payment provider webhook. This endpoint is called by the webhook
- * handler (or internally after Stripe checkout completion).
+ * Provisions a trainer subscription after payment is confirmed by the Apple
+ * App Store or Google Play billing webhook. This endpoint is NOT a self-service
+ * API — it must only be called with a valid INTERNAL_TRAINER_PROVISIONING_KEY.
  *
- * Payment provider webhook configuration is required before this flow
- * is live. See /docs/NATIVE_BRIDGE.md — Payment section.
+ * All unauthenticated or key-less requests are rejected with 403 regardless of
+ * billing source. Self-service activation is blocked until verified billing
+ * webhooks are integrated.
+ *
+ * TRAINER_USER_IDS env var grants trainer access without touching this route.
  */
+
+function keyMatches(provided: string, expected: string): boolean {
+  try {
+    const a = Buffer.from(provided, 'utf8')
+    const b = Buffer.from(expected, 'utf8')
+    if (a.length !== b.length) return false
+    return timingSafeEqual(a, b)
+  } catch {
+    return false
+  }
+}
+
 export async function POST(req: NextRequest) {
+  // Key guard — must precede auth check to prevent timing-based enumeration.
+  // Self-service activation fails closed when INTERNAL_TRAINER_PROVISIONING_KEY is unset.
+  const provisioningKey = process.env.INTERNAL_TRAINER_PROVISIONING_KEY
+  const internalKey = req.headers.get('x-internal-key')
+  if (!internalKey || !provisioningKey || !keyMatches(internalKey, provisioningKey)) {
+    return Response.json(
+      { error: 'Trainer activation requires verified billing. Self-service activation is not available.' },
+      { status: 403 },
+    )
+  }
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -23,7 +50,7 @@ export async function POST(req: NextRequest) {
     tierKey:                string
     externalSubscriptionId: string
     externalPriceId:        string
-    billingSource:          'stripe' | 'apple' | 'google' | 'manual'
+    billingSource:          'apple' | 'google' | 'manual'
     currentPeriodStart?:    string
     currentPeriodEnd?:      string
   }

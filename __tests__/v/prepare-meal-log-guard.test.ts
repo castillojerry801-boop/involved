@@ -64,7 +64,9 @@ const { mockCreate, mockGetMealLog, mockPrisma, mockUser } = vi.hoisted(() => {
   const mockCreate = vi.fn()
   const mockGetMealLog = vi.fn()
   const mockPrisma = {
-    aiUsageLog: { upsert: vi.fn().mockResolvedValue({ interactionCount: 1 }), update: vi.fn() },
+    // $queryRaw used by checkAndConsumeVUsage; return [{ n: 1 }] = allowed.
+    $queryRaw: vi.fn().mockResolvedValue([{ n: 1 }]),
+    aiUsageLog: { findUnique: vi.fn().mockResolvedValue(null) },
     foodLogEntry: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn() },
     mealCalculationRef: {
       create:     vi.fn().mockResolvedValue({ id: 'test-ref-id-001' }),
@@ -197,7 +199,7 @@ beforeEach(() => {
   vi.stubEnv('MEAL_LOG_SIGNING_KEY', TEST_KEY)
   vi.clearAllMocks()
   // Restore persistent mocks cleared by clearAllMocks
-  mockPrisma.aiUsageLog.upsert.mockResolvedValue({ interactionCount: 1 })
+  mockPrisma.$queryRaw.mockResolvedValue([{ n: 1 }])
   mockPrisma.mealCalculationRef.create.mockResolvedValue({ id: MOCK_REF_ID })
   mockPrisma.mealCalculationRef.deleteMany.mockResolvedValue({ count: 0 })
 })
@@ -416,7 +418,7 @@ describe('prepare_meal_log guard', () => {
 
       for (const badToken of ['', tampered, wrongUser]) {
         vi.clearAllMocks()
-        mockPrisma.aiUsageLog.upsert.mockResolvedValue({ interactionCount: 1 })
+        mockPrisma.$queryRaw.mockResolvedValue([{ n: 1 }])
         mockCreate
           .mockResolvedValueOnce(makeTool('prepare_meal_log', { calculationToken: badToken, mealType: 'lunch', logDate: '2026-10-22' }))
           .mockResolvedValueOnce(makeText('Cannot log.'))

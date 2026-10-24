@@ -1,6 +1,7 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
 import { randomBytes } from 'crypto'
+import { TRAINER_MAX_CLIENTS_ABSOLUTE } from '@/lib/subscription/config'
 
 const INVITATION_EXPIRY_DAYS = 7
 
@@ -13,7 +14,7 @@ export async function createInvitation(
   trainerId:    string,
   invitedEmail: string,
 ): Promise<{ token: string; expiresAt: Date }> {
-  // Check seat availability before sending
+  // Pre-send seat check (UX guard; the authoritative check is in acceptInvitation).
   await assertSeatAvailable(trainerId)
 
   // Cancel any existing pending invitation for this email from this trainer
@@ -37,6 +38,11 @@ export async function createInvitation(
  * Accept a trainer invitation. The authenticated user (clientId) accepts
  * an invitation by its token.
  *
+ * Concurrency-safe seat enforcement: we acquire a FOR UPDATE lock on the
+ * trainer_subscriptions row inside the transaction. Any concurrent accept for
+ * the same trainer blocks at the lock until the first transaction commits,
+ * so the count check + relationship insert is fully serialized per trainer.
+ *
  * On success:
  *   - TrainerInvitation → accepted
  *   - TrainerClientRelationship created (status=active)
@@ -48,7 +54,7 @@ export async function acceptInvitation(
 ): Promise<void> {
   const invitation = await prisma.trainerInvitation.findUnique({ where: { token } })
 
-  if (!invitation)                    throw new Error('Invitation not found')
+  if (!invitation)                     throw new Error('Invitation not found')
   if (invitation.status !== 'pending') throw new Error('Invitation is no longer valid')
   if (invitation.expiresAt < new Date()) throw new Error('Invitation has expired')
 
@@ -62,10 +68,45 @@ export async function acceptInvitation(
     throw new Error('Relationship already active')
   }
 
-  await assertSeatAvailable(trainerId)
+  // Resolve TRAINER_USER_IDS bypass once before the transaction.
+  const trainerOverrides = (process.env.TRAINER_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  const isBypassTrainer  = trainerOverrides.includes(trainerId)
 
-  // Transactional: create entitlement + relationship + update invitation
   await prisma.$transaction(async tx => {
+    if (!isBypassTrainer) {
+      // Lock the trainer_subscriptions row for this trainer for the duration of
+      // the transaction. Concurrent accepts block here until we commit, ensuring
+      // the subsequent count check + relationship insert are atomic per trainer.
+      const lockedRows = await tx.$queryRaw<Array<{ max_clients: number; status: string }>>`
+        SELECT max_clients, status
+        FROM   trainer_subscriptions
+        WHERE  user_id = ${trainerId}::uuid
+        FOR UPDATE
+      `
+      if (lockedRows.length === 0 || lockedRows[0].status !== 'active') {
+        throw new Error('Trainer subscription required')
+      }
+      const effectiveMax = Math.min(lockedRows[0].max_clients, TRAINER_MAX_CLIENTS_ABSOLUTE)
+      const activeCount = await tx.trainerClientRelationship.count({
+        where: { trainerId, status: 'active', revokedAt: null },
+      })
+      if (activeCount >= effectiveMax) {
+        throw new Error(`Client limit reached (${effectiveMax} clients)`)
+      }
+    } else {
+      // Bypass trainers skip the subscription check but still respect the absolute ceiling.
+      // Lock the trainer's profile row to serialize concurrent accepts — same guarantee
+      // as the FOR UPDATE on trainer_subscriptions for paid trainers, without requiring
+      // a TrainerSubscription row to exist.
+      await tx.$queryRaw`SELECT id FROM profiles WHERE id = ${trainerId}::uuid FOR UPDATE`
+      const activeCount = await tx.trainerClientRelationship.count({
+        where: { trainerId, status: 'active', revokedAt: null },
+      })
+      if (activeCount >= TRAINER_MAX_CLIENTS_ABSOLUTE) {
+        throw new Error(`Client limit reached (${TRAINER_MAX_CLIENTS_ABSOLUTE} clients)`)
+      }
+    }
+
     const entitlement = await tx.userEntitlement.create({
       data: {
         userId:    clientId,
@@ -81,10 +122,10 @@ export async function acceptInvitation(
       await tx.trainerClientRelationship.update({
         where: { id: existing.id },
         data: {
-          status:                'active',
+          status:                 'active',
           sponsoredEntitlementId: entitlement.id,
-          acceptedAt:            new Date(),
-          revokedAt:             null,
+          acceptedAt:             new Date(),
+          revokedAt:              null,
         },
       })
     } else {
@@ -92,9 +133,9 @@ export async function acceptInvitation(
         data: {
           trainerId,
           clientId,
-          status:                'active',
+          status:                 'active',
           sponsoredEntitlementId: entitlement.id,
-          acceptedAt:            new Date(),
+          acceptedAt:             new Date(),
         },
       })
     }
@@ -102,7 +143,7 @@ export async function acceptInvitation(
     await tx.trainerInvitation.update({
       where: { id: invitation.id },
       data: {
-        status:          'accepted',
+        status:           'accepted',
         acceptedByUserId: clientId,
         acceptedAt:       new Date(),
       },
@@ -182,10 +223,20 @@ export async function revokeClientRelationship(
 
 /**
  * Enforce seat limit — throws if the trainer is at capacity.
+ * Used as a pre-send UX guard in createInvitation.
+ * The authoritative concurrency-safe check is in acceptInvitation (FOR UPDATE lock).
  */
 async function assertSeatAvailable(trainerId: string): Promise<void> {
   const trainerOverrides = (process.env.TRAINER_USER_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
-  if (trainerOverrides.includes(trainerId)) return
+  if (trainerOverrides.includes(trainerId)) {
+    const activeCount = await prisma.trainerClientRelationship.count({
+      where: { trainerId, status: 'active', revokedAt: null },
+    })
+    if (activeCount >= TRAINER_MAX_CLIENTS_ABSOLUTE) {
+      throw new Error(`Client limit reached (${TRAINER_MAX_CLIENTS_ABSOLUTE} clients)`)
+    }
+    return
+  }
 
   const [trainerSub, activeCount] = await Promise.all([
     prisma.trainerSubscription.findUnique({ where: { userId: trainerId } }),
@@ -197,7 +248,8 @@ async function assertSeatAvailable(trainerId: string): Promise<void> {
   if (!trainerSub || trainerSub.status !== 'active') {
     throw new Error('Trainer subscription required')
   }
-  if (activeCount >= trainerSub.maxClients) {
-    throw new Error(`Seat limit reached (${trainerSub.maxClients} clients)`)
+  const effectiveMax = Math.min(trainerSub.maxClients, TRAINER_MAX_CLIENTS_ABSOLUTE)
+  if (activeCount >= effectiveMax) {
+    throw new Error(`Client limit reached (${effectiveMax} clients)`)
   }
 }

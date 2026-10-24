@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Check, Users, Loader2, X } from 'lucide-react'
+import { ArrowLeft, Check, Users, Clock } from 'lucide-react'
 import { TRAINER_TIERS, type TrainerTierKey } from '@/lib/subscription/config'
 import { cn } from '@/lib/utils'
 
@@ -18,60 +17,6 @@ const TRAINER_HIGHLIGHTS = [
 ]
 
 export default function TrainerUpgradePage() {
-  const [selected, setSelected] = useState<TrainerTierKey>('trainer_10')
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState<string | null>(null)
-  const [success, setSuccess]   = useState(false)
-
-  async function handleSubscribe() {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/trainer/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tierKey:                selected,
-          externalSubscriptionId: `dev_${selected}_${Date.now()}`,
-          externalPriceId:        `dev_price_${selected}`,
-          billingSource:          'manual',
-        }),
-      })
-      const data = await res.json() as { ok?: boolean; error?: string }
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? 'Something went wrong.')
-        return
-      }
-      setSuccess(true)
-    } catch {
-      setError('Something went wrong. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (success) {
-    return (
-      <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <div className="inline-flex size-16 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 mb-6">
-          <Check className="size-8 text-emerald-500" />
-        </div>
-        <h1 className="text-2xl font-black text-zinc-900 dark:text-white mb-3">
-          Welcome to Involved Trainer
-        </h1>
-        <p className="text-zinc-500 mb-8">
-          Your trainer account is active. Head to the dashboard to invite your first client.
-        </p>
-        <Link
-          href="/trainer"
-          className="inline-flex items-center gap-2 rounded-2xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-6 py-3 font-black hover:opacity-90 transition-opacity"
-        >
-          Go to Trainer Dashboard
-        </Link>
-      </div>
-    )
-  }
-
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
       <div className="mb-8 flex items-center gap-3">
@@ -87,25 +32,20 @@ export default function TrainerUpgradePage() {
         </div>
       </div>
 
-      {/* Tier cards */}
+      {/* Tier cards — display only, no selection interaction */}
       <div className="grid gap-4 sm:grid-cols-3 mb-8">
         {TIER_KEYS.map(key => {
           const tier = TRAINER_TIERS[key]
-          const active = selected === key
           return (
-            <button
+            <div
               key={key}
-              onClick={() => setSelected(key)}
               className={cn(
-                'rounded-2xl border-2 p-5 text-left transition-all',
-                active
-                  ? 'border-zinc-900 dark:border-white bg-white dark:bg-zinc-900 shadow-md'
-                  : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 hover:border-zinc-400 dark:hover:border-zinc-500'
+                'rounded-2xl border-2 p-5 text-left',
+                'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50',
               )}
             >
-              <div className="flex items-center justify-between mb-3">
+              <div className="mb-3">
                 <span className="text-sm font-bold text-zinc-900 dark:text-white">{tier.label}</span>
-                {active && <Check className="size-4 text-emerald-500" />}
               </div>
               <div className="mb-1">
                 <span className="text-2xl font-black text-zinc-900 dark:text-white">
@@ -117,7 +57,7 @@ export default function TrainerUpgradePage() {
                 <Users className="size-3.5" />
                 Up to {tier.maxClients} clients
               </div>
-            </button>
+            </div>
           )
         })}
       </div>
@@ -137,24 +77,18 @@ export default function TrainerUpgradePage() {
         </ul>
       </div>
 
-      {/* CTA */}
-      {error && (
-        <div className="flex items-center gap-2 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 px-4 py-3 mb-4">
-          <X className="size-4 text-red-500 shrink-0" />
-          <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+      {/* Pending billing state — replaces the purchase button */}
+      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 px-6 py-5 flex items-start gap-4">
+        <Clock className="size-5 text-zinc-400 shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-zinc-900 dark:text-white mb-1">
+            Trainer subscriptions coming soon
+          </p>
+          <p className="text-sm text-zinc-500">
+            In-app purchases for Trainer plans are not available yet. Pricing and plan details are shown above for reference. Check back soon.
+          </p>
         </div>
-      )}
-      <button
-        onClick={handleSubscribe}
-        disabled={loading}
-        className="w-full flex items-center justify-center gap-2 rounded-2xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-4 font-black text-base hover:opacity-90 transition-opacity disabled:opacity-50"
-      >
-        {loading ? <Loader2 className="size-5 animate-spin" /> : <Users className="size-5" />}
-        Subscribe — {TRAINER_TIERS[selected].label} ({TRAINER_TIERS[selected].maxClients} clients)
-      </button>
-      <p className="text-center text-xs text-zinc-400 mt-3">
-        Billing integration in progress. This activates your trainer account immediately.
-      </p>
+      </div>
     </div>
   )
 }
