@@ -21,7 +21,7 @@ export default function TrainerUpgradePage() {
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
       <div className="mb-8 flex items-center gap-3">
         <Link
-          href="/trainer"
+          href="/plus"
           className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
         >
           <ArrowLeft className="size-4 text-zinc-600 dark:text-zinc-400" />
@@ -46,12 +46,6 @@ export default function TrainerUpgradePage() {
             >
               <div className="mb-3">
                 <span className="text-sm font-bold text-zinc-900 dark:text-white">{tier.label}</span>
-              </div>
-              <div className="mb-1">
-                <span className="text-2xl font-black text-zinc-900 dark:text-white">
-                  ${tier.monthlyAmount}
-                </span>
-                <span className="text-xs text-zinc-500"> / mo</span>
               </div>
               <div className="flex items-center gap-1.5 text-xs text-zinc-500">
                 <Users className="size-3.5" />
@@ -85,7 +79,7 @@ export default function TrainerUpgradePage() {
             Trainer subscriptions coming soon
           </p>
           <p className="text-sm text-zinc-500">
-            In-app purchases for Trainer plans are not available yet. Pricing and plan details are shown above for reference. Check back soon.
+            In-app purchases for Trainer plans are not available yet. Plan details are shown above for reference. Check back soon.
           </p>
         </div>
       </div>

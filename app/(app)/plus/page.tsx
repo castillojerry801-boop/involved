@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Sparkles, Loader2, X } from 'lucide-react'
-import { PRICING, TRIAL_DAYS, annualSavings, PLUS_HIGHLIGHTS } from '@/lib/subscription/config'
+import { Check, Sparkles, Loader2, X, Users, Clock } from 'lucide-react'
+import {
+  PRICING, TRIAL_DAYS, annualSavings, PLUS_HIGHLIGHTS,
+  TRAINER_TIERS, TRAINER_HIGHLIGHTS, type TrainerTierKey,
+} from '@/lib/subscription/config'
 import type { Entitlement } from '@/lib/subscription/entitlements'
 
 type Plan = 'monthly' | 'annual'
@@ -11,6 +14,8 @@ type Plan = 'monthly' | 'annual'
 function fmt(n: number) {
   return `${PRICING.currencySymbol}${n.toFixed(2)}`
 }
+
+const TRAINER_TIER_KEYS = Object.keys(TRAINER_TIERS) as TrainerTierKey[]
 
 export default function PlusPage() {
   const router = useRouter()
@@ -46,7 +51,6 @@ export default function PlusPage() {
         setError(msg)
         return
       }
-      // Reload entitlement and redirect to app
       router.push('/today')
     } catch {
       setError('Something went wrong. Please try again.')
@@ -55,7 +59,8 @@ export default function PlusPage() {
     }
   }
 
-  const alreadyPlus = entitlement?.isPlus
+  const isTrainer   = entitlement?.isTrainer
+  const alreadyPlus = entitlement?.isPlus && !isTrainer
   const isTrial     = entitlement?.isTrial
   const trialUsed   = entitlement !== null && !entitlement.isFree && !entitlement.isPlus && !entitlement.isTrial
 
@@ -76,7 +81,15 @@ export default function PlusPage() {
         </p>
       </div>
 
-      {/* Current status banner */}
+      {/* Current status banners */}
+      {isTrainer && (
+        <div className="mb-6 flex items-center gap-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/30 px-4 py-3">
+          <Check className="size-5 text-emerald-500 shrink-0" />
+          <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
+            You&apos;re on Involved Trainer. You have full Plus access and can manage clients.
+          </p>
+        </div>
+      )}
       {alreadyPlus && (
         <div className="mb-6 flex items-center gap-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/30 px-4 py-3">
           <Check className="size-5 text-emerald-500 shrink-0" />
@@ -94,8 +107,8 @@ export default function PlusPage() {
         </div>
       )}
 
-      {/* Plan selector */}
-      {!alreadyPlus && (
+      {/* Personal Plus plan section — hidden for existing Plus and Trainer subscribers */}
+      {!alreadyPlus && !isTrainer && (
         <>
           <div className="flex rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 p-1 mb-4">
             <button
@@ -246,7 +259,7 @@ export default function PlusPage() {
             'Goals',
             'Recent foods & favorites',
             'Saved meals',
-            `${25} AI Coach messages / month`,
+            `${20} AI Coach messages / month`,
           ].map(item => (
             <li key={item} className="flex items-start gap-2 text-sm text-zinc-500 dark:text-zinc-400">
               <Check className="size-4 text-zinc-300 dark:text-zinc-600 shrink-0 mt-0.5" />
@@ -255,6 +268,67 @@ export default function PlusPage() {
           ))}
         </ul>
       </div>
+
+      {/* Trainer plans discovery — shown to all non-trainer users */}
+      {!isTrainer && (
+        <div className="mt-10">
+          <div className="mb-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-1">For coaches</p>
+            <h2 className="text-xl font-black text-zinc-900 dark:text-white mb-2">Involved Trainer</h2>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              Coach clients with AI tools, reusable program libraries, and per-client progress tracking.
+              Includes everything in Involved+.
+            </p>
+          </div>
+
+          {/* Tier cards */}
+          <div className="grid gap-3 sm:grid-cols-3 mb-5">
+            {TRAINER_TIER_KEYS.map(key => {
+              const tier = TRAINER_TIERS[key]
+              return (
+                <div
+                  key={key}
+                  className="rounded-2xl border-2 border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4"
+                >
+                  <p className="text-sm font-bold text-zinc-900 dark:text-white mb-2">{tier.label}</p>
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+                    <Users className="size-3.5 shrink-0" />
+                    Up to {tier.maxClients} clients
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Trainer features */}
+          <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-3">
+              Included with every Trainer plan
+            </p>
+            <ul className="space-y-2">
+              {TRAINER_HIGHLIGHTS.map(item => (
+                <li key={item} className="flex items-start gap-2.5 text-sm text-zinc-700 dark:text-zinc-300">
+                  <Check className="size-4 text-emerald-500 shrink-0 mt-0.5" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Coming soon */}
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 px-5 py-4 flex items-start gap-3">
+            <Clock className="size-4 text-zinc-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-zinc-900 dark:text-white mb-0.5">
+                Trainer plans coming soon
+              </p>
+              <p className="text-xs text-zinc-500">
+                In-app purchases for Trainer plans are not available yet. Check back soon.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
