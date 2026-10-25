@@ -5,16 +5,14 @@ import { prisma } from '@/lib/prisma'
 import { createInvitation } from '@/lib/trainer/relationships'
 import { sendTrainerInvite } from '@/lib/email/send-trainer-invite'
 
-// GET: list pending invitations sent by this trainer, OR look up by token
+// GET: list pending invitations sent by this trainer, OR look up by token.
+// Token lookup is PUBLIC — the 64-char random token is the access credential.
+// Only non-sensitive fields (trainer name, status, expiry) are returned.
 export async function GET(req: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-
   const token = req.nextUrl.searchParams.get('token')
 
   if (token) {
-    // Token lookup — used by the client accept page to show trainer info
+    // Public branch — no auth required.
     const inv = await prisma.trainerInvitation.findUnique({
       where: { token },
       include: {
@@ -24,17 +22,23 @@ export async function GET(req: NextRequest) {
       },
     })
     if (!inv) return Response.json({ error: 'Invitation not found' }, { status: 404 })
+    // Only expose the minimum needed for an unauthenticated recipient to recognise
+    // the invitation. invitedEmail is omitted — the recipient knows their own email
+    // and there is no UI that displays it back.
     return Response.json({
       invitation: {
-        trainerName:  inv.trainer.profile?.displayName ?? null,
-        invitedEmail: inv.invitedEmail,
-        status:       inv.status,
-        expiresAt:    inv.expiresAt,
+        trainerName: inv.trainer.profile?.displayName ?? null,
+        status:      inv.status,
+        expiresAt:   inv.expiresAt,
       },
     })
   }
 
-  // Trainer listing their own sent invitations
+  // Authenticated branch — trainer listing their own sent invitations.
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
   const invitations = await prisma.trainerInvitation.findMany({
     where:   { trainerId: user.id },
     orderBy: { sentAt: 'desc' },
@@ -72,9 +76,15 @@ export async function POST(req: NextRequest) {
   try {
     const { token, expiresAt } = await createInvitation(user.id, normalizedEmail)
 
-    await sendTrainerInvite({ toEmail: normalizedEmail, trainerName, token, expiresAt })
+    let emailSent = false
+    try {
+      await sendTrainerInvite({ toEmail: normalizedEmail, trainerName, token, expiresAt })
+      emailSent = true
+    } catch {
+      // Email delivery failed — invitation still exists; trainer can share the link.
+    }
 
-    return Response.json({ ok: true, token, expiresAt })
+    return Response.json({ ok: true, token, expiresAt, emailSent })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Failed to create invitation'
     const status = msg.includes('Seat limit') || msg.includes('subscription required') ? 403 : 500

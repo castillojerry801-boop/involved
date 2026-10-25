@@ -1,15 +1,22 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Turnstile } from '@/components/turnstile'
 import { createClient } from '@/lib/supabase/client'
 
-export default function LoginPage() {
+function safeRedirect(next: string | null): string {
+  if (!next || !next.startsWith('/') || next.startsWith('//')) return '/today'
+  return next
+}
+
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const next = safeRedirect(searchParams.get('next'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [honeypot, setHoneypot] = useState('')
@@ -53,7 +60,7 @@ export default function LoginPage() {
         return
       }
 
-      router.push('/today')
+      router.push(next)
       router.refresh()
     } finally {
       setLoading(false)
@@ -134,10 +141,21 @@ export default function LoginPage() {
 
       <p className="mt-6 text-center text-sm text-zinc-500">
         Don&apos;t have an account?{' '}
-        <Link href="/signup" className="font-medium text-zinc-900 hover:underline dark:text-white">
+        <Link
+          href={next !== '/today' ? `/signup?next=${encodeURIComponent(next)}` : '/signup'}
+          className="font-medium text-zinc-900 hover:underline dark:text-white"
+        >
           Create one
         </Link>
       </p>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   )
 }

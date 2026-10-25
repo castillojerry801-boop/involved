@@ -1,14 +1,21 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Turnstile } from '@/components/turnstile'
 
-export default function SignupPage() {
+function safeRedirect(next: string | null): string | null {
+  if (!next || !next.startsWith('/') || next.startsWith('//')) return null
+  return next
+}
+
+function SignupForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const next = safeRedirect(searchParams.get('next'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
@@ -45,8 +52,10 @@ export default function SignupPage() {
         return
       }
 
-      // Session is set via cookie by the server — go straight to onboarding
-      router.push('/onboarding')
+      // Session is set via cookie by the server.
+      // If a next param was provided (e.g. an invite link), honour it;
+      // otherwise send new users through onboarding.
+      router.push(next ?? '/onboarding')
     } finally {
       setLoading(false)
     }
@@ -128,7 +137,10 @@ export default function SignupPage() {
 
       <p className="mt-6 text-center text-sm text-zinc-500">
         Already have an account?{' '}
-        <Link href="/login" className="font-medium text-zinc-900 hover:underline dark:text-white">
+        <Link
+          href={next ? `/login?next=${encodeURIComponent(next)}` : '/login'}
+          className="font-medium text-zinc-900 hover:underline dark:text-white"
+        >
           Sign in
         </Link>
       </p>
@@ -137,5 +149,13 @@ export default function SignupPage() {
         By creating an account, you agree to our terms of service and privacy policy.
       </p>
     </div>
+  )
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupForm />
+    </Suspense>
   )
 }

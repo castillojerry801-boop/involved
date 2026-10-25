@@ -2,16 +2,26 @@
 
 import { use, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle, XCircle, Loader2, Users } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, Users, LogIn, UserPlus } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import Link from 'next/link'
 
 interface InviteInfo {
-  trainerName:  string | null
-  invitedEmail: string
-  status:       string
-  expiresAt:    string
+  trainerName: string | null
+  status:      string
+  expiresAt:   string
 }
 
-type PageState = 'loading' | 'ready' | 'expired' | 'already_accepted' | 'accepting' | 'success' | 'error'
+type PageState =
+  | 'loading'
+  | 'needs_auth'
+  | 'ready'
+  | 'expired'
+  | 'already_accepted'
+  | 'capacity'
+  | 'accepting'
+  | 'success'
+  | 'error'
 
 export default function AcceptInvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token }   = use(params)
@@ -22,10 +32,24 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
 
   useEffect(() => {
     async function load() {
-      const r = await fetch(`/api/trainer/invite?token=${token}`)
-      if (!r.ok) { setState('error'); setErrorMsg('Invitation not found.'); return }
-      const d = await r.json() as { invitation?: InviteInfo; error?: string }
-      if (!d.invitation) { setState('error'); setErrorMsg(d.error ?? 'Invalid invitation.'); return }
+      // Parallel: fetch invitation info (public) + check auth session
+      const [inviteRes, session] = await Promise.all([
+        fetch(`/api/trainer/invite?token=${token}`),
+        createClient().auth.getSession(),
+      ])
+
+      if (!inviteRes.ok) {
+        setState('error')
+        setErrorMsg('Invitation not found.')
+        return
+      }
+
+      const d = await inviteRes.json() as { invitation?: InviteInfo; error?: string }
+      if (!d.invitation) {
+        setState('error')
+        setErrorMsg(d.error ?? 'Invalid invitation.')
+        return
+      }
 
       setInfo(d.invitation)
 
@@ -33,7 +57,10 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
       if (d.invitation.status !== 'pending' || new Date(d.invitation.expiresAt) < new Date()) {
         setState('expired'); return
       }
-      setState('ready')
+
+      // Valid invitation — check if the user is authenticated
+      const isAuthed = !!session.data.session?.user
+      setState(isAuthed ? 'ready' : 'needs_auth')
     }
     void load()
   }, [token])
@@ -46,15 +73,39 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
       body: JSON.stringify({ token }),
     })
     const d = await r.json() as { ok?: boolean; error?: string }
+
+    if (r.status === 401) {
+      // Session expired between load and accept — send them to sign in
+      setState('needs_auth')
+      return
+    }
     if (!r.ok || !d.ok) {
+      if (d.error?.includes('limit reached')) {
+        setState('capacity')
+        return
+      }
       setState('error')
       setErrorMsg(d.error ?? 'Failed to accept invitation.')
       return
     }
     setState('success')
-    setTimeout(() => router.push('/today'), 2500)
+    // After acceptance, check whether the user has completed onboarding.
+    // New users (no fitnessLevel set) are sent through onboarding so they can
+    // personalise their experience. The trainer sponsorship is already active
+    // in the DB and survives the onboarding flow unchanged.
+    // Established users skip directly to /today.
+    try {
+      const ob = await fetch('/api/onboarding')
+      const obData = ob.ok ? await ob.json() as { complete: boolean } : { complete: true }
+      setTimeout(() => router.push(obData.complete ? '/today' : '/onboarding'), 2000)
+    } catch {
+      setTimeout(() => router.push('/today'), 2000)
+    }
   }
 
+  const nextParam = `/invite/${token}`
+
+  // ── Loading ──────────────────────────────────────────────────────────────────
   if (state === 'loading') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
@@ -64,6 +115,51 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
     )
   }
 
+  // ── Needs auth ───────────────────────────────────────────────────────────────
+  if (state === 'needs_auth') {
+    return (
+      <div className="mx-auto max-w-sm px-4 py-16 text-center">
+        <div className="inline-flex size-16 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 mb-6">
+          <Users className="size-8 text-zinc-600 dark:text-zinc-300" />
+        </div>
+        <h1 className="text-2xl font-black text-zinc-900 dark:text-white mb-2">
+          Trainer Invitation
+        </h1>
+        {info?.trainerName && (
+          <p className="text-base font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+            {info.trainerName}
+          </p>
+        )}
+        <p className="text-sm text-zinc-500 mb-6">
+          has invited you to train together on Involved.
+        </p>
+        <p className="text-sm text-zinc-400 mb-8">
+          Sign in or create a free account to accept this invitation.
+        </p>
+        <div className="flex flex-col gap-3">
+          <Link
+            href={`/login?next=${encodeURIComponent(nextParam)}`}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-4 font-black text-base hover:opacity-90 transition-opacity"
+          >
+            <LogIn className="size-5" />
+            Sign In
+          </Link>
+          <Link
+            href={`/signup?next=${encodeURIComponent(nextParam)}`}
+            className="w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white py-4 font-black text-base hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <UserPlus className="size-5" />
+            Create Account
+          </Link>
+        </div>
+        <p className="mt-6 text-xs text-zinc-400">
+          Free to join. No credit card required.
+        </p>
+      </div>
+    )
+  }
+
+  // ── Expired ──────────────────────────────────────────────────────────────────
   if (state === 'expired') {
     return (
       <div className="mx-auto max-w-sm px-4 py-20 text-center">
@@ -76,6 +172,7 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
     )
   }
 
+  // ── Already accepted ─────────────────────────────────────────────────────────
   if (state === 'already_accepted') {
     return (
       <div className="mx-auto max-w-sm px-4 py-20 text-center">
@@ -92,6 +189,20 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
     )
   }
 
+  // ── Capacity full ────────────────────────────────────────────────────────────
+  if (state === 'capacity') {
+    return (
+      <div className="mx-auto max-w-sm px-4 py-20 text-center">
+        <XCircle className="size-12 text-amber-400 mx-auto mb-4" />
+        <h1 className="text-xl font-black text-zinc-900 dark:text-white mb-2">Trainer is Full</h1>
+        <p className="text-sm text-zinc-500">
+          This trainer has reached their client limit. Let them know so they can free up a spot.
+        </p>
+      </div>
+    )
+  }
+
+  // ── Success ──────────────────────────────────────────────────────────────────
   if (state === 'success') {
     return (
       <div className="mx-auto max-w-sm px-4 py-20 text-center">
@@ -105,6 +216,7 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
     )
   }
 
+  // ── Error ────────────────────────────────────────────────────────────────────
   if (state === 'error') {
     return (
       <div className="mx-auto max-w-sm px-4 py-20 text-center">
@@ -115,7 +227,7 @@ export default function AcceptInvitePage({ params }: { params: Promise<{ token: 
     )
   }
 
-  // state === 'ready' | 'accepting'
+  // ── Ready / Accepting ────────────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-sm px-4 py-20 text-center">
       <div className="inline-flex size-16 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 mb-6">

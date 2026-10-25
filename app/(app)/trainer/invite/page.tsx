@@ -21,7 +21,7 @@ export default function TrainerInvitePage() {
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [loading, setLoading]       = useState(true)
   const [copied, setCopied]         = useState<string | null>(null)
-  const [lastToken, setLastToken]   = useState<string | null>(null)
+  const [sendResult, setSendResult] = useState<{ token: string; emailSent: boolean } | null>(null)
 
   useEffect(() => { loadInvitations() }, [])
 
@@ -40,20 +40,20 @@ export default function TrainerInvitePage() {
     if (!email.trim()) return
     setSending(true)
     setSendError(null)
-    setLastToken(null)
+    setSendResult(null)
 
     const r = await fetch('/api/trainer/invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim() }),
     })
-    const d = await r.json() as { token?: string; error?: string; message?: string }
+    const d = await r.json() as { token?: string; emailSent?: boolean; error?: string }
 
     if (!r.ok) {
       setSendError(d.error ?? 'Failed to send invitation.')
     } else {
       setEmail('')
-      if (d.token) setLastToken(d.token)
+      if (d.token) setSendResult({ token: d.token, emailSent: d.emailSent ?? false })
       await loadInvitations()
     }
     setSending(false)
@@ -123,22 +123,31 @@ export default function TrainerInvitePage() {
           </button>
         </form>
 
-        {/* Dev: show invite link since email isn't wired yet */}
-        {lastToken && (
-          <div className="mt-4 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 p-3">
-            <p className="text-xs font-semibold text-zinc-500 mb-2">
-              Email sending not yet configured — share this link directly:
+        {sendResult && (
+          <div className={`mt-4 rounded-xl border p-3 ${
+            sendResult.emailSent
+              ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/30'
+              : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/30'
+          }`}>
+            <p className={`text-xs font-semibold mb-2 ${
+              sendResult.emailSent
+                ? 'text-emerald-700 dark:text-emerald-400'
+                : 'text-amber-700 dark:text-amber-400'
+            }`}>
+              {sendResult.emailSent
+                ? 'Invitation email sent. You can also share this link:'
+                : 'Email delivery may have failed — share this link directly:'}
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 text-xs text-zinc-700 dark:text-zinc-300 break-all">
-                {typeof window !== 'undefined' ? window.location.origin : ''}/invite/{lastToken}
+                {typeof window !== 'undefined' ? window.location.origin : ''}/invite/{sendResult.token}
               </code>
               <button
-                onClick={() => copyLink(lastToken)}
+                onClick={() => copyLink(sendResult.token)}
                 className="shrink-0 flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-600 px-2 py-1 text-xs font-medium hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
               >
-                {copied === lastToken ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
-                {copied === lastToken ? 'Copied' : 'Copy'}
+                {copied === sendResult.token ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+                {copied === sendResult.token ? 'Copied' : 'Copy'}
               </button>
             </div>
           </div>
