@@ -5,6 +5,8 @@ import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
 import { buildWeeklyReview } from '@/lib/v/weekly-review'
 import type { CompletedWorkoutSummary } from '@/lib/v/weekly-review'
+import { getUserEntitlement } from '@/lib/subscription/entitlements'
+import { hasFeatureAccess } from '@/lib/subscription/config'
 
 export async function GET() {
   const supabase = await createClient()
@@ -12,6 +14,11 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const userId = user.id
+
+  const entitlement = await getUserEntitlement(userId)
+  if (!hasFeatureAccess(entitlement.tier, 'weekly_review')) {
+    return NextResponse.json({ error: 'Involved+ required for weekly review' }, { status: 403 })
+  }
 
   // Monday–Sunday window for this week
   const now     = new Date()

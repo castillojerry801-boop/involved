@@ -159,22 +159,63 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
     }
   }
 
-  // 4. Active trainer-sponsored entitlement
+  // 4. Active trainer-sponsored entitlement — dual-validated
+  // Both the trainer's subscription AND the TrainerClientRelationship must be
+  // currently active. An orphaned UserEntitlement row alone is not sufficient.
+  // cancelAtPeriodEnd=true with status=active is still valid — the billing
+  // system updates status when the period ends; we do not add a grace period.
   if (sponsoredEntitlements.length > 0) {
-    return {
-      tier: 'plus',
-      status: 'active',
-      trialEndsAt: null,
-      trialDaysRemaining: null,
-      currentPeriodEnd: null,
-      cancelAtPeriodEnd: false,
-      isPlus: true,
-      isTrial: false,
-      isFree: false,
-      isTrainer: false,
-      isTrainerSponsored: true,
-      isAdminGrant: false,
+    const trainerIds = [...new Set(
+      sponsoredEntitlements
+        .map(e => e.sourceRef)
+        .filter((r): r is string => typeof r === 'string' && r.length > 0),
+    )]
+
+    if (trainerIds.length > 0) {
+      const bypassIds = (process.env.TRAINER_USER_IDS ?? '')
+        .split(',').map(s => s.trim()).filter(Boolean)
+
+      // Single round-trip: batch both checks in parallel.
+      const [activeTrainerSubs, activeRels] = await Promise.all([
+        prisma.trainerSubscription.findMany({
+          where:  { userId: { in: trainerIds }, status: 'active' },
+          select: { userId: true },
+        }).catch(() => [] as Array<{ userId: string }>),
+        prisma.trainerClientRelationship.findMany({
+          where: {
+            clientId:  userId,
+            trainerId: { in: trainerIds },
+            status:    'active',
+            revokedAt: null,
+          },
+          select: { trainerId: true },
+        }).catch(() => [] as Array<{ trainerId: string }>),
+      ])
+
+      const subEligible = new Set<string>([
+        ...activeTrainerSubs.map(s => s.userId),
+        ...bypassIds.filter(id => trainerIds.includes(id)),
+      ])
+      const relActive = new Set<string>(activeRels.map(r => r.trainerId))
+
+      if (trainerIds.some(id => subEligible.has(id) && relActive.has(id))) {
+        return {
+          tier: 'plus',
+          status: 'active',
+          trialEndsAt: null,
+          trialDaysRemaining: null,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+          isPlus: true,
+          isTrial: false,
+          isFree: false,
+          isTrainer: false,
+          isTrainerSponsored: true,
+          isAdminGrant: false,
+        }
+      }
     }
+    // No valid sponsorship — fall through to admin_grant
   }
 
   // 5. Admin grant

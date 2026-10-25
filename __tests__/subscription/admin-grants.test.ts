@@ -19,10 +19,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // ─── Mock prisma — factory cannot reference hoisted vars ─────────────────────
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    userSubscription: { findUnique: vi.fn() },
-    trainerSubscription: { findUnique: vi.fn() },
-    userEntitlement: { findMany: vi.fn() },
-    profile: { update: vi.fn() },
+    userSubscription:          { findUnique: vi.fn() },
+    trainerSubscription:       { findUnique: vi.fn(), findMany: vi.fn() },
+    userEntitlement:           { findMany: vi.fn() },
+    trainerClientRelationship: { findMany: vi.fn() },
+    profile:                   { update: vi.fn() },
   },
 }))
 
@@ -32,13 +33,16 @@ import { getUserEntitlement } from '../../lib/subscription/entitlements'
 import { isAdmin } from '../../lib/admin/auth'
 
 // ─── Typed mock refs ─────────────────────────────────────────────────────────
-const mockFindUniqueSub = prisma.userSubscription.findUnique as ReturnType<typeof vi.fn>
-const mockFindUniqueTrainer = prisma.trainerSubscription.findUnique as ReturnType<typeof vi.fn>
-const mockFindManyEntitlements = prisma.userEntitlement.findMany as ReturnType<typeof vi.fn>
+const mockFindUniqueSub        = prisma.userSubscription.findUnique          as ReturnType<typeof vi.fn>
+const mockFindUniqueTrainer    = prisma.trainerSubscription.findUnique       as ReturnType<typeof vi.fn>
+const mockFindManyTrainerSubs  = prisma.trainerSubscription.findMany         as ReturnType<typeof vi.fn>
+const mockFindManyEntitlements = prisma.userEntitlement.findMany             as ReturnType<typeof vi.fn>
+const mockFindManyRels         = prisma.trainerClientRelationship.findMany   as ReturnType<typeof vi.fn>
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-const USER_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
-const GRANT_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
+const USER_ID    = 'aaaaaaaa-0000-0000-0000-000000000001'
+const GRANT_ID   = 'bbbbbbbb-0000-0000-0000-000000000002'
+const TRAINER_ID = 'tttttttt-0000-0000-0000-000000000001'
 
 function futureDate(daysFromNow: number): Date {
   const d = new Date()
@@ -63,6 +67,8 @@ function makeAdminGrant(overrides: Record<string, unknown> = {}) {
 function resetMocks() {
   mockFindUniqueSub.mockResolvedValue(null)
   mockFindUniqueTrainer.mockResolvedValue(null)
+  mockFindManyTrainerSubs.mockResolvedValue([])
+  mockFindManyRels.mockResolvedValue([])
   mockFindManyEntitlements.mockResolvedValue([])
 }
 
@@ -174,7 +180,7 @@ describe('Scenario 6 — trainer_sponsored outranks admin_grant', () => {
             userId: USER_ID,
             source: 'trainer_sponsored',
             status: 'active',
-            sourceRef: 'trainer:trainer-001',
+            sourceRef: TRAINER_ID,
             grantedAt: new Date(),
             expiresAt: null,
             revokedAt: null,
@@ -186,6 +192,9 @@ describe('Scenario 6 — trainer_sponsored outranks admin_grant', () => {
         return Promise.resolve([])
       }
     )
+    // Both trainer sub and relationship are active → valid sponsorship
+    mockFindManyTrainerSubs.mockResolvedValue([{ userId: TRAINER_ID }])
+    mockFindManyRels.mockResolvedValue([{ trainerId: TRAINER_ID }])
   })
 
   it('returns plus tier', async () => {
