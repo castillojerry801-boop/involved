@@ -631,10 +631,18 @@ export default function CoachPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Usage bar — free tier only */}
-      {usage?.tier === 'free' && usage.limit && (
-        <div className="shrink-0 pb-1">
-          <div className="h-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+      {/* Usage bar — capped tiers (free / trial) */}
+      {usage?.limit != null && (
+        <div className="shrink-0 pb-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-zinc-400">
+              {usage.count} / {usage.limit} messages used
+            </span>
+            {(usage.remaining ?? 0) <= 5 && usage.remaining != null && (
+              <span className="text-xs text-amber-500">{usage.remaining} remaining</span>
+            )}
+          </div>
+          <div className="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
             <div
               className={cn('h-full rounded-full transition-all', usedPct > 80 ? 'bg-amber-500' : 'bg-emerald-500')}
               style={{ width: `${usedPct}%` }}

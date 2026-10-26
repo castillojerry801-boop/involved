@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Plus, Trash2, Search, ChevronLeft, ChevronRight, Pencil, Minus, Loader2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -135,7 +136,18 @@ function ServingEditor({ entry, onSaved, onCancel }: {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function NutritionPage() {
+function getDefaultMealType(): MealType {
+  const hour = new Date().getHours()
+  if (hour < 11) return 'breakfast'
+  if (hour < 15) return 'lunch'
+  if (hour < 21) return 'dinner'
+  return 'snack'
+}
+
+function NutritionContent() {
+  const router      = useRouter()
+  const pathname    = usePathname()
+  const searchParams = useSearchParams()
   const [logDate, setLogDate] = useState(toDateString(new Date()))
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [totals, setTotals] = useState<DailyTotals>({ calories: 0, proteinG: 0, carbohydrateG: 0, fatG: 0 })
@@ -145,6 +157,16 @@ export default function NutritionPage() {
   const [editingGoals, setEditingGoals] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [editingEntry, setEditingEntry] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (searchParams.get('add') === 'true') {
+      setAddingTo(getDefaultMealType())
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('add')
+      router.replace(params.size ? `${pathname}?${params.toString()}` : pathname)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const isToday = logDate === toDateString(new Date())
   // Allow editing up to 7 days back
@@ -206,7 +228,7 @@ export default function NutritionPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Nutrition</h1>
         {canEdit && (
-          <Button size="sm" onClick={() => setAddingTo('breakfast')}>
+          <Button size="sm" onClick={() => setAddingTo(getDefaultMealType())}>
             <Plus className="size-4" />
             Add food
           </Button>
@@ -302,7 +324,7 @@ export default function NutritionPage() {
       {/* Quick add */}
       {canEdit && (
         <button
-          onClick={() => setAddingTo('breakfast')}
+          onClick={() => setAddingTo(getDefaultMealType())}
           className="mb-3 flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/80 px-4 py-3 text-left text-sm text-zinc-400 shadow-sm transition-colors hover:border-zinc-300 backdrop-blur-sm"
         >
           <Search className="size-4 shrink-0" />
@@ -410,5 +432,13 @@ export default function NutritionPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function NutritionPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center"><Loader2 className="size-6 animate-spin text-zinc-400" /></div>}>
+      <NutritionContent />
+    </Suspense>
   )
 }

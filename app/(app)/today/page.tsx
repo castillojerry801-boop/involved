@@ -282,7 +282,7 @@ export default async function TodayPage() {
           <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Nutrition</p>
           <div className="flex items-center gap-3">
             <Link
-              href="/nutrition"
+              href="/nutrition?add=true"
               className="flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
             >
               <Plus className="size-3" />

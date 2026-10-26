@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -681,6 +682,7 @@ function ConnectSection() {
 type Tab = 'overview' | 'activities' | 'log' | 'connect'
 
 export default function HealthPage() {
+  const { unit, toDisplay } = useWeightUnit()
   const [tab, setTab]               = useState<Tab>('overview')
   const [summary, setSummary]       = useState<HealthVSummary | null>(null)
   const [activities, setActivities] = useState<HealthActivity[]>([])
@@ -858,9 +860,9 @@ export default function HealthPage() {
           {summary!.latestWeightKg !== undefined && (
             <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-center">
               <p className="text-xl font-black text-zinc-900 dark:text-white">
-                {(summary!.latestWeightKg * 2.20462).toFixed(1)}
+                {toDisplay(summary!.latestWeightKg)}
               </p>
-              <p className="text-xs text-zinc-500 mt-0.5">lbs body wt</p>
+              <p className="text-xs text-zinc-500 mt-0.5">{unit} body wt</p>
             </div>
           )}
         </div>
@@ -1027,7 +1029,7 @@ export default function HealthPage() {
               <CardHeader><CardTitle>Body Weight</CardTitle></CardHeader>
               <div>
                 <p className="text-2xl font-black text-zinc-900 dark:text-white">
-                  {(summary.latestWeightKg * 2.20462).toFixed(1)} lbs
+                  {toDisplay(summary.latestWeightKg)} {unit}
                 </p>
                 <p className="text-xs text-zinc-500 mt-0.5">
                   Recorded {summary.latestWeightDate}

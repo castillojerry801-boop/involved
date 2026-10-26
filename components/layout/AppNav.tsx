@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Sun, Utensils, Dumbbell, TrendingUp, User, Target, Activity, Users, ChefHat, MoreHorizontal, X } from 'lucide-react'
+import { Sun, Utensils, Dumbbell, TrendingUp, User, Target, Activity, Users, ChefHat, MoreHorizontal, X, Settings } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -31,10 +31,11 @@ const MOBILE_PRIMARY = [
 
 // Items inside the More sheet
 const MORE_SECONDARY = [
-  { href: '/health',   label: 'Health',   icon: Activity },
-  { href: '/goals',    label: 'Goals',    icon: Target },
-  { href: '/progress', label: 'Progress', icon: TrendingUp },
-  { href: '/profile',  label: 'Profile',  icon: User },
+  { href: '/health',    label: 'Health',    icon: Activity },
+  { href: '/goals',     label: 'Goals',     icon: Target },
+  { href: '/progress',  label: 'Progress',  icon: TrendingUp },
+  { href: '/profile',   label: 'Profile',   icon: User },
+  { href: '/settings',  label: 'Settings',  icon: Settings },
 ]
 
 export function AppNav({ isTrainer = false }: { isTrainer?: boolean }) {
