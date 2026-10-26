@@ -7,80 +7,27 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
-import { searchExercises } from '@/lib/exercises'
-import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
-import { jsToWeekday, resolveScheduledDay, upcomingSchedule, WEEKDAY_FULL } from '@/lib/training/program-scheduling'
+import { jsToWeekday, resolveScheduledDay, upcomingSchedule } from '@/lib/training/program-scheduling'
+import { formatDuration } from '@/lib/training/format'
+import { getTrainingData } from '@/lib/training/training-data'
 
 export const metadata: Metadata = { title: 'Training' }
 
-function formatDuration(seconds: number) {
-  const m = Math.floor(seconds / 60)
-  if (m < 60) return `${m}m`
-  return `${Math.floor(m / 60)}h ${m % 60}m`
-}
-
-function WorkoutStatusBadge({ status }: { status: string }) {
-  if (status === 'in_progress') return (
-    <span className="flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
-      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-      Active
-    </span>
-  )
-  if (status === 'planned') return (
-    <span className="rounded-full bg-sky-50 dark:bg-sky-900/30 px-2 py-0.5 text-xs font-medium text-sky-700 dark:text-sky-400">
-      Planned
-    </span>
-  )
-  return null
-}
-
-async function getTrainingData(userId: string) {
-  try {
-    const [recent, planned, allPrograms, templateCount] = await Promise.all([
-      prisma.workout.findMany({
-        where: { userId, status: { in: ['completed', 'in_progress'] } },
-        orderBy: [{ completedAt: 'desc' }, { startedAt: 'desc' }],
-        take: 5,
-        include: {
-          exercises: { select: { exerciseId: true }, take: 3 },
-        },
-      }),
-      prisma.workout.findMany({
-        where: { userId, status: 'planned' },
-        orderBy: { scheduledDate: 'asc' },
-        take: 3,
-        include: {
-          exercises: { select: { exerciseId: true }, take: 3 },
-        },
-      }),
-      prisma.program.findMany({
-        where: { userId },
-        orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }],
-        take: 5,
-        include: {
-          days: {
-            orderBy: { sortOrder: 'asc' },
-            include: { _count: { select: { exercises: true } } },
-          },
-        },
-      }),
-      prisma.workoutTemplate.count({ where: { userId } }),
-    ])
-    const activeProgram = allPrograms.find(p => p.isActive) ?? null
-    return { recent, planned, activeProgram, allPrograms, templateCount }
-  } catch {
-    return { recent: [], planned: [], activeProgram: null, allPrograms: [], templateCount: 0 }
-  }
-}
-
+const TOOLS = [
+  { href: '/training/programs/new',     icon: ClipboardList, label: 'Build program'  },
+  { href: '/training/weekly-targets',   icon: Target,        label: 'Weekly targets' },
+  { href: '/training/equipment',        icon: Zap,           label: 'Equipment'      },
+  { href: '/training/volume',           icon: BarChart2,     label: 'Volume'         },
+  { href: '/training/plate-calculator', icon: Calculator,    label: 'Plate calc'     },
+  { href: '/training/exercises/custom', icon: Plus,          label: 'Custom'         },
+]
 
 export default async function TrainingPage() {
   const user = await getUser()
   if (!user) redirect('/login')
 
-  const featured = searchExercises('', 'all', 6)
-  const [{ recent, planned, activeProgram, allPrograms, templateCount }, ent] = await Promise.all([
+  const [{ recent, planned, activeProgram, allPrograms, templateCount, inProgressWorkout }, ent] = await Promise.all([
     getTrainingData(user.id),
     getUserEntitlement(user.id),
   ])
@@ -106,9 +53,21 @@ export default async function TrainingPage() {
       }).catch(() => [])
     : []
 
+  // Active program is shown prominently near the top — exclude it from the programs list below
+  const nonActivePrograms = allPrograms.filter(p => !p.isActive)
+
+  // Empty-state links for templates and trainer programs fold into the tools grid
+  const extraTools = [
+    ...(templateCount === 0 ? [{ href: '/training/templates', icon: LayoutTemplate, label: 'Templates' }] : []),
+    ...(ent.isTrainer && trainerPrograms.length === 0 ? [{ href: '/trainer/programs', icon: ClipboardList, label: 'Trainer progs' }] : []),
+  ]
+  const allTools = [...TOOLS, ...extraTools]
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
-      <div className="mb-8 flex items-center justify-between">
+
+      {/* Header */}
+      <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Training</h1>
           <p className="text-sm text-zinc-500">Exercises, workouts & progress</p>
@@ -129,21 +88,46 @@ export default async function TrainingPage() {
         </div>
       </div>
 
-      {/* Today's workout */}
+      {/* Resume — pinned at top when a workout is in progress */}
+      {inProgressWorkout && (
+        <section className="mb-5">
+          <div className="rounded-2xl border-2 border-amber-200 dark:border-amber-700/50 bg-amber-50/60 dark:bg-amber-900/10 px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-0.5">
+                  In progress
+                </p>
+                <p className="font-bold text-zinc-900 dark:text-white truncate">{inProgressWorkout.title}</p>
+                <p className="text-xs text-zinc-500">
+                  {inProgressWorkout.exercises.length} exercise{inProgressWorkout.exercises.length !== 1 ? 's' : ''}
+                  {inProgressWorkout.durationSeconds && inProgressWorkout.durationSeconds >= 60 ? ` · ${formatDuration(inProgressWorkout.durationSeconds)}` : ''}
+                </p>
+              </div>
+              <Link href={`/training/workout/${inProgressWorkout.id}`} className="shrink-0">
+                <Button>
+                  <PlayCircle className="size-4" />
+                  Resume
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Today's scheduled workout */}
       {activeProgram && todayDay && (
-        <section className="mb-6">
-          <h2 className="font-bold text-zinc-900 dark:text-white mb-3">Today&apos;s workout</h2>
+        <section className="mb-5">
           <div className="rounded-2xl border-2 border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-900/10 px-4 py-4">
             <div className="flex items-center justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-0.5">
-                  {WEEKDAY_FULL[todayWd]} · {activeProgram.name}
+                  Today · {activeProgram.name}
                 </p>
-                <p className="font-bold text-zinc-900 dark:text-white">{todayDay.name}</p>
+                <p className="font-bold text-zinc-900 dark:text-white truncate">{todayDay.name}</p>
                 <p className="text-xs text-zinc-500">{todayDay.exerciseCount} exercise{todayDay.exerciseCount !== 1 ? 's' : ''}</p>
               </div>
-              <Link href={`/training/workout/new?programDayId=${todayDay.id}`}>
-                <Button size="sm">
+              <Link href={`/training/workout/new?programDayId=${todayDay.id}`} className="shrink-0">
+                <Button>
                   <PlayCircle className="size-4" />
                   Start
                 </Button>
@@ -153,19 +137,40 @@ export default async function TrainingPage() {
         </section>
       )}
 
-      {/* Upcoming schedule */}
+      {/* Active Program — prominent card linking to program detail */}
+      {activeProgram && (
+        <section className="mb-5">
+          <Link href={`/training/programs/${activeProgram.id}`}>
+            <div className="flex items-center gap-3 rounded-2xl border-2 border-emerald-100 dark:border-emerald-900/40 bg-emerald-50/30 dark:bg-emerald-900/10 px-4 py-4 hover:border-emerald-200 dark:hover:border-emerald-800/60 transition-colors">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/40">
+                <Zap className="size-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-0.5">Active program</p>
+                <p className="font-bold text-zinc-900 dark:text-white truncate">{activeProgram.name}</p>
+                <p className="text-xs text-zinc-500">
+                  {activeProgram.days.length} day{activeProgram.days.length !== 1 ? 's' : ''}
+                  {' · '}
+                  {activeProgram.days.reduce((n, d) => n + d._count.exercises, 0)} exercises
+                </p>
+              </div>
+              <ChevronRight className="size-5 text-emerald-400 dark:text-emerald-600 shrink-0" />
+            </div>
+          </Link>
+        </section>
+      )}
+
+      {/* This week — compact schedule strip */}
       {activeProgram && upcoming.some(u => u.day != null) && (
-        <section className="mb-6">
-          <h2 className="font-bold text-zinc-900 dark:text-white mb-3">This week</h2>
+        <section className="mb-5">
+          <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2">This week</h2>
           <div className="grid grid-cols-6 gap-1.5">
             {upcoming.map(({ weekday, label, day }) => (
               <div
                 key={weekday}
                 className={cn(
                   'rounded-xl p-2 text-center',
-                  day
-                    ? 'bg-zinc-900 dark:bg-white'
-                    : 'bg-zinc-100 dark:bg-zinc-800'
+                  day ? 'bg-zinc-900 dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-800'
                 )}
               >
                 <p className={cn('text-[9px] font-bold uppercase tracking-wide', day ? 'text-zinc-400 dark:text-zinc-500' : 'text-zinc-400')}>
@@ -182,12 +187,26 @@ export default async function TrainingPage() {
         </section>
       )}
 
+      {/* Exercise Library — prominent quick-link near top */}
+      <section className="mb-5">
+        <Link href="/training/exercises">
+          <div className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-900 dark:bg-white">
+              <BookOpen className="size-5 text-white dark:text-zinc-900" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-zinc-900 dark:text-white">Exercise Library</p>
+              <p className="text-xs text-zinc-400">1,394 exercises with animated guides</p>
+            </div>
+            <ChevronRight className="size-5 text-zinc-300 dark:text-zinc-600 shrink-0" />
+          </div>
+        </Link>
+      </section>
+
       {/* Planned workouts */}
       {planned.length > 0 && (
-        <section className="mb-6">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-bold text-zinc-900 dark:text-white">Planned</h2>
-          </div>
+        <section className="mb-5">
+          <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-2">Planned</h2>
           <div className="flex flex-col gap-2">
             {planned.map(w => {
               const date = w.scheduledDate
@@ -203,7 +222,7 @@ export default async function TrainingPage() {
                       <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{w.title}</p>
                       <p className="text-xs text-zinc-400">{w.exercises.length} exercise{w.exercises.length !== 1 ? 's' : ''}{date ? ` · ${date}` : ''}</p>
                     </div>
-                    <PlayCircle className="size-5 text-zinc-300 dark:text-zinc-600" />
+                    <PlayCircle className="size-5 text-zinc-300 dark:text-zinc-600 shrink-0" />
                   </div>
                 </Link>
               )
@@ -212,60 +231,15 @@ export default async function TrainingPage() {
         </section>
       )}
 
-      {/* Tools grid */}
-      <div className="mb-6 grid grid-cols-2 gap-3">
-        {[
-          { href: '/training/programs/new', icon: ClipboardList, label: 'Build program',      sub: 'Structured multi-day training plan' },
-          { href: '/training/weekly-targets', icon: Target,        label: 'Weekly targets',    sub: 'Set your weekly training goals' },
-          { href: '/training/equipment',      icon: Zap,           label: 'Equipment profiles', sub: 'Filter by your available gear' },
-          { href: '/training/volume',         icon: BarChart2,     label: 'Muscle volume',     sub: 'Weekly sets per muscle group' },
-          { href: '/training/plate-calculator', icon: Calculator,  label: 'Plate calculator',  sub: 'Target weight → plates per side' },
-          { href: '/training/exercises/custom', icon: Plus,        label: 'Custom exercises',  sub: 'Create exercises not in the library' },
-        ].map(({ href, icon: Icon, label, sub }) => (
-          <Link key={href} href={href} className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800">
-              <Icon className="size-5 text-zinc-500 dark:text-zinc-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-bold text-sm text-zinc-900 dark:text-white">{label}</p>
-              <p className="text-xs text-zinc-400">{sub}</p>
-            </div>
-            <ChevronRight className="size-4 text-zinc-300 shrink-0" />
-          </Link>
-        ))}
-      </div>
-
-      <Link href="/training/exercises">
-        <div className="mb-6 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm p-5 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-zinc-900 dark:bg-white">
-                <BookOpen className="size-5 text-white dark:text-zinc-900" />
-              </div>
-              <div>
-                <p className="font-bold text-zinc-900 dark:text-white">Exercise Library</p>
-                <p className="text-xs text-zinc-400">1,394 exercises with animated guides</p>
-              </div>
-            </div>
-            <ChevronRight className="size-5 text-zinc-300 dark:text-zinc-600" />
-          </div>
-          <div className="flex gap-2">
-            {featured.map(ex => (
-              <div key={ex.id} className="flex-1 rounded-xl bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center overflow-hidden h-16">
-                <ExerciseMedia exerciseId={ex.id} exerciseName={ex.name} className="h-full w-full" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </Link>
-
-      {/* Recent workouts */}
-      <section className="mb-6">
-        <div className="mb-4 flex items-center justify-between">
+      {/* Recent workouts — 2 most recent, View All for full history */}
+      <section className="mb-5">
+        <div className="mb-3 flex items-center justify-between">
           <h2 className="font-bold text-zinc-900 dark:text-white">Recent workouts</h2>
-          <Link href="/training/history" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-            View all
-          </Link>
+          {recent.length > 0 && (
+            <Link href="/training/history" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+              View all
+            </Link>
+          )}
         </div>
 
         {recent.length === 0 ? (
@@ -287,29 +261,20 @@ export default async function TrainingPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {recent.map(w => {
-              const isActive = w.status === 'in_progress'
               const date = (w.completedAt ?? w.startedAt ?? w.scheduledDate)
                 ? new Date((w.completedAt ?? w.startedAt ?? w.scheduledDate)!).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
                 : null
-
-              const href = isActive ? `/training/workout/${w.id}` : `/training/history/${w.id}`
               return (
-                <Link key={w.id} href={href}>
+                <Link key={w.id} href={`/training/history/${w.id}`}>
                   <div className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-                    <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${isActive ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'bg-zinc-50 dark:bg-zinc-800'}`}>
-                      {isActive
-                        ? <PlayCircle className="size-5 text-emerald-600 dark:text-emerald-400" />
-                        : <CheckCircle2 className="size-5 text-zinc-400" />
-                      }
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
+                      <CheckCircle2 className="size-5 text-zinc-400" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{w.title}</p>
-                        <WorkoutStatusBadge status={w.status} />
-                      </div>
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{w.title}</p>
                       <p className="text-xs text-zinc-400">
                         {w.exercises.length} exercise{w.exercises.length !== 1 ? 's' : ''}
-                        {w.durationSeconds ? ` · ${formatDuration(w.durationSeconds)}` : ''}
+                        {w.durationSeconds && w.durationSeconds >= 60 ? ` · ${formatDuration(w.durationSeconds)}` : ''}
                         {date ? ` · ${date}` : ''}
                       </p>
                     </div>
@@ -322,9 +287,9 @@ export default async function TrainingPage() {
         )}
       </section>
 
-      {/* Programs — only shown once at least one exists */}
-      {allPrograms.length > 0 && (
-        <section className="mb-6">
+      {/* Programs — non-active only (active program shown prominently above) */}
+      {nonActivePrograms.length > 0 && (
+        <section className="mb-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-bold text-zinc-900 dark:text-white">Programs</h2>
             <Link href="/training/programs" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
@@ -332,114 +297,97 @@ export default async function TrainingPage() {
             </Link>
           </div>
           <div className="flex flex-col gap-2">
-            {allPrograms.map(program => {
-              const isActive = program.isActive
-              return (
-                <Link key={program.id} href={`/training/programs/${program.id}`}>
-                  <div className={`rounded-2xl border px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-600 transition-colors ${
-                    isActive
-                      ? 'border-emerald-100 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-900/10'
-                      : 'border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900'
-                  }`}>
-                    <div className="flex items-center gap-3">
-                      <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${
-                        isActive ? 'bg-emerald-100 dark:bg-emerald-900/40' : 'bg-zinc-50 dark:bg-zinc-800'
-                      }`}>
-                        {isActive
-                          ? <Zap className="size-4 text-emerald-600 dark:text-emerald-400" />
-                          : <ClipboardList className="size-4 text-zinc-400" />
-                        }
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{program.name}</p>
-                          {isActive && (
-                            <span className="shrink-0 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">Active</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-zinc-400">
-                          {program.days.length} day{program.days.length !== 1 ? 's' : ''}
-                          {' · '}
-                          {program.days.reduce((n, d) => n + d._count.exercises, 0)} exercises
-                        </p>
-                      </div>
-                      <ChevronRight className="size-4 text-zinc-300 dark:text-zinc-600 shrink-0" />
-                    </div>
+            {nonActivePrograms.map(program => (
+              <Link key={program.id} href={`/training/programs/${program.id}`}>
+                <div className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
+                    <ClipboardList className="size-4 text-zinc-400" />
                   </div>
-                </Link>
-              )
-            })}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{program.name}</p>
+                    <p className="text-xs text-zinc-400">
+                      {program.days.length} day{program.days.length !== 1 ? 's' : ''}
+                      {' · '}
+                      {program.days.reduce((n, d) => n + d._count.exercises, 0)} exercises
+                    </p>
+                  </div>
+                  <ChevronRight className="size-4 text-zinc-300 dark:text-zinc-600 shrink-0" />
+                </div>
+              </Link>
+            ))}
           </div>
         </section>
       )}
 
-      {/* Trainer Programs — only for trainers */}
-      {ent.isTrainer && (
-        <section className="mb-6">
+      {/* Trainer Programs — only when populated (empty state folds into tools) */}
+      {ent.isTrainer && trainerPrograms.length > 0 && (
+        <section className="mb-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-bold text-zinc-900 dark:text-white">Trainer Programs</h2>
             <Link href="/trainer/programs" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
               View all
             </Link>
           </div>
-
-          {trainerPrograms.length === 0 ? (
-            <Link href="/trainer/programs">
-              <div className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
-                  <ClipboardList className="size-4 text-zinc-400" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Trainer program library</p>
-                  <p className="text-xs text-zinc-400">No programs built yet</p>
-                </div>
-                <ChevronRight className="size-4 text-zinc-300 dark:text-zinc-600 shrink-0" />
-              </div>
-            </Link>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {trainerPrograms.map(p => (
-                <Link key={p.id} href={`/trainer/programs/${p.id}`}>
-                  <div className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
-                      <ClipboardList className="size-4 text-zinc-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{p.name}</p>
-                      <p className="text-xs text-zinc-400">{p.days.length} day{p.days.length !== 1 ? 's' : ''}</p>
-                    </div>
-                    <ChevronRight className="size-4 text-zinc-300 dark:text-zinc-600 shrink-0" />
+          <div className="flex flex-col gap-2">
+            {trainerPrograms.map(p => (
+              <Link key={p.id} href={`/trainer/programs/${p.id}`}>
+                <div className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
+                    <ClipboardList className="size-4 text-zinc-400" />
                   </div>
-                </Link>
-              ))}
-            </div>
-          )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{p.name}</p>
+                    <p className="text-xs text-zinc-400">{p.days.length} day{p.days.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <ChevronRight className="size-4 text-zinc-300 dark:text-zinc-600 shrink-0" />
+                </div>
+              </Link>
+            ))}
+          </div>
         </section>
       )}
 
-      {/* Templates */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-bold text-zinc-900 dark:text-white">Templates</h2>
-          <Link href="/training/templates" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-            View all
-          </Link>
-        </div>
-        <Link href="/training/templates">
-          <div className="flex items-center gap-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
-              <LayoutTemplate className="size-4 text-zinc-400" />
-            </div>
-            <div className="flex-1">
-              <p className="font-semibold text-sm text-zinc-900 dark:text-white">Saved templates</p>
-              <p className="text-xs text-zinc-400">
-                {templateCount === 0 ? 'No templates yet' : `${templateCount} saved`}
-              </p>
-            </div>
-            <ChevronRight className="size-4 text-zinc-300 shrink-0" />
+      {/* Templates — only when populated (empty state folds into tools) */}
+      {templateCount > 0 && (
+        <section className="mb-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-bold text-zinc-900 dark:text-white">Templates</h2>
+            <Link href="/training/templates" className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+              View all
+            </Link>
           </div>
-        </Link>
+          <Link href="/training/templates">
+            <div className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-zinc-50 dark:bg-zinc-800">
+                <LayoutTemplate className="size-4 text-zinc-400" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm text-zinc-900 dark:text-white">Saved templates</p>
+                <p className="text-xs text-zinc-400">{templateCount} saved</p>
+              </div>
+              <ChevronRight className="size-4 text-zinc-300 shrink-0" />
+            </div>
+          </Link>
+        </section>
+      )}
+
+      {/* Training tools — compact grid; empty-state template/trainer-prog links appended */}
+      <section>
+        <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-3">Training tools</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {allTools.map(({ href, icon: Icon, label }) => (
+            <Link key={href} href={href}>
+              <div className="flex flex-col items-center gap-1.5 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-2 py-3 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors text-center">
+                <div className="flex size-8 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800">
+                  <Icon className="size-4 text-zinc-500 dark:text-zinc-400" />
+                </div>
+                <p className="text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 leading-tight">{label}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
       </section>
+
     </div>
   )
 }
