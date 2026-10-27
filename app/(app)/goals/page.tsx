@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Plus, Trash2, Trophy, Target, Check, X, Loader2, Calendar, Dumbbell, Heart, Repeat, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 interface Goal {
   id: string
@@ -302,15 +304,12 @@ export default function GoalsPage() {
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8 space-y-8">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Goals</h1>
-        <button
-          onClick={() => setAdding('goal')}
-          className="flex items-center gap-1.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-3 py-2 text-xs font-bold hover:opacity-90 transition-opacity"
-        >
-          <Plus className="size-3.5" /> Add goal
-        </button>
-      </div>
+      <PageHeader title="Goals" className="mb-0">
+        <Button size="sm" onClick={() => setAdding('goal')}>
+          <Plus className="size-4" />
+          Add goal
+        </Button>
+      </PageHeader>
 
       {loading ? (
         <div className="flex justify-center py-16">

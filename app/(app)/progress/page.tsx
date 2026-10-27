@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Dumbbell, TrendingUp, Scale, Trophy, Loader2, Flame, Target, BarChart3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -194,12 +195,11 @@ export default function ProgressPage() {
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8 space-y-5">
 
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Progress</h1>
-        {!hasAnyData && (
-          <p className="text-sm text-zinc-400 mt-0.5">Start logging workouts and food to see your stats.</p>
-        )}
-      </div>
+      <PageHeader
+        title="Progress"
+        subtitle={!hasAnyData ? 'Start logging workouts and food to see your stats.' : undefined}
+        className="mb-0"
+      />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3">

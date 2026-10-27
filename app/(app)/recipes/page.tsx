@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ChefHat, Plus, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { RecipeCard, type RecipeCardData } from '@/components/recipes/recipe-card'
 import { CreateRecipeModal } from '@/components/recipes/create-recipe-modal'
 import { createClient } from '@/lib/supabase/client'
@@ -88,16 +90,12 @@ export default function RecipesPage() {
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 md:py-8">
 
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Recipes</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-3 py-2 text-sm font-semibold hover:opacity-90"
-        >
+      <PageHeader title="Recipes">
+        <Button size="sm" onClick={() => setShowCreate(true)}>
           <Plus className="size-4" />
           New
-        </button>
-      </div>
+        </Button>
+      </PageHeader>
 
       {/* Tabs */}
       <div className="mb-5 flex rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-1 gap-1">

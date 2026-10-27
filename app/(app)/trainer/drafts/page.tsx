@@ -297,13 +297,13 @@ export default function TrainerDraftsPage() {
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
 
       {/* Header */}
-      <div className="mb-6 flex items-center gap-3">
-        <Link href="/trainer" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
-          <ArrowLeft className="size-4 text-zinc-600 dark:text-zinc-400" />
+      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
+        <Link href="/trainer" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+          <ArrowLeft className="size-4 text-white" />
         </Link>
         <div className="flex-1">
-          <h1 className="text-xl font-black text-zinc-900 dark:text-white">V Drafts</h1>
-          <p className="text-xs text-zinc-500 mt-0.5">AI-suggested changes — approve, edit, or dismiss</p>
+          <h1 className="text-xl font-black text-white">V Drafts</h1>
+          <p className="text-xs text-zinc-300 mt-0.5">AI-suggested changes — approve, edit, or dismiss</p>
         </div>
         {pending.length > 0 && (
           <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:text-amber-400">

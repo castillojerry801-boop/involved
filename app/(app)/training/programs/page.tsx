@@ -34,10 +34,10 @@ export default async function ProgramsPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex items-center justify-between rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
         <div>
-          <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Programs</h1>
-          <p className="text-sm text-zinc-500">Structured multi-day training plans</p>
+          <h1 className="text-2xl font-black text-white">Programs</h1>
+          <p className="text-sm text-zinc-300">Structured multi-day training plans</p>
         </div>
         <Link href="/training/programs/new">
           <Button size="sm">

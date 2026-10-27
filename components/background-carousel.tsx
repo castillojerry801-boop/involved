@@ -50,8 +50,10 @@ export function BackgroundCarousel() {
           />
         </div>
       ))}
-      {/* Overlay — lighter in light mode, darker in dark mode */}
-      <div className="absolute inset-0 bg-white/40 dark:bg-black/65" />
+      {/* Overlay:
+          Light mode — subtle dark tint so white cards pop against a moody background
+          Dark mode — deeper scrim as before */}
+      <div className="absolute inset-0 bg-black/30 dark:bg-black/65" />
     </div>
   )
 }

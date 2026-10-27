@@ -133,26 +133,26 @@ export default function TrainerDashboard() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 md:px-8">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Clients</h1>
+      <div className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-black text-white">Clients</h1>
           {atRiskCount > 0 && (
-            <p className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-0.5">
+            <p className="text-sm text-amber-400 flex items-center gap-1 mt-0.5">
               <AlertTriangle className="size-3.5" />
               {atRiskCount} client{atRiskCount !== 1 ? 's' : ''} behind this week
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/trainer/drafts" className="flex items-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+        <div className="flex items-center gap-2 shrink-0">
+          <Link href="/trainer/drafts" className="flex items-center gap-1.5 rounded-xl border border-white bg-white dark:bg-transparent dark:border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
             <FileText className="size-4" />
             Drafts
           </Link>
-          <Link href="/trainer/programs" className="flex items-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+          <Link href="/trainer/programs" className="flex items-center gap-1.5 rounded-xl border border-white bg-white dark:bg-transparent dark:border-zinc-700 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
             <Dumbbell className="size-4" />
             Programs
           </Link>
-          <Link href="/trainer/invite" className="flex items-center gap-1.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-3 py-2 text-sm font-bold hover:opacity-90 transition-opacity">
+          <Link href="/trainer/invite" className="flex items-center gap-1.5 rounded-xl bg-zinc-900 ring-2 ring-white dark:ring-0 text-white px-3 py-2 text-sm font-bold hover:opacity-90 transition-opacity">
             <Plus className="size-4" />
             Invite
           </Link>

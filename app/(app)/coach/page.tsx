@@ -531,13 +531,13 @@ export default function CoachPage() {
     <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen max-w-2xl mx-auto px-4 md:px-8">
 
       {/* Header */}
-      <div className="py-5 flex items-center gap-3 shrink-0 border-b border-zinc-100 dark:border-zinc-800">
+      <div className="my-3 flex items-center gap-3 shrink-0 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-4 py-3">
         <div className="size-10 shrink-0 rounded-2xl overflow-hidden">
           <Image src="/icon.jpg" alt="Coach" width={40} height={40} className="size-10 object-cover" />
         </div>
         <div className="flex-1">
-          <p className="font-black text-zinc-900 dark:text-white">Involved Coach</p>
-          <p className="text-xs text-zinc-400">
+          <p className="font-black text-white">Involved Coach</p>
+          <p className="text-xs text-zinc-300">
             {usage
               ? usage.tier === 'plus' || usage.limit == null
                 ? 'Unlimited coaching'
@@ -550,7 +550,7 @@ export default function CoachPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setProgramModalOpen(true)}
-            className="flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            className="flex items-center gap-1 rounded-lg border border-white bg-white dark:bg-transparent dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
           >
             <CalendarDays className="size-3" />
             Build Program
@@ -558,7 +558,7 @@ export default function CoachPage() {
           {usage?.tier === 'free' && (
             <Link
               href="/plus"
-              className="flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+              className="flex items-center gap-1 rounded-lg border border-white bg-white dark:bg-transparent dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
             >
               <Sparkles className="size-3" />
               Upgrade

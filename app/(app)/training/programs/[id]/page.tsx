@@ -86,14 +86,14 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between gap-3">
+      <div className="mb-6 flex items-start justify-between gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
         <div className="flex items-start gap-3 min-w-0">
-          <Link href="/training/programs" className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
-            <ArrowLeft className="size-4 text-zinc-600 dark:text-zinc-400" />
+          <Link href="/training/programs" className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+            <ArrowLeft className="size-4 text-white" />
           </Link>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="font-black text-xl text-zinc-900 dark:text-white">{program.name}</h1>
+              <h1 className="font-black text-xl text-white">{program.name}</h1>
               {program.isActive && (
                 <span className="flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                   <Zap className="size-3" /> Active
@@ -101,9 +101,9 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
               )}
             </div>
             {program.description && (
-              <p className="mt-0.5 text-sm text-zinc-400">{program.description}</p>
+              <p className="mt-0.5 text-sm text-zinc-300">{program.description}</p>
             )}
-            <p className="text-xs text-zinc-400 mt-0.5">{program.days.length} day{program.days.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-zinc-300 mt-0.5">{program.days.length} day{program.days.length !== 1 ? 's' : ''}</p>
           </div>
         </div>
         <ProgramActions programId={program.id} isActive={program.isActive} />

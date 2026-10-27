@@ -5,6 +5,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { Plus, Trash2, Search, ChevronLeft, ChevronRight, Pencil, Minus, Loader2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { FoodSearchModal } from '@/components/nutrition/food-search-modal'
 import { GoalsEditor } from '@/components/nutrition/goals-editor'
 import { cn } from '@/lib/utils'
@@ -225,15 +226,14 @@ function NutritionContent() {
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8 md:py-8">
 
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Nutrition</h1>
+      <PageHeader title="Nutrition">
         {canEdit && (
           <Button size="sm" onClick={() => setAddingTo(getDefaultMealType())}>
             <Plus className="size-4" />
             Add food
           </Button>
         )}
-      </div>
+      </PageHeader>
 
       {/* Date navigation */}
       <div className="mb-5 flex items-center justify-between rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm px-2 py-1">

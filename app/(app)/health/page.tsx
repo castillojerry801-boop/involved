@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/badge'
 import {
   Smartphone, Apple, Loader2, Plus, Check, RefreshCw,
@@ -804,14 +805,12 @@ export default function HealthPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
       {/* Header */}
-      <div className="mb-1">
-        <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Health & Activity</h1>
-        <p className="text-sm text-zinc-500 mt-0.5">
-          {hasAnyData
-            ? `${summary!.periodStart} — ${summary!.periodEnd}`
-            : 'Log manually or connect a health platform'}
-        </p>
-      </div>
+      <PageHeader
+        title="Health & Activity"
+        subtitle={hasAnyData
+          ? `${summary!.periodStart} — ${summary!.periodEnd}`
+          : 'Log manually or connect a health platform'}
+      />
 
       {/* Last sync row */}
       {lastFullSyncAt && isNativeApp() && (

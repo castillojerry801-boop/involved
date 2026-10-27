@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Dumbbell, Plus, ChevronRight, BookOpen, ClipboardList, Calendar, PlayCircle, CheckCircle2, Zap, LayoutTemplate, BarChart2, Calculator, Target } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
@@ -67,26 +68,20 @@ export default async function TrainingPage() {
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
 
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black text-zinc-900 dark:text-white">Training</h1>
-          <p className="text-sm text-zinc-500">Exercises, workouts & progress</p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/training/log?mode=plan">
-            <Button size="sm" variant="secondary">
-              <Calendar className="size-4" />
-              Plan
-            </Button>
-          </Link>
-          <Link href="/training/log">
-            <Button size="sm">
-              <Plus className="size-4" />
-              Log workout
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <PageHeader title="Training" subtitle="Exercises, workouts & progress">
+        <Link href="/training/log?mode=plan">
+          <Button size="sm" variant="secondary">
+            <Calendar className="size-4" />
+            Plan
+          </Button>
+        </Link>
+        <Link href="/training/log">
+          <Button size="sm">
+            <Plus className="size-4" />
+            Log workout
+          </Button>
+        </Link>
+      </PageHeader>
 
       {/* Resume — pinned at top when a workout is in progress */}
       {inProgressWorkout && (

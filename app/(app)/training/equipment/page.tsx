@@ -477,13 +477,13 @@ export default function EquipmentProfilesPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
-      <div className="mb-6 flex items-center gap-3">
-        <Link href="/training" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
-          <ArrowLeft className="size-4 text-zinc-600 dark:text-zinc-400" />
+      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
+        <Link href="/training" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+          <ArrowLeft className="size-4 text-white" />
         </Link>
         <div className="flex-1">
-          <h1 className="text-xl font-black text-zinc-900 dark:text-white">Equipment profiles</h1>
-          <p className="text-sm text-zinc-500">Filter exercises by what&apos;s available to you</p>
+          <h1 className="text-xl font-black text-white">Equipment profiles</h1>
+          <p className="text-sm text-zinc-300">Filter exercises by what&apos;s available to you</p>
         </div>
         {!showCreate && (
           <button
