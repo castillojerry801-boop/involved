@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Plus, ClipboardList, ChevronRight, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
@@ -34,18 +35,14 @@ export default async function ProgramsPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
-      <div className="mb-8 flex items-center justify-between rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <div>
-          <h1 className="text-2xl font-black text-white">Programs</h1>
-          <p className="text-sm text-zinc-300">Structured multi-day training plans</p>
-        </div>
+      <PageHeader title="Programs" subtitle="Structured multi-day training plans">
         <Link href="/training/programs/new">
           <Button size="sm">
             <Plus className="size-4" />
             New program
           </Button>
         </Link>
-      </div>
+      </PageHeader>
 
       {programs.length === 0 ? (
         <Card className="flex flex-col items-center py-12 text-center">

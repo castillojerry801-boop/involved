@@ -929,7 +929,7 @@ export default function WorkoutPage() {
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8">
 
       {/* Header */}
-      <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-4 py-3">
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500 bg-zinc-900/80 backdrop-blur-sm px-4 py-3">
         <div className="flex items-center gap-3 min-w-0">
           <Link href="/training" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
             <ArrowLeft className="size-4 text-white" />

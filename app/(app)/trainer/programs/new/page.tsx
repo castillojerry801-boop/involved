@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import Link from 'next/link'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowLeft, Plus, Trash2, Search, GripVertical, ChevronDown, ChevronUp, Loader2, Check, ChevronsRight } from 'lucide-react'
+import { Plus, Trash2, Search, GripVertical, ChevronDown, ChevronUp, Loader2, Check, ChevronsRight } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { cn } from '@/lib/utils'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -598,16 +599,7 @@ export default function NewTrainerProgramPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8 pb-32">
-      {/* Header */}
-      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link
-          href="/trainer/programs"
-          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-        >
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <h1 className="text-xl font-black text-white">New Program</h1>
-      </div>
+      <PageHeader title="New Program" backHref="/trainer/programs" />
 
       {/* Details */}
       <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-5 space-y-4">

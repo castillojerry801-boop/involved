@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { cn } from '@/lib/utils'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 import { AppleHealthCard } from '@/components/settings/AppleHealthCard'
@@ -15,12 +14,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8 md:px-8">
-      <div className="mb-8 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link href="/profile" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <h1 className="text-xl font-black text-white">Settings</h1>
-      </div>
+      <PageHeader title="Settings" backHref="/profile" />
 
       <div className="space-y-4">
 

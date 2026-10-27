@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { cn } from '@/lib/utils'
 
 type Unit = 'kg' | 'lbs'
@@ -111,20 +110,10 @@ export default function PlateCalculatorPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8 md:px-8">
-      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link
-          href="/training"
-          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-        >
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <div>
-          <h1 className="text-xl font-black text-white">Plate calculator</h1>
-          <p className="text-sm text-zinc-300">Target weight → plates per side</p>
-        </div>
+      <PageHeader title="Plate calculator" backHref="/training" subtitle="Target weight → plates per side" />
 
-        {/* Unit toggle */}
-        <div className="ml-auto shrink-0 flex rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden text-sm font-semibold">
+      <div className="flex justify-end mb-5">
+        <div className="flex rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden text-sm font-semibold">
           {(['lbs', 'kg'] as Unit[]).map(u => (
             <button
               key={u}

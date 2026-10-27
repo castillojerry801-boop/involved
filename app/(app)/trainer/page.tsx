@@ -133,7 +133,7 @@ export default function TrainerDashboard() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 md:px-8">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
+      <div className="mb-6 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-black text-white">Clients</h1>
           {atRiskCount > 0 && (

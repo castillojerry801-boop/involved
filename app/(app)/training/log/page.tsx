@@ -2,8 +2,8 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowLeft, Search, Plus, X, Loader2, Calendar, Dumbbell, Sparkles } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Search, Plus, X, Loader2, Calendar, Dumbbell, Sparkles } from 'lucide-react'
 import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { GenerateWorkoutModal } from '@/components/v/GenerateWorkoutModal'
 
@@ -116,24 +116,17 @@ function LogWorkoutForm() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-8">
 
-      {/* Header */}
-      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link href="/training" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <h1 className="font-black text-xl text-white">
-          {isPlanMode ? 'Plan a Workout' : 'Log a Workout'}
-        </h1>
+      <PageHeader title={isPlanMode ? 'Plan a Workout' : 'Log a Workout'} backHref="/training">
         {!isPlanMode && (
           <button
             onClick={() => setShowGenerateModal(true)}
-            className="ml-auto flex items-center gap-1.5 rounded-full bg-zinc-900 dark:bg-white px-3 py-1.5 text-xs font-semibold text-white dark:text-zinc-900 hover:opacity-90 transition-opacity"
+            className="flex items-center gap-1.5 rounded-full bg-zinc-900 dark:bg-white px-3 py-1.5 text-xs font-semibold text-white dark:text-zinc-900 hover:opacity-90 transition-opacity"
           >
             <Sparkles className="size-3" />
             Generate with V
           </button>
         )}
-      </div>
+      </PageHeader>
       <GenerateWorkoutModal open={showGenerateModal} onOpenChange={setShowGenerateModal} />
 
       {/* Workout title */}

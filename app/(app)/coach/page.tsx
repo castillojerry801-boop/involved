@@ -531,7 +531,7 @@ export default function CoachPage() {
     <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen max-w-2xl mx-auto px-4 md:px-8">
 
       {/* Header */}
-      <div className="my-3 flex items-center gap-3 shrink-0 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-4 py-3">
+      <div className="my-3 flex items-center gap-3 shrink-0 rounded-2xl border border-emerald-500 bg-zinc-900/80 backdrop-blur-sm px-4 py-3">
         <div className="size-10 shrink-0 rounded-2xl overflow-hidden">
           <Image src="/icon.jpg" alt="Coach" width={40} height={40} className="size-10 object-cover" />
         </div>

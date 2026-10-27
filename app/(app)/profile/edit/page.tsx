@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowLeft, Loader2, Check, Camera, User } from 'lucide-react'
+import { Loader2, Check, Camera, User } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { cn } from '@/lib/utils'
 import { BodyStatsInput } from '@/components/ui/body-stats-input'
 
@@ -122,13 +122,7 @@ export default function ProfileEditPage() {
   return (
     <div className="mx-auto max-w-lg px-4 py-8 md:px-8">
 
-      {/* Header */}
-      <div className="mb-8 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link href="/profile" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <h1 className="text-xl font-black text-white">Edit profile</h1>
-      </div>
+      <PageHeader title="Edit profile" backHref="/profile" />
 
       <div className="space-y-4">
 

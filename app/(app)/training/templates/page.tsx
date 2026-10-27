@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Dumbbell, Play, Trash2, Loader2, Pencil, Copy, MoreHorizontal } from 'lucide-react'
+import { Plus, Dumbbell, Play, Trash2, Loader2, Pencil, Copy, MoreHorizontal } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { cn } from '@/lib/utils'
 
 interface Template {
@@ -150,21 +151,14 @@ export default function TemplatesPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
-      <div className="mb-8 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link href="/training" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-xl font-black text-white">Saved templates</h1>
-          <p className="text-sm text-zinc-300">Reusable single-session workouts</p>
-        </div>
+      <PageHeader title="Saved templates" backHref="/training" subtitle="Reusable single-session workouts">
         <Link
           href="/training/templates/new"
           className="flex items-center gap-1.5 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-3 py-2 text-sm font-bold hover:opacity-90"
         >
           <Plus className="size-3.5" /> New
         </Link>
-      </div>
+      </PageHeader>
 
       {loading ? (
         <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-zinc-400" /></div>

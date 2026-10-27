@@ -112,7 +112,7 @@ export default function TrainerProgramDetailPage({ params }: { params: Promise<{
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
       {/* Header */}
-      <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
+      <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-500 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
         <Link
           href="/trainer/programs"
           className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"

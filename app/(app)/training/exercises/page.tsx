@@ -1,4 +1,5 @@
 import { Metadata } from 'next'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { filterExercises, getDistinctEquipment, getDistinctTargets, getExerciseIdsForEquipment } from '@/lib/exercises'
 import { ExerciseBrowser, type BrowserFilterState } from '@/components/training/exercise-browser'
 import { getUser } from '@/lib/supabase/server'
@@ -105,16 +106,10 @@ export default async function ExerciseLibraryPage({ searchParams }: PageProps) {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-8">
-      <div className="mb-6 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <h1 className="text-2xl font-black text-white">
-          {profileName && profileId ? `Exercises at ${profileName}` : 'Exercise Library'}
-        </h1>
-        <p className="text-sm text-zinc-300">
-          {allowedIds
-            ? `${initial.length} exercises with your available equipment`
-            : '1,394 exercises with animated guides'}
-        </p>
-      </div>
+      <PageHeader
+        title={profileName && profileId ? `Exercises at ${profileName}` : 'Exercise Library'}
+        subtitle={allowedIds ? `${initial.length} exercises with your available equipment` : '1,394 exercises with animated guides'}
+      />
       <ExerciseBrowser
         initialExercises={initial}
         equipmentOptions={equipmentOptions}

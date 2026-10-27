@@ -179,7 +179,7 @@ export default function ProfilePage() {
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
 
       {/* Profile header */}
-      <div className="mb-8 flex items-center gap-4 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
+      <div className="mb-8 flex items-center gap-4 rounded-2xl border border-emerald-500 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
         <div className="relative shrink-0">
           <button
             onClick={() => avatarInputRef.current?.click()}

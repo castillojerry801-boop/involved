@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, Clock, Dumbbell } from 'lucide-react'
+import { CheckCircle2, Clock, Dumbbell } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
@@ -57,16 +57,7 @@ export default async function WorkoutHistoryPage({ params }: { params: Promise<{
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
-      {/* Header */}
-      <div className="mb-6 flex items-start gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link href="/training" className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <div>
-          <h1 className="font-black text-xl text-white">{workout.title}</h1>
-          {date && <p className="text-sm text-zinc-300 mt-0.5">{date}</p>}
-        </div>
-      </div>
+      <PageHeader title={workout.title} backHref="/training" subtitle={date ?? undefined} />
 
       {/* Stats strip */}
       <div className="mb-6 grid grid-cols-3 gap-3">

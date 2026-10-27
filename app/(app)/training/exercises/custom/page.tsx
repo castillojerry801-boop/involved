@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { ArrowLeft, Plus, Pencil, Trash2, Loader2, X, Check } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Plus, Pencil, Trash2, Loader2, X, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ExerciseMeta } from '@/lib/exercises'
 
@@ -204,14 +204,11 @@ export default function CustomExercisesPage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8 md:px-8">
-      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link href="/training" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-xl font-black text-white">Custom exercises</h1>
-          <p className="text-sm text-zinc-300">{exercises.length} exercise{exercises.length !== 1 ? 's' : ''}</p>
-        </div>
+      <PageHeader
+        title="Custom exercises"
+        backHref="/training"
+        subtitle={`${exercises.length} exercise${exercises.length !== 1 ? 's' : ''}`}
+      >
         {!creating && (
           <button
             onClick={() => { setCreating(true); setEditingId(null) }}
@@ -220,7 +217,7 @@ export default function CustomExercisesPage() {
             <Plus className="size-3.5" /> New
           </button>
         )}
-      </div>
+      </PageHeader>
 
       {loading ? (
         <div className="flex justify-center py-16"><Loader2 className="size-5 animate-spin text-zinc-400" /></div>

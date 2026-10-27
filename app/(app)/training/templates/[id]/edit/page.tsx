@@ -2,8 +2,8 @@
 
 import { use, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { ArrowLeft, Plus, Trash2, Loader2, X } from 'lucide-react'
+import { Plus, Trash2, Loader2, X } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { cn } from '@/lib/utils'
 import ExercisePicker from '@/components/training/ExercisePicker'
 import type { ExerciseMeta } from '@/lib/exercises'
@@ -199,12 +199,7 @@ export default function EditTemplatePage({ params }: { params: Promise<{ id: str
         </>
       )}
 
-      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link href="/training/templates" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <h1 className="font-black text-xl text-white">Edit template</h1>
-      </div>
+      <PageHeader title="Edit template" backHref="/training/templates" />
 
       <div className="mb-6 space-y-3">
         <div>

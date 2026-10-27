@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Clock, Dumbbell } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 
@@ -49,20 +50,11 @@ export default async function HistoryPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
-      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link
-          href="/training"
-          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-        >
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <div>
-          <h1 className="font-black text-xl text-white">Workout History</h1>
-          {workouts.length > 0 && (
-            <p className="text-sm text-zinc-300">{workouts.length} session{workouts.length !== 1 ? 's' : ''}</p>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Workout History"
+        backHref="/training"
+        subtitle={workouts.length > 0 ? `${workouts.length} session${workouts.length !== 1 ? 's' : ''}` : undefined}
+      />
 
       {workouts.length === 0 ? (
         <div className="flex flex-col items-center py-16 text-center">

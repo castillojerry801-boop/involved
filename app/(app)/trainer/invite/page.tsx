@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { ArrowLeft, Send, Clock, CheckCircle, XCircle, Copy, Check } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Send, Clock, CheckCircle, XCircle, Copy, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Invitation {
@@ -81,18 +81,7 @@ export default function TrainerInvitePage() {
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8 md:px-8">
-      <div className="mb-6 flex items-center gap-3 rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <Link
-          href="/trainer"
-          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
-        >
-          <ArrowLeft className="size-4 text-white" />
-        </Link>
-        <div>
-          <h1 className="text-xl font-black text-white">Invite a Client</h1>
-          <p className="text-sm text-zinc-300">Client must accept to activate the relationship</p>
-        </div>
-      </div>
+      <PageHeader title="Invite a Client" backHref="/trainer" subtitle="Client must accept to activate the relationship" />
 
       {/* Send form */}
       <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-6">

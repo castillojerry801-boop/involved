@@ -6,6 +6,7 @@ import { Trash2 } from 'lucide-react'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 interface TrainerProgram {
   id:              string
@@ -44,15 +45,11 @@ export default function TrainerProgramsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="mb-6 flex items-center justify-between rounded-2xl border border-emerald-500/60 bg-zinc-900/80 backdrop-blur-sm px-5 py-4">
-        <div>
-          <h1 className="text-2xl font-black text-white">Program Library</h1>
-          <p className="text-sm text-zinc-300 mt-0.5">Reusable templates you can assign to any client</p>
-        </div>
+      <PageHeader title="Program Library" subtitle="Reusable templates you can assign to any client">
         <Link href="/trainer/programs/new">
           <Button size="sm">New Program</Button>
         </Link>
-      </div>
+      </PageHeader>
 
       {programs.length === 0 ? (
         <Card>
