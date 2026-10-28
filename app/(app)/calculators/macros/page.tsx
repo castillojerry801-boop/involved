@@ -1,0 +1,296 @@
+'use client'
+
+import { useState, useMemo, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { cn } from '@/lib/utils'
+import {
+  macrosFromSplit,
+  macroCalorieConsistency,
+  validateMacroSplit,
+  MACRO_GOAL_LABELS,
+  type MacroGoal,
+} from '@/lib/calculators/macros'
+
+const MACRO_GOALS: MacroGoal[] = ['weight_loss', 'maintenance', 'muscle_gain', 'endurance']
+
+const PRESET_SPLITS: Record<MacroGoal, { proteinPct: number; fatPct: number; carbPct: number }> = {
+  weight_loss: { proteinPct: 35, fatPct: 30, carbPct: 35 },
+  maintenance: { proteinPct: 30, fatPct: 30, carbPct: 40 },
+  muscle_gain: { proteinPct: 30, fatPct: 25, carbPct: 45 },
+  endurance:   { proteinPct: 20, fatPct: 25, carbPct: 55 },
+}
+
+function MacrosContent() {
+  const searchParams = useSearchParams()
+
+  const [caloriesStr, setCaloriesStr] = useState(searchParams.get('calories') ?? '')
+  const [selectedGoal, setSelectedGoal] = useState<MacroGoal>('maintenance')
+  const [proteinPct, setProteinPct] = useState(PRESET_SPLITS.maintenance.proteinPct)
+  const [fatPct, setFatPct] = useState(PRESET_SPLITS.maintenance.fatPct)
+  const [carbPct, setCarbPct] = useState(PRESET_SPLITS.maintenance.carbPct)
+
+  // When URL param changes (e.g. navigating from TDEE), update calorie input
+  useEffect(() => {
+    const fromUrl = searchParams.get('calories')
+    if (fromUrl) setCaloriesStr(fromUrl)
+  }, [searchParams])
+
+  const calories = useMemo(() => {
+    const n = parseInt(caloriesStr, 10)
+    return Number.isInteger(n) && n > 0 ? n : null
+  }, [caloriesStr])
+
+  const splitTotal = proteinPct + fatPct + carbPct
+  const splitValid = validateMacroSplit(proteinPct, fatPct, carbPct)
+
+  const macroResult = useMemo(() => {
+    if (!calories || !splitValid) return null
+    return macrosFromSplit(calories, proteinPct, fatPct, carbPct)
+  }, [calories, splitValid, proteinPct, fatPct, carbPct, macrosFromSplit])
+
+  const consistency = useMemo(() => {
+    if (!macroResult?.ok) return null
+    return macroCalorieConsistency(macroResult.targets)
+  }, [macroResult])
+
+  function applyPreset(goal: MacroGoal) {
+    setSelectedGoal(goal)
+    const s = PRESET_SPLITS[goal]
+    setProteinPct(s.proteinPct)
+    setFatPct(s.fatPct)
+    setCarbPct(s.carbPct)
+  }
+
+  function handlePctInput(
+    field: 'protein' | 'fat' | 'carb',
+    raw: string,
+  ) {
+    const val = Math.min(100, Math.max(0, parseInt(raw) || 0))
+    if (field === 'protein') setProteinPct(val)
+    else if (field === 'fat') setFatPct(val)
+    else setCarbPct(val)
+  }
+
+  const pctInputClass =
+    'w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2.5 text-lg font-bold text-center text-zinc-900 dark:text-white focus:outline-none focus:border-emerald-500'
+
+  return (
+    <div className="mx-auto max-w-lg px-4 py-8 md:px-8">
+      <PageHeader
+        title="Macro Goals"
+        backHref="/calculators"
+        subtitle="Estimates based on 4/4/9 kcal per gram"
+      />
+
+      <div className="mt-6 space-y-4">
+
+        {/* Calorie target */}
+        <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+          <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide block mb-2">
+            Daily calorie target (kcal)
+          </label>
+          <input
+            type="number"
+            inputMode="numeric"
+            value={caloriesStr}
+            onChange={e => setCaloriesStr(e.target.value)}
+            placeholder="2000"
+            min={400}
+            max={15000}
+            className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 py-3 text-lg font-bold text-center text-zinc-900 dark:text-white placeholder:text-zinc-300 dark:placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500"
+          />
+          {calories != null && (calories < 400 || calories > 15000) && (
+            <p className="text-xs text-red-500 mt-1.5">
+              {calories < 400 ? 'Minimum is 400 kcal.' : 'Maximum is 15 000 kcal.'}
+            </p>
+          )}
+        </div>
+
+        {/* Goal presets */}
+        <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-3">
+          <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+            Goal preset
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {MACRO_GOALS.map(goal => {
+              const s = PRESET_SPLITS[goal]
+              const active =
+                selectedGoal === goal &&
+                proteinPct === s.proteinPct &&
+                fatPct === s.fatPct &&
+                carbPct === s.carbPct
+              return (
+                <button
+                  key={goal}
+                  onClick={() => applyPreset(goal)}
+                  className={cn(
+                    'rounded-xl border px-3 py-2.5 text-left transition-all',
+                    active
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/10'
+                      : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+                  )}
+                >
+                  <p className={cn(
+                    'text-sm font-semibold leading-tight',
+                    active ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-800 dark:text-zinc-200'
+                  )}>
+                    {MACRO_GOAL_LABELS[goal]}
+                  </p>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    {s.proteinPct}P / {s.fatPct}F / {s.carbPct}C
+                  </p>
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-xs text-zinc-400">
+            Presets are starting points — adjust the splits below.
+          </p>
+        </div>
+
+        {/* Custom split */}
+        <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+              Macro split
+            </p>
+            <span className={cn(
+              'text-xs font-semibold tabular-nums',
+              splitTotal === 100
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-red-500'
+            )}>
+              Total: {splitTotal}%{splitTotal !== 100 ? ' (must equal 100%)' : ''}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {/* Protein */}
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1 text-center">Protein %</label>
+              <input
+                type="number"
+                value={proteinPct}
+                onChange={e => handlePctInput('protein', e.target.value)}
+                min={0}
+                max={100}
+                className={pctInputClass}
+              />
+            </div>
+            {/* Fat */}
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1 text-center">Fat %</label>
+              <input
+                type="number"
+                value={fatPct}
+                onChange={e => handlePctInput('fat', e.target.value)}
+                min={0}
+                max={100}
+                className={pctInputClass}
+              />
+            </div>
+            {/* Carbs */}
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1 text-center">Carbs %</label>
+              <input
+                type="number"
+                value={carbPct}
+                onChange={e => handlePctInput('carb', e.target.value)}
+                min={0}
+                max={100}
+                className={pctInputClass}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Results */}
+      {macroResult?.ok && (
+        <div className="mt-6 space-y-4">
+          <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+            <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-3">
+              Estimated targets
+            </p>
+
+            {/* Macro bars */}
+            <div className="space-y-3">
+              {[
+                { label: 'Protein', grams: macroResult.targets.proteinG, pct: macroResult.targets.proteinPct, color: 'bg-blue-500' },
+                { label: 'Carbohydrate', grams: macroResult.targets.carbohydrateG, pct: macroResult.targets.carbPct, color: 'bg-emerald-500' },
+                { label: 'Fat', grams: macroResult.targets.fatG, pct: macroResult.targets.fatPct, color: 'bg-amber-500' },
+              ].map(({ label, grams, pct, color }) => (
+                <div key={label}>
+                  <div className="flex items-baseline justify-between mb-1">
+                    <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{label}</span>
+                    <span className="text-sm font-black text-zinc-900 dark:text-white tabular-nums">
+                      {grams}g <span className="text-xs font-normal text-zinc-400">{pct}%</span>
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${color}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Calorie summary */}
+            <div className="mt-4 flex items-center justify-between rounded-xl bg-zinc-50 dark:bg-zinc-800 px-4 py-3">
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Implied calories</span>
+              <div className="text-right">
+                <span className="text-lg font-black text-zinc-900 dark:text-white tabular-nums">
+                  {consistency?.impliedCalories.toLocaleString()}
+                </span>
+                <span className="text-xs text-zinc-400 ml-1">kcal</span>
+                {consistency && !consistency.withinTolerance && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                    ±{Math.abs(consistency.impliedCalories - macroResult.targets.calories)} kcal from target (rounding)
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs text-zinc-400 text-center px-2 leading-relaxed">
+            Gram values are calculated from 4 kcal/g protein, 4 kcal/g carbohydrate, and 9 kcal/g fat.
+            These are estimates — individual needs vary.
+          </p>
+        </div>
+      )}
+
+      {/* Prompt if incomplete */}
+      {!macroResult?.ok && (caloriesStr !== '' || splitTotal !== 100) && (
+        <div className="mt-6 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-4 text-center">
+          <p className="text-sm text-zinc-400">
+            {caloriesStr === ''
+              ? 'Enter a calorie target to calculate.'
+              : !calories || calories < 400
+              ? 'Enter a calorie target of at least 400 kcal.'
+              : splitTotal !== 100
+              ? `Adjust your splits to total 100% (currently ${splitTotal}%).`
+              : ''}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function MacrosPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex justify-center py-20">
+          <Loader2 className="size-6 animate-spin text-zinc-400" />
+        </div>
+      }
+    >
+      <MacrosContent />
+    </Suspense>
+  )
+}

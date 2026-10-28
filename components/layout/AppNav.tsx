@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Sun, Utensils, Dumbbell, TrendingUp, User, Target, Activity, Users, ChefHat, MoreHorizontal, X, Settings } from 'lucide-react'
+import { Sun, Utensils, Dumbbell, TrendingUp, User, Target, Activity, Users, ChefHat, MoreHorizontal, X, Settings, Calculator } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -16,9 +16,10 @@ const BASE_NAV_ITEMS = [
   { href: '/health',   label: 'Health',    icon: Activity },
   { href: '/coach',    label: 'Coach',     icon: null },
   { href: '/trainer',  label: 'Trainer',   icon: Users, trainerOnly: true },
-  { href: '/goals',    label: 'Goals',     icon: Target },
-  { href: '/progress', label: 'Progress',  icon: TrendingUp },
-  { href: '/profile',  label: 'Profile',   icon: User },
+  { href: '/goals',        label: 'Goals',                icon: Target },
+  { href: '/progress',     label: 'Progress',             icon: TrendingUp },
+  { href: '/calculators',  label: 'Fitness Calculators',  icon: Calculator },
+  { href: '/profile',      label: 'Profile',              icon: User },
 ]
 
 // 5-item mobile bottom bar: Today, Training, Nutrition, Recipes, More
@@ -31,11 +32,12 @@ const MOBILE_PRIMARY = [
 
 // Items inside the More sheet
 const MORE_SECONDARY = [
-  { href: '/health',    label: 'Health',    icon: Activity },
-  { href: '/goals',     label: 'Goals',     icon: Target },
-  { href: '/progress',  label: 'Progress',  icon: TrendingUp },
-  { href: '/profile',   label: 'Profile',   icon: User },
-  { href: '/settings',  label: 'Settings',  icon: Settings },
+  { href: '/health',       label: 'Health',               icon: Activity },
+  { href: '/goals',        label: 'Goals',                icon: Target },
+  { href: '/progress',     label: 'Progress',             icon: TrendingUp },
+  { href: '/calculators',  label: 'Fitness Calculators',  icon: Calculator },
+  { href: '/profile',      label: 'Profile',              icon: User },
+  { href: '/settings',     label: 'Settings',             icon: Settings },
 ]
 
 export function AppNav({ isTrainer = false }: { isTrainer?: boolean }) {
