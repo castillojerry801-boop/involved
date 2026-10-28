@@ -3,7 +3,6 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Dumbbell, Plus, ChevronRight, BookOpen, ClipboardList, Calendar, PlayCircle, CheckCircle2, Zap, LayoutTemplate, BarChart2, Calculator, Target } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
@@ -67,21 +66,48 @@ export default async function TrainingPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
 
-      {/* Header */}
-      <PageHeader title="Training" subtitle="Exercises, workouts & progress">
-        <Link href="/training/log?mode=plan">
-          <Button size="sm" variant="secondary">
-            <Calendar className="size-4" />
-            Plan
-          </Button>
-        </Link>
-        <Link href="/training/log">
-          <Button size="sm">
-            <Plus className="size-4" />
-            Log workout
-          </Button>
-        </Link>
-      </PageHeader>
+      {/* Header — custom responsive: title+subtitle inline on mobile, buttons below full-width;
+           desktop preserves single-row layout with buttons on the right */}
+      <div className="mb-6 rounded-2xl border border-emerald-500 bg-zinc-900/80 backdrop-blur-sm px-5 py-3">
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <h1 className="text-2xl font-black text-white leading-tight">Training</h1>
+              <p className="text-sm text-zinc-300">Your workouts and programs</p>
+            </div>
+          </div>
+          {/* Desktop only — buttons sit on the right */}
+          <div className="hidden md:flex items-center gap-2 shrink-0">
+            <Link href="/training/log?mode=plan">
+              <Button size="sm" variant="secondary">
+                <Calendar className="size-4" />
+                Plan workout
+              </Button>
+            </Link>
+            <Link href="/training/log">
+              <Button size="sm">
+                <Plus className="size-4" />
+                Log workout
+              </Button>
+            </Link>
+          </div>
+        </div>
+        {/* Mobile only — full-width stacked buttons below the heading row */}
+        <div className="mt-3 flex flex-col gap-2 md:hidden">
+          <Link href="/training/log" className="w-full">
+            <Button className="w-full">
+              <Plus className="size-4" />
+              Log workout
+            </Button>
+          </Link>
+          <Link href="/training/log?mode=plan" className="w-full">
+            <Button variant="secondary" className="w-full">
+              <Calendar className="size-4" />
+              Plan workout
+            </Button>
+          </Link>
+        </div>
+      </div>
 
       {/* Resume — pinned at top when a workout is in progress */}
       {inProgressWorkout && (
