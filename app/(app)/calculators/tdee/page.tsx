@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { ArrowRight, Loader2, AlertCircle, Info } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowRight, Loader2, AlertCircle, Info, CheckCircle2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { BodyStatsInput } from '@/components/ui/body-stats-input'
+import { ApplyTargetDialog } from '@/components/nutrition/apply-target-dialog'
 import { cn } from '@/lib/utils'
 import {
   calcTDEE,
@@ -14,14 +16,26 @@ import {
   type CalculatorSex,
   type ActivityLevel,
 } from '@/lib/calculators/tdee'
+import {
+  buildCaloriePayload,
+  FALLBACK_TARGET,
+  type FullNutritionTarget,
+} from '@/lib/calculators/apply-targets'
 
 type ProfileBioSex = 'male' | 'female' | 'prefer_not_to_say'
+
+type ApplyPhase =
+  | { phase: 'idle' }
+  | { phase: 'loading'; calories: number }
+  | { phase: 'confirm'; existing: FullNutritionTarget; proposed: FullNutritionTarget; existingId: string | null; isFirstTarget: boolean }
 
 const ACTIVITY_LEVELS: ActivityLevel[] = [
   'sedentary', 'light', 'moderate', 'active', 'very_active',
 ]
 
 export default function TDEEPage() {
+  const router = useRouter()
+
   const [profileLoading, setProfileLoading] = useState(true)
   const [profileSex, setProfileSex] = useState<ProfileBioSex | null>(null)
 
@@ -31,6 +45,9 @@ export default function TDEEPage() {
   const [heightCm, setHeightCm] = useState<number | null>(null)
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>('moderate')
   const [hasProfileStats, setHasProfileStats] = useState(false)
+
+  const [applyPhase, setApplyPhase] = useState<ApplyPhase>({ phase: 'idle' })
+  const [applyError, setApplyError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/profile')
@@ -69,6 +86,54 @@ export default function TDEEPage() {
 
   const missingInputs =
     !sex || weightKg == null || heightCm == null || age.trim() === ''
+
+  async function startApplyCalories(calories: number) {
+    setApplyError(null)
+    setApplyPhase({ phase: 'loading', calories })
+    try {
+      const res = await fetch('/api/nutrition/targets')
+      if (!res.ok) {
+        setApplyPhase({ phase: 'idle' })
+        setApplyError('Unable to load current goals. Please try again.')
+        return
+      }
+      const { target } = await res.json() as { target: (FullNutritionTarget & { id: string }) | null }
+      const existing = target ?? FALLBACK_TARGET
+      setApplyPhase({
+        phase: 'confirm',
+        existing,
+        proposed: buildCaloriePayload(existing, calories),
+        existingId: target?.id ?? null,
+        isFirstTarget: target === null,
+      })
+    } catch {
+      setApplyPhase({ phase: 'idle' })
+      setApplyError('Unable to load current goals. Please check your connection.')
+    }
+  }
+
+  async function handleApplyConfirm(): Promise<{ ok: boolean; error?: string }> {
+    if (applyPhase.phase !== 'confirm') return { ok: false, error: 'Invalid state.' }
+    const { proposed, existingId } = applyPhase
+    // Always include existingTargetId so the server stale check runs.
+    // null = first-time user (expect no current record); string = existing record ID.
+    const payload = { ...proposed, existingTargetId: existingId }
+    try {
+      const res = await fetch('/api/nutrition/targets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string }
+        return { ok: false, error: data.error ?? 'Failed to save goals.' }
+      }
+      router.refresh()
+      return { ok: true }
+    } catch {
+      return { ok: false, error: 'Network error. Please try again.' }
+    }
+  }
 
   return (
     <div className="mx-auto max-w-lg px-4 py-8 md:px-8">
@@ -284,47 +349,73 @@ export default function TDEEPage() {
                   Calorie projections
                 </p>
                 <p className="text-xs text-zinc-400 mt-0.5">
-                  Tap a row to use in the Macro Goals calculator.
+                  Tap a row to use in the Macro Goals calculator, or apply directly as your calorie goal.
                 </p>
               </div>
 
-              {projections.map(proj => (
-                <div key={proj.id}>
-                  <Link
-                    href={`/calculators/macros?calories=${proj.calories}`}
-                    className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:border-emerald-400 dark:hover:border-emerald-600 px-4 py-3 transition-colors group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-zinc-900 dark:text-white">{proj.label}</p>
-                        {proj.floorApplied && (
-                          <span className="text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full leading-none">
-                            Floor
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-zinc-400 leading-tight mt-0.5">{proj.description}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-xl font-black text-zinc-900 dark:text-white">
-                        {proj.calories.toLocaleString()}
-                      </p>
-                      <p className="text-xs text-zinc-400">kcal</p>
-                    </div>
-                    <ArrowRight className="size-4 text-zinc-300 dark:text-zinc-600 group-hover:text-emerald-500 transition-colors shrink-0" />
-                  </Link>
-
-                  {proj.floorApplied && (
-                    <div className="flex items-start gap-2 mt-1.5 px-1">
-                      <AlertCircle className="size-3 text-amber-500 shrink-0 mt-0.5" />
-                      <p className="text-xs text-amber-600 dark:text-amber-500 leading-snug">
-                        Adjusted to the recommended minimum of {proj.calories.toLocaleString()} kcal/day.
-                        This floor is not automatically safe for everyone — consult a healthcare provider.
-                      </p>
-                    </div>
-                  )}
+              {applyError && (
+                <div className="flex items-start gap-2 rounded-xl bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/40 px-3 py-2.5">
+                  <AlertCircle className="size-3.5 text-red-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-700 dark:text-red-400">{applyError}</p>
                 </div>
-              ))}
+              )}
+
+              {projections.map(proj => {
+                const isLoadingThis = applyPhase.phase === 'loading' && applyPhase.calories === proj.calories
+                const anyLoading = applyPhase.phase === 'loading'
+                return (
+                  <div key={proj.id}>
+                    <Link
+                      href={`/calculators/macros?calories=${proj.calories}`}
+                      className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:border-emerald-400 dark:hover:border-emerald-600 px-4 py-3 transition-colors group"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-zinc-900 dark:text-white">{proj.label}</p>
+                          {proj.floorApplied && (
+                            <span className="text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full leading-none">
+                              Floor
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-zinc-400 leading-tight mt-0.5">{proj.description}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-xl font-black text-zinc-900 dark:text-white">
+                          {proj.calories.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-zinc-400">kcal</p>
+                      </div>
+                      <ArrowRight className="size-4 text-zinc-300 dark:text-zinc-600 group-hover:text-emerald-500 transition-colors shrink-0" />
+                    </Link>
+
+                    {/* Apply as calorie goal */}
+                    <div className="flex items-center gap-2 mt-1 px-1">
+                      <button
+                        onClick={() => startApplyCalories(proj.calories)}
+                        disabled={anyLoading}
+                        className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed py-1"
+                      >
+                        {isLoadingThis
+                          ? <Loader2 className="size-3 animate-spin" />
+                          : <CheckCircle2 className="size-3" />
+                        }
+                        Apply as calorie goal
+                      </button>
+                    </div>
+
+                    {proj.floorApplied && (
+                      <div className="flex items-start gap-2 mt-0.5 px-1">
+                        <AlertCircle className="size-3 text-amber-500 shrink-0 mt-0.5" />
+                        <p className="text-xs text-amber-600 dark:text-amber-500 leading-snug">
+                          Adjusted to the recommended minimum of {proj.calories.toLocaleString()} kcal/day.
+                          This floor is not automatically safe for everyone — consult a healthcare provider.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
 
             <p className="text-xs text-zinc-400 text-center px-2 leading-relaxed">
@@ -334,6 +425,18 @@ export default function TDEEPage() {
           </>
         )}
       </div>
+
+      {/* Apply confirmation dialog */}
+      {applyPhase.phase === 'confirm' && (
+        <ApplyTargetDialog
+          mode="calorie"
+          existing={applyPhase.existing}
+          proposed={applyPhase.proposed}
+          isFirstTarget={applyPhase.isFirstTarget}
+          onConfirm={handleApplyConfirm}
+          onClose={() => setApplyPhase({ phase: 'idle' })}
+        />
+      )}
     </div>
   )
 }

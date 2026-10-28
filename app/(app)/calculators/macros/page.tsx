@@ -2,8 +2,11 @@
 
 import { useState, useMemo, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Loader2, AlertCircle } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Button } from '@/components/ui/button'
+import { ApplyTargetDialog } from '@/components/nutrition/apply-target-dialog'
 import { cn } from '@/lib/utils'
 import {
   macrosFromSplit,
@@ -12,6 +15,11 @@ import {
   MACRO_GOAL_LABELS,
   type MacroGoal,
 } from '@/lib/calculators/macros'
+import {
+  buildMacroPayload,
+  FALLBACK_TARGET,
+  type FullNutritionTarget,
+} from '@/lib/calculators/apply-targets'
 
 const MACRO_GOALS: MacroGoal[] = ['weight_loss', 'maintenance', 'muscle_gain', 'endurance']
 
@@ -22,7 +30,13 @@ const PRESET_SPLITS: Record<MacroGoal, { proteinPct: number; fatPct: number; car
   endurance:   { proteinPct: 20, fatPct: 25, carbPct: 55 },
 }
 
+type ApplyPhase =
+  | { phase: 'idle' }
+  | { phase: 'loading' }
+  | { phase: 'confirm'; existing: FullNutritionTarget; proposed: FullNutritionTarget; existingId: string | null; isFirstTarget: boolean }
+
 function MacrosContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
 
   const [caloriesStr, setCaloriesStr] = useState(searchParams.get('calories') ?? '')
@@ -30,6 +44,9 @@ function MacrosContent() {
   const [proteinPct, setProteinPct] = useState(PRESET_SPLITS.maintenance.proteinPct)
   const [fatPct, setFatPct] = useState(PRESET_SPLITS.maintenance.fatPct)
   const [carbPct, setCarbPct] = useState(PRESET_SPLITS.maintenance.carbPct)
+
+  const [applyPhase, setApplyPhase] = useState<ApplyPhase>({ phase: 'idle' })
+  const [applyError, setApplyError] = useState<string | null>(null)
 
   // When URL param changes (e.g. navigating from TDEE), update calorie input
   useEffect(() => {
@@ -71,6 +88,55 @@ function MacrosContent() {
     if (field === 'protein') setProteinPct(val)
     else if (field === 'fat') setFatPct(val)
     else setCarbPct(val)
+  }
+
+  async function startApplyMacros() {
+    if (!macroResult?.ok) return
+    setApplyError(null)
+    setApplyPhase({ phase: 'loading' })
+    try {
+      const res = await fetch('/api/nutrition/targets')
+      if (!res.ok) {
+        setApplyPhase({ phase: 'idle' })
+        setApplyError('Unable to load current goals. Please try again.')
+        return
+      }
+      const { target } = await res.json() as { target: (FullNutritionTarget & { id: string }) | null }
+      const existing = target ?? FALLBACK_TARGET
+      setApplyPhase({
+        phase: 'confirm',
+        existing,
+        proposed: buildMacroPayload(existing, macroResult.targets),
+        existingId: target?.id ?? null,
+        isFirstTarget: target === null,
+      })
+    } catch {
+      setApplyPhase({ phase: 'idle' })
+      setApplyError('Unable to load current goals. Please check your connection.')
+    }
+  }
+
+  async function handleApplyConfirm(): Promise<{ ok: boolean; error?: string }> {
+    if (applyPhase.phase !== 'confirm') return { ok: false, error: 'Invalid state.' }
+    const { proposed, existingId } = applyPhase
+    // Always include existingTargetId so the server stale check runs.
+    // null = first-time user (expect no current record); string = existing record ID.
+    const payload = { ...proposed, existingTargetId: existingId }
+    try {
+      const res = await fetch('/api/nutrition/targets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string }
+        return { ok: false, error: data.error ?? 'Failed to save goals.' }
+      }
+      router.refresh()
+      return { ok: true }
+    } catch {
+      return { ok: false, error: 'Network error. Please try again.' }
+    }
   }
 
   const pctInputClass =
@@ -254,6 +320,25 @@ function MacrosContent() {
                 )}
               </div>
             </div>
+
+            {/* Apply to Nutrition Goals */}
+            <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
+              {applyError && (
+                <div className="flex items-start gap-2 rounded-xl bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/40 px-3 py-2">
+                  <AlertCircle className="size-3.5 text-red-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-700 dark:text-red-400">{applyError}</p>
+                </div>
+              )}
+              <Button
+                onClick={startApplyMacros}
+                disabled={applyPhase.phase === 'loading'}
+                className="w-full"
+              >
+                {applyPhase.phase === 'loading'
+                  ? <><Loader2 className="size-4 animate-spin" /> Loading current goals…</>
+                  : 'Apply to Nutrition Goals'}
+              </Button>
+            </div>
           </div>
 
           <p className="text-xs text-zinc-400 text-center px-2 leading-relaxed">
@@ -276,6 +361,18 @@ function MacrosContent() {
               : ''}
           </p>
         </div>
+      )}
+
+      {/* Apply confirmation dialog */}
+      {applyPhase.phase === 'confirm' && (
+        <ApplyTargetDialog
+          mode="macros"
+          existing={applyPhase.existing}
+          proposed={applyPhase.proposed}
+          isFirstTarget={applyPhase.isFirstTarget}
+          onConfirm={handleApplyConfirm}
+          onClose={() => setApplyPhase({ phase: 'idle' })}
+        />
       )}
     </div>
   )

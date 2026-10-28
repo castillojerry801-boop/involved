@@ -25,6 +25,7 @@ export function GoalsEditor({ current, onSaved, onClose }: Props) {
     fatG: current.fatG,
   })
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const set = (key: keyof typeof values, val: string) => {
     const n = parseInt(val, 10)
@@ -33,14 +34,25 @@ export function GoalsEditor({ current, onSaved, onClose }: Props) {
 
   const save = async () => {
     setSaving(true)
-    await fetch('/api/nutrition/targets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(values),
-    })
-    onSaved(values)
-    setSaving(false)
-    onClose()
+    setError(null)
+    try {
+      const res = await fetch('/api/nutrition/targets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string }
+        setError(data.error ?? 'Save failed. Please try again.')
+        return
+      }
+      onSaved(values)
+      onClose()
+    } catch {
+      setError('Network error. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   // Rough macro calorie check
@@ -93,6 +105,10 @@ export function GoalsEditor({ current, onSaved, onClose }: Props) {
               </span>
             )}
           </div>
+
+          {error && (
+            <p className="text-xs text-red-500 -mt-2">{error}</p>
+          )}
 
           <Button onClick={save} disabled={saving} className="w-full mt-1">
             {saving ? <><Loader2 className="size-4 animate-spin" /> Saving...</> : 'Save goals'}
