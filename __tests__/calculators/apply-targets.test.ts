@@ -130,6 +130,30 @@ describe('buildCaloriePayload', () => {
     buildCaloriePayload(existing, 1600)
     expect(existing.calories).toBe(2000)
   })
+
+  // Regression: verifies that when the GET /api/nutrition/targets response is
+  // properly serialized (Decimal→number), buildCaloriePayload produces a payload
+  // with numeric macro fields that pass the POST route's isFiniteInRange checks.
+  it('produces numeric macro fields when existing target has numeric values', () => {
+    const existing: FullNutritionTarget = {
+      calories: 2000,
+      proteinG: 150,
+      carbohydrateG: 130,
+      fatG: 65,
+      fiberG: null,
+      sugarG: null,
+      sodiumMg: null,
+    }
+    const result = buildCaloriePayload(existing, 2571)
+    expect(typeof result.proteinG).toBe('number')
+    expect(typeof result.carbohydrateG).toBe('number')
+    expect(typeof result.fatG).toBe('number')
+    expect(typeof result.calories).toBe('number')
+    expect(result.proteinG).toBe(150)
+    expect(result.carbohydrateG).toBe(130)
+    expect(result.fatG).toBe(65)
+    expect(result.calories).toBe(2571)
+  })
 })
 
 // ── buildMacroPayload ───────────────────────────────────────────────────────────

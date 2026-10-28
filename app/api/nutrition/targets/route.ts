@@ -12,6 +12,24 @@ class StaleTargetError extends Error {
   constructor() { super('stale_target') }
 }
 
+// Prisma Decimal fields serialize as strings in JSON. Convert all numeric fields
+// to JS numbers here so callers never receive string values for macro targets.
+function serializeTarget(
+  target: Awaited<ReturnType<typeof prisma.nutritionTarget.findFirst>>,
+) {
+  if (target === null || target === undefined) return null
+  return {
+    ...target,
+    calories: Number(target.calories),
+    proteinG: Number(target.proteinG),
+    carbohydrateG: Number(target.carbohydrateG),
+    fatG: Number(target.fatG),
+    fiberG: target.fiberG != null ? Number(target.fiberG) : null,
+    sugarG: target.sugarG != null ? Number(target.sugarG) : null,
+    sodiumMg: target.sodiumMg != null ? Number(target.sodiumMg) : null,
+  }
+}
+
 export async function GET(_req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -22,7 +40,7 @@ export async function GET(_req: NextRequest) {
     orderBy: { effectiveDate: 'desc' },
   })
 
-  return NextResponse.json({ target: target ?? null })
+  return NextResponse.json({ target: serializeTarget(target) })
 }
 
 export async function POST(req: NextRequest) {

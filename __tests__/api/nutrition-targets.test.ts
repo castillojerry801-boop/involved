@@ -106,6 +106,60 @@ describe('GET /api/nutrition/targets', () => {
     expect(body.target.sodiumMg).toBe(2300)
   })
 
+  // Regression: Prisma Decimal fields serialize as strings in JSON. The GET
+  // response must convert them to numbers so callers can safely spread them
+  // into a POST payload without hitting the "must be a number" validation.
+  it('serializes Decimal string values from Prisma as JS numbers', async () => {
+    mockAuth('user_abc')
+    // Simulate what Prisma actually returns for Decimal columns: string-like objects
+    // whose valueOf()/toString() return the decimal string.
+    mockFindFirst.mockResolvedValue({
+      ...FULL_TARGET,
+      calories: '2000.00',
+      proteinG: '150.00',
+      carbohydrateG: '130.00',
+      fatG: '65.00',
+      fiberG: '28.00',
+      sugarG: '50.00',
+      sodiumMg: '2300.00',
+    })
+
+    const res = await GET(makeGetRequest())
+    expect(res.status).toBe(200)
+    const { target } = await res.json()
+    expect(typeof target.calories).toBe('number')
+    expect(typeof target.proteinG).toBe('number')
+    expect(typeof target.carbohydrateG).toBe('number')
+    expect(typeof target.fatG).toBe('number')
+    expect(typeof target.fiberG).toBe('number')
+    expect(typeof target.sugarG).toBe('number')
+    expect(typeof target.sodiumMg).toBe('number')
+    expect(target.calories).toBe(2000)
+    expect(target.proteinG).toBe(150)
+    expect(target.carbohydrateG).toBe(130)
+    expect(target.fatG).toBe(65)
+  })
+
+  it('serializes null optional Decimal fields as null', async () => {
+    mockAuth('user_abc')
+    mockFindFirst.mockResolvedValue({
+      ...FULL_TARGET,
+      calories: '2000.00',
+      proteinG: '150.00',
+      carbohydrateG: '130.00',
+      fatG: '65.00',
+      fiberG: null,
+      sugarG: null,
+      sodiumMg: null,
+    })
+
+    const res = await GET(makeGetRequest())
+    const { target } = await res.json()
+    expect(target.fiberG).toBeNull()
+    expect(target.sugarG).toBeNull()
+    expect(target.sodiumMg).toBeNull()
+  })
+
   it('queries by userId ordered by effectiveDate desc', async () => {
     mockAuth('user_abc')
     mockFindFirst.mockResolvedValue(FULL_TARGET)
