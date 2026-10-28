@@ -13,6 +13,7 @@ import { ActivityDetailSheet } from '@/components/today/ActivityDetailSheet'
 import { WaterWidget } from '@/components/today/WaterWidget'
 import { HealthSyncTrigger } from '@/components/today/HealthSyncTrigger'
 import { getNextWorkout, formatWorkoutDate } from '@/lib/today/next-workout'
+import { NutritionRingsSummary } from '@/components/nutrition/nutrition-rings-summary'
 
 export const metadata: Metadata = { title: 'Today' }
 
@@ -44,37 +45,6 @@ function getLocalDayInfo(tz: string) {
   })
 
   return { dateStr, start, end, greeting, displayDate }
-}
-
-function pct(consumed: number, target: number) {
-  if (!target) return 0
-  return Math.min(Math.round((consumed / target) * 100), 100)
-}
-
-// ─── Calorie status ───────────────────────────────────────────────────────────
-// All thresholds and copy live here — nowhere else in this file.
-const CALORIE_THRESHOLDS = {
-  approaching: 0.90,  // >= 90%  of target → amber
-  over:        1.00,  // >= 100% of target → orange
-  wellOver:    1.15,  // >= 115% of target → red
-} as const
-
-type CalorieStatus = 'under' | 'approaching' | 'over' | 'wellOver'
-
-const CALORIE_STATUS_CFG: Record<CalorieStatus, { bar: string; text: string; message: string }> = {
-  under:       { bar: 'bg-emerald-500', text: 'text-emerald-500', message: 'Plenty of room left today.' },
-  approaching: { bar: 'bg-amber-400',   text: 'text-amber-400',   message: 'Getting close — choose the next meal wisely.' },
-  over:        { bar: 'bg-orange-500',  text: 'text-orange-500',  message: "You're over today's target. Keep the rest of the day light." },
-  wellOver:    { bar: 'bg-red-500',     text: 'text-red-500',     message: 'Today ran high. Reset tomorrow and keep moving.' },
-}
-
-function getCalorieStatus(consumed: number, target: number): CalorieStatus {
-  if (!target) return 'under'
-  const r = consumed / target
-  if (r >= CALORIE_THRESHOLDS.wellOver)    return 'wellOver'
-  if (r >= CALORIE_THRESHOLDS.over)        return 'over'
-  if (r >= CALORIE_THRESHOLDS.approaching) return 'approaching'
-  return 'under'
 }
 
 async function getTodayNutrition(userId: string, dateStr: string) {
@@ -229,9 +199,6 @@ export default async function TodayPage() {
   const totalWaterMl = waterAgg._sum.value != null ? Number(waterAgg._sum.value) : 0
   const waterGoalOz = profile?.waterTargetOz
     ?? (profile?.biologicalSex === 'female' ? 80 : 100)
-  const calRemaining = target ? target.calories - totals.calories : 0
-  const calorieStatus = target ? getCalorieStatus(totals.calories, target.calories) : 'under'
-  const statusCfg = CALORIE_STATUS_CFG[calorieStatus]
 
   const totalActivitySeconds = health.activities.reduce((sum, a) => sum + (a.durationSeconds ?? 0), 0)
   const activeMinutes = totalActivitySeconds > 0 ? Math.round(totalActivitySeconds / 60) : null
@@ -309,57 +276,17 @@ export default async function TodayPage() {
           </div>
         ) : (
           <>
-            <div className="mb-1 flex items-baseline gap-2">
-              <span className="text-3xl font-black tracking-tight text-zinc-900 dark:text-white">
-                {totals.calories.toLocaleString()}
-              </span>
-              <span className="text-sm text-zinc-400">
-                / {target.calories.toLocaleString()} cal
-              </span>
-            </div>
-
-            <p className="mb-2 text-sm text-zinc-500">
-              {calRemaining > 0
-                ? <><span className="font-semibold text-zinc-700 dark:text-zinc-300">{calRemaining.toLocaleString()}</span> calories remaining</>
-                : totals.calories === 0
-                  ? 'Nothing logged yet today'
-                  : <span className={cn('font-semibold', statusCfg.text)}>Goal exceeded</span>
-              }
-            </p>
-
-            {/* Calorie bar — color reflects status */}
-            <div className="mb-3 h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-              <div
-                className={cn('h-full rounded-full transition-all', statusCfg.bar)}
-                style={{ width: `${pct(totals.calories, target.calories)}%` }}
-              />
-            </div>
-
-            {/* Partial estimate notice */}
+            <NutritionRingsSummary
+              calories={{ consumed: totals.calories,  target: target.calories  }}
+              protein={{ consumed: totals.proteinG,   target: target.proteinG  }}
+              carbs={{ consumed: totals.carbsG,       target: target.carbsG    }}
+              fat={{ consumed: totals.fatG,           target: target.fatG      }}
+            />
             {hasPartialEstimate && (
-              <p className="mb-2 text-xs text-amber-500">Includes a partial estimate — some ingredients were not resolved.</p>
+              <p className="mt-2 text-xs text-amber-500">
+                Includes a partial estimate — some ingredients were not resolved.
+              </p>
             )}
-
-            {/* Macro rows */}
-            <div className="flex flex-col gap-2">
-              {[
-                { label: 'Protein', consumed: totals.proteinG,  target: target.proteinG, color: 'bg-sky-400' },
-                { label: 'Carbs',   consumed: totals.carbsG,    target: target.carbsG,   color: 'bg-amber-400' },
-                { label: 'Fat',     consumed: totals.fatG,      target: target.fatG,     color: 'bg-orange-400' },
-              ].map(({ label, consumed, target: t, color }) => (
-                <div key={label}>
-                  <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="font-medium text-zinc-600 dark:text-zinc-400">{label}</span>
-                    <span className="text-zinc-400">
-                      {consumed}g <span className="text-zinc-300 dark:text-zinc-600">/</span> {t}g
-                    </span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-                    <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct(consumed, t)}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
           </>
         )}
       </Card>

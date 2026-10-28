@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { FoodSearchModal } from '@/components/nutrition/food-search-modal'
 import { GoalsEditor } from '@/components/nutrition/goals-editor'
+import { NutritionRingsSummary } from '@/components/nutrition/nutrition-rings-summary'
 import { cn } from '@/lib/utils'
 
 type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
@@ -47,10 +48,6 @@ const MEAL_TYPES: { id: MealType; label: string }[] = [
   { id: 'snack',     label: 'Snacks' },
 ]
 
-function pct(consumed: number, target: number) {
-  return Math.min(Math.round((consumed / target) * 100), 100)
-}
-
 function toDateString(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -62,30 +59,6 @@ function formatDisplayDate(dateStr: string) {
   if (dateStr === today)     return `Today · ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`
   if (dateStr === yesterday) return `Yesterday · ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-}
-
-// ─── Ring chart ───────────────────────────────────────────────────────────────
-
-function CircleRing({ value, max, size, stroke, className, trackClassName }: {
-  value: number; max: number; size: number; stroke: number
-  className: string; trackClassName?: string
-}) {
-  const r            = (size - stroke) / 2
-  const circumference = 2 * Math.PI * r
-  const filled        = Math.min(value / Math.max(max, 1), 1)
-  const offset        = circumference * (1 - filled)
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
-      style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none"
-        stroke="currentColor" strokeWidth={stroke}
-        className={cn('text-zinc-200 dark:text-zinc-700', trackClassName)} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none"
-        stroke="currentColor" strokeWidth={stroke}
-        strokeLinecap="round" className={className}
-        style={{ strokeDasharray: circumference, strokeDashoffset: offset, transition: 'stroke-dashoffset 0.6s ease' }} />
-    </svg>
-  )
 }
 
 // ─── Inline serving editor ────────────────────────────────────────────────────
@@ -246,14 +219,6 @@ function NutritionContent() {
     setDeleting(null)
   }
 
-  const remaining = target.calories - totals.calories
-
-  const macros = [
-    { label: 'Protein', consumed: totals.proteinG,      target: target.proteinG,      ring: 'text-sky-400',    text: 'text-sky-500' },
-    { label: 'Carbs',   consumed: totals.carbohydrateG, target: target.carbohydrateG, ring: 'text-amber-400',  text: 'text-amber-500' },
-    { label: 'Fat',     consumed: totals.fatG,          target: target.fatG,          ring: 'text-orange-400', text: 'text-orange-500' },
-  ]
-
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 md:px-8 md:py-8">
 
@@ -298,8 +263,8 @@ function NutritionContent() {
           </div>
 
           {/* Summary card */}
-          <Card>
-            <div className="flex items-center justify-between mb-5">
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-4">
               <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Daily total</p>
               <button
                 onClick={() => setEditingGoals(true)}
@@ -309,63 +274,13 @@ function NutritionContent() {
                 Edit goals
               </button>
             </div>
-
-            {/* Calorie ring */}
-            <div className="flex flex-col items-center mb-4">
-              <div className="relative">
-                <CircleRing
-                  value={loading ? 0 : totals.calories}
-                  max={target.calories}
-                  size={140} stroke={12}
-                  className={remaining < 0 ? 'text-red-500' : 'text-emerald-500'}
-                />
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-3xl font-black text-zinc-900 dark:text-white leading-none">
-                    {loading ? '—' : totals.calories.toLocaleString()}
-                  </span>
-                  <span className="text-xs text-zinc-400 mt-1">
-                    of {target.calories.toLocaleString()} cal
-                  </span>
-                </div>
-              </div>
-              <p className={cn('text-sm font-medium mt-3', remaining < 0 ? 'text-red-500' : 'text-zinc-500')}>
-                {loading ? ' ' : remaining > 0
-                  ? `${remaining.toLocaleString()} remaining`
-                  : remaining === 0
-                    ? 'Goal reached!'
-                    : `${Math.abs(remaining).toLocaleString()} over goal`}
-              </p>
-            </div>
-
-            {/* Macro rings */}
-            <div className="grid grid-cols-3 gap-2">
-              {macros.map(({ label, consumed, target: t, ring, text }) => {
-                const isOver = !loading && t > 0 && consumed > t
-                const excess = isOver ? Math.round((consumed - t) * 10) / 10 : 0
-                return (
-                  <div key={label} className="flex flex-col items-center gap-1">
-                    <div className="relative">
-                      <CircleRing
-                        value={loading ? 0 : consumed} max={t}
-                        size={60} stroke={5} className={ring}
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className={cn('text-[10px] font-bold', text)}>
-                          {loading ? '—' : isOver ? '↑' : `${pct(consumed, t)}%`}
-                        </span>
-                      </div>
-                    </div>
-                    <p className={cn('text-sm font-bold leading-none', text)}>
-                      {loading ? '—' : `${consumed}g`}
-                    </p>
-                    <p className="text-[10px] text-zinc-400">{label}</p>
-                    {isOver
-                      ? <p className="text-[10px] text-red-400">{excess}g over</p>
-                      : <p className="text-[10px] text-zinc-400">/ {t}g</p>}
-                  </div>
-                )
-              })}
-            </div>
+            <NutritionRingsSummary
+              calories={{ consumed: loading ? 0 : totals.calories,      target: target.calories      }}
+              protein={{ consumed: loading ? 0 : totals.proteinG,       target: target.proteinG      }}
+              carbs={{ consumed: loading ? 0 : totals.carbohydrateG,    target: target.carbohydrateG }}
+              fat={{ consumed: loading ? 0 : totals.fatG,               target: target.fatG          }}
+              loading={loading}
+            />
           </Card>
         </div>
 
