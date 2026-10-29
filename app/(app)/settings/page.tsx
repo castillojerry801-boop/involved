@@ -4,10 +4,12 @@ import { useEffect, useState } from 'react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { cn } from '@/lib/utils'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
+import { useDistanceUnit } from '@/lib/hooks/use-distance-unit'
 import { AppleHealthCard } from '@/components/settings/AppleHealthCard'
 
 export default function SettingsPage() {
   const { unit, setUnit } = useWeightUnit()
+  const { unit: distUnit, setUnit: setDistUnit } = useDistanceUnit()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
@@ -36,6 +38,31 @@ export default function SettingsPage() {
                     className={cn(
                       'w-14 py-2 text-center uppercase transition-colors',
                       unit === u
+                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                        : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    )}
+                  >
+                    {u}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-4">
+            <div>
+              <p className="text-sm font-semibold text-zinc-900 dark:text-white">Distance unit</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Used for walking, running, and activity history</p>
+            </div>
+            {mounted && (
+              <div className="flex shrink-0 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden text-sm font-semibold">
+                {(['mi', 'km'] as const).map(u => (
+                  <button
+                    key={u}
+                    onClick={() => setDistUnit(u)}
+                    className={cn(
+                      'w-14 py-2 text-center uppercase transition-colors',
+                      distUnit === u
                         ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
                         : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
                     )}

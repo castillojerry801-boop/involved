@@ -72,6 +72,12 @@ export async function proxy(request: NextRequest) {
     supabaseResponse.headers.set('x-weight-unit', weightUnit)
   }
 
+  // Forward distance unit preference to server components as x-distance-unit header.
+  const distanceUnit = request.cookies.get('distance_unit')?.value
+  if (distanceUnit === 'mi' || distanceUnit === 'km') {
+    supabaseResponse.headers.set('x-distance-unit', distanceUnit)
+  }
+
   return supabaseResponse
 }
 

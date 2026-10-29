@@ -4,6 +4,7 @@ import {
   validateMacroSplit,
   macrosFromSplit,
   macroCalorieConsistency,
+  MACRO_SPLITS,
   KCAL_PER_PROTEIN,
   KCAL_PER_CARB,
   KCAL_PER_FAT,
@@ -18,15 +19,45 @@ describe('energy density constants', () => {
   test('KCAL_PER_FAT is 9',     () => expect(KCAL_PER_FAT).toBe(9))
 })
 
+// ─── MACRO_SPLITS export — percentages and sum integrity ─────────────────────
+
+describe('MACRO_SPLITS export', () => {
+  const goals: MacroGoal[] = ['weight_loss', 'maintenance', 'muscle_gain', 'endurance']
+
+  goals.forEach(goal => {
+    test(`${goal} percentages sum to exactly 100`, () => {
+      const { proteinPct, fatPct, carbPct } = MACRO_SPLITS[goal]
+      expect(proteinPct + fatPct + carbPct).toBe(100)
+    })
+  })
+
+  test('weight_loss is 40P / 30F / 30C', () => {
+    expect(MACRO_SPLITS.weight_loss).toEqual({ proteinPct: 40, fatPct: 30, carbPct: 30 })
+  })
+
+  test('muscle_gain is 35P / 25F / 40C', () => {
+    expect(MACRO_SPLITS.muscle_gain).toEqual({ proteinPct: 35, fatPct: 25, carbPct: 40 })
+  })
+
+  test('maintenance is 30P / 30F / 40C (unchanged)', () => {
+    expect(MACRO_SPLITS.maintenance).toEqual({ proteinPct: 30, fatPct: 30, carbPct: 40 })
+  })
+
+  test('endurance is 20P / 25F / 55C (unchanged)', () => {
+    expect(MACRO_SPLITS.endurance).toEqual({ proteinPct: 20, fatPct: 25, carbPct: 55 })
+  })
+})
+
 // ─── Preset macro splits — exact gram values ──────────────────────────────────
 //
 // Worked examples at 2 000 kcal (manually verified):
 //
-// weight_loss (35 P / 30 F / 35 C):
-//   protein = round(2000*0.35/4) = round(175)   = 175
+// weight_loss (40 P / 30 F / 30 C):
+//   protein = round(2000*0.40/4) = round(200)   = 200
 //   fat     = round(2000*0.30/9) = round(66.67)  = 67
-//   carbCal = 2000 − 175*4 − 67*9 = 2000−700−603 = 697
-//   carbs   = round(697/4)        = round(174.25) = 174
+//   carbCal = 2000 − 200*4 − 67*9 = 2000−800−603 = 597
+//   carbs   = round(597/4)        = round(149.25) = 149
+//   implied = 200*4 + 149*4 + 67*9 = 800+596+603 = 1999 (within ±10 ✓)
 //
 // maintenance (30 P / 30 F / 40 C):
 //   protein = round(2000*0.30/4) = round(150)   = 150
@@ -34,11 +65,12 @@ describe('energy density constants', () => {
 //   carbCal = 2000−600−603 = 797
 //   carbs   = round(797/4) = round(199.25) = 199
 //
-// muscle_gain (30 P / 25 F / 45 C):
-//   protein = round(2000*0.30/4) = round(150)   = 150
+// muscle_gain (35 P / 25 F / 40 C):
+//   protein = round(2000*0.35/4) = round(175)   = 175
 //   fat     = round(2000*0.25/9) = round(55.56)  = 56
-//   carbCal = 2000−600−504 = 896
-//   carbs   = round(896/4) = round(224) = 224
+//   carbCal = 2000 − 175*4 − 56*9 = 2000−700−504 = 796
+//   carbs   = round(796/4) = round(199) = 199
+//   implied = 175*4 + 199*4 + 56*9 = 700+796+504 = 2000 ✓
 //
 // endurance (20 P / 25 F / 55 C):
 //   protein = round(2000*0.20/4) = round(100)   = 100
@@ -51,14 +83,14 @@ describe('suggestMacros — weight_loss at 2000 kcal', () => {
 
   test('ok is true', () => expect(result.ok).toBe(true))
 
-  test('protein 175 g', () => {
-    if (result.ok) expect(result.targets.proteinG).toBe(175)
+  test('protein 200 g', () => {
+    if (result.ok) expect(result.targets.proteinG).toBe(200)
   })
   test('fat 67 g', () => {
     if (result.ok) expect(result.targets.fatG).toBe(67)
   })
-  test('carbohydrate 174 g (absorbs rounding slack)', () => {
-    if (result.ok) expect(result.targets.carbohydrateG).toBe(174)
+  test('carbohydrate 149 g (absorbs rounding slack)', () => {
+    if (result.ok) expect(result.targets.carbohydrateG).toBe(149)
   })
   test('stored calorie value is the input', () => {
     if (result.ok) expect(result.targets.calories).toBe(2000)
@@ -84,14 +116,14 @@ describe('suggestMacros — muscle_gain at 2000 kcal', () => {
   const result = suggestMacros(2000, 'muscle_gain')
 
   test('ok is true', () => expect(result.ok).toBe(true))
-  test('protein 150 g', () => {
-    if (result.ok) expect(result.targets.proteinG).toBe(150)
+  test('protein 175 g', () => {
+    if (result.ok) expect(result.targets.proteinG).toBe(175)
   })
   test('fat 56 g', () => {
     if (result.ok) expect(result.targets.fatG).toBe(56)
   })
-  test('carbohydrate 224 g', () => {
-    if (result.ok) expect(result.targets.carbohydrateG).toBe(224)
+  test('carbohydrate 199 g', () => {
+    if (result.ok) expect(result.targets.carbohydrateG).toBe(199)
   })
 })
 
@@ -128,7 +160,7 @@ describe('macroCalorieConsistency — all presets', () => {
   test('reports implied calories correctly', () => {
     const result = suggestMacros(2000, 'muscle_gain')
     if (result.ok) {
-      // protein=150 fat=56 carb=224 → 150*4 + 224*4 + 56*9 = 600+896+504 = 2000
+      // protein=175 fat=56 carb=199 → 175*4 + 199*4 + 56*9 = 700+796+504 = 2000
       const { impliedCalories } = macroCalorieConsistency(result.targets)
       expect(impliedCalories).toBe(2000)
     }
@@ -138,12 +170,12 @@ describe('macroCalorieConsistency — all presets', () => {
 // ─── Preset percentage preservation ──────────────────────────────────────────
 
 describe('suggestMacros — preset percentages in output', () => {
-  test('weight_loss stores 35/30/35 split', () => {
+  test('weight_loss stores 40/30/30 split', () => {
     const result = suggestMacros(2000, 'weight_loss')
     if (result.ok) {
-      expect(result.targets.proteinPct).toBe(35)
+      expect(result.targets.proteinPct).toBe(40)
       expect(result.targets.fatPct).toBe(30)
-      expect(result.targets.carbPct).toBe(35)
+      expect(result.targets.carbPct).toBe(30)
     }
   })
 

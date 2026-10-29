@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
+import { useDistanceUnit } from '@/lib/hooks/use-distance-unit'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/badge'
@@ -185,7 +186,11 @@ function StepChart({ data, avg }: { data: Array<{ date: string; steps: number }>
 
 // ─── Activity row ─────────────────────────────────────────────────────────────
 
-function ActivityRow({ a }: { a: HealthActivity }) {
+function ActivityRow({ a, distUnit, metersToDisplay }: {
+  a: HealthActivity
+  distUnit: string
+  metersToDisplay: (m: number | null | undefined) => string
+}) {
   const type = a.activityType as HealthActivityType
   const mins = a.durationSeconds ? Math.round(a.durationSeconds / 60) : null
   const date = new Date(a.startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -209,7 +214,7 @@ function ActivityRow({ a }: { a: HealthActivity }) {
           {mins            && <span>{mins} min</span>}
           {a.avgHeartRateBpm && <span>avg {a.avgHeartRateBpm} bpm</span>}
           {a.activeEnergyKcal && <span>{Math.round(a.activeEnergyKcal)} kcal</span>}
-          {a.distanceM     && <span>{(a.distanceM / 1000).toFixed(2)} km</span>}
+          {a.distanceM     && <span>{metersToDisplay(a.distanceM)} {distUnit}</span>}
           {a.stepCount     && <span>{a.stepCount.toLocaleString()} steps</span>}
           <span className="text-zinc-300 dark:text-zinc-600">{PROVIDER_LABELS[a.provider] ?? a.provider}</span>
         </div>
@@ -684,6 +689,7 @@ type Tab = 'overview' | 'activities' | 'log' | 'connect'
 
 export default function HealthPage() {
   const { unit, toDisplay } = useWeightUnit()
+  const { unit: distUnit, metersToDisplay } = useDistanceUnit()
   const [tab, setTab]               = useState<Tab>('overview')
   const [summary, setSummary]       = useState<HealthVSummary | null>(null)
   const [activities, setActivities] = useState<HealthActivity[]>([])
@@ -1013,7 +1019,7 @@ export default function HealthPage() {
                         {a.durationMinutes   && <span>{a.durationMinutes} min</span>}
                         {a.avgHeartRateBpm   && <span>avg {a.avgHeartRateBpm} bpm</span>}
                         {a.activeEnergyKcal  && <span>{Math.round(a.activeEnergyKcal)} kcal</span>}
-                        {a.distanceM         && <span>{(a.distanceM / 1000).toFixed(2)} km</span>}
+                        {a.distanceM         && <span>{metersToDisplay(a.distanceM)} {distUnit}</span>}
                       </div>
                     </div>
                   </div>
@@ -1067,7 +1073,7 @@ export default function HealthPage() {
           )}
           {activities.length > 0 && (
             <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 divide-y divide-zinc-50 dark:divide-zinc-800">
-              {activities.map(a => <ActivityRow key={a.id} a={a} />)}
+              {activities.map(a => <ActivityRow key={a.id} a={a} distUnit={distUnit} metersToDisplay={metersToDisplay} />)}
             </div>
           )}
           {nextCursor && (

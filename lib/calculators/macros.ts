@@ -14,7 +14,7 @@ export const MACRO_GOAL_LABELS: Record<MacroGoal, string> = {
   endurance:   'Endurance',
 }
 
-interface MacroSplit {
+export interface MacroSplit {
   proteinPct: number
   fatPct:     number
   carbPct:    number
@@ -22,10 +22,10 @@ interface MacroSplit {
 
 // Preset macro percentage splits. Each triple sums to exactly 100.
 // These are adjustable starting points, not medical recommendations.
-const MACRO_SPLITS: Record<MacroGoal, MacroSplit> = {
-  weight_loss: { proteinPct: 35, fatPct: 30, carbPct: 35 },
+export const MACRO_SPLITS: Record<MacroGoal, MacroSplit> = {
+  weight_loss: { proteinPct: 40, fatPct: 30, carbPct: 30 },
   maintenance: { proteinPct: 30, fatPct: 30, carbPct: 40 },
-  muscle_gain: { proteinPct: 30, fatPct: 25, carbPct: 45 },
+  muscle_gain: { proteinPct: 35, fatPct: 25, carbPct: 40 },
   endurance:   { proteinPct: 20, fatPct: 25, carbPct: 55 },
 }
 

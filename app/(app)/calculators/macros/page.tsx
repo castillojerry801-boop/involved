@@ -13,6 +13,7 @@ import {
   macroCalorieConsistency,
   validateMacroSplit,
   MACRO_GOAL_LABELS,
+  MACRO_SPLITS,
   type MacroGoal,
 } from '@/lib/calculators/macros'
 import {
@@ -22,13 +23,6 @@ import {
 } from '@/lib/calculators/apply-targets'
 
 const MACRO_GOALS: MacroGoal[] = ['weight_loss', 'maintenance', 'muscle_gain', 'endurance']
-
-const PRESET_SPLITS: Record<MacroGoal, { proteinPct: number; fatPct: number; carbPct: number }> = {
-  weight_loss: { proteinPct: 35, fatPct: 30, carbPct: 35 },
-  maintenance: { proteinPct: 30, fatPct: 30, carbPct: 40 },
-  muscle_gain: { proteinPct: 30, fatPct: 25, carbPct: 45 },
-  endurance:   { proteinPct: 20, fatPct: 25, carbPct: 55 },
-}
 
 type ApplyPhase =
   | { phase: 'idle' }
@@ -41,9 +35,9 @@ function MacrosContent() {
 
   const [caloriesStr, setCaloriesStr] = useState(searchParams.get('calories') ?? '')
   const [selectedGoal, setSelectedGoal] = useState<MacroGoal>('maintenance')
-  const [proteinPct, setProteinPct] = useState(PRESET_SPLITS.maintenance.proteinPct)
-  const [fatPct, setFatPct] = useState(PRESET_SPLITS.maintenance.fatPct)
-  const [carbPct, setCarbPct] = useState(PRESET_SPLITS.maintenance.carbPct)
+  const [proteinPct, setProteinPct] = useState(MACRO_SPLITS.maintenance.proteinPct)
+  const [fatPct, setFatPct] = useState(MACRO_SPLITS.maintenance.fatPct)
+  const [carbPct, setCarbPct] = useState(MACRO_SPLITS.maintenance.carbPct)
 
   const [applyPhase, setApplyPhase] = useState<ApplyPhase>({ phase: 'idle' })
   const [applyError, setApplyError] = useState<string | null>(null)
@@ -74,7 +68,7 @@ function MacrosContent() {
 
   function applyPreset(goal: MacroGoal) {
     setSelectedGoal(goal)
-    const s = PRESET_SPLITS[goal]
+    const s = MACRO_SPLITS[goal]
     setProteinPct(s.proteinPct)
     setFatPct(s.fatPct)
     setCarbPct(s.carbPct)
@@ -181,7 +175,7 @@ function MacrosContent() {
           </p>
           <div className="grid grid-cols-2 gap-2">
             {MACRO_GOALS.map(goal => {
-              const s = PRESET_SPLITS[goal]
+              const s = MACRO_SPLITS[goal]
               const active =
                 selectedGoal === goal &&
                 proteinPct === s.proteinPct &&

@@ -7,6 +7,7 @@ import {
   PersonStanding, Waves, Zap, Heart, Clock, ChevronRight, Timer,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useDistanceUnit } from '@/lib/hooks/use-distance-unit'
 
 export interface TodayActivity {
   id: string
@@ -119,6 +120,7 @@ export function ActivityDetailSheet({
   allDayActiveKcal, basalKcal, totalBurnKcal, stepCount, activeMinutes,
 }: Props) {
   const [open, setOpen] = useState(false)
+  const { unit: distUnit, metersToDisplay } = useDistanceUnit()
   const hasData = activities.length > 0
 
   return (
@@ -284,7 +286,7 @@ export function ActivityDetailSheet({
                               )}
                               {a.distanceM != null && a.distanceM > 0 && (
                                 <span className="text-xs text-zinc-400">
-                                  {(a.distanceM / 1000).toFixed(2)} km
+                                  {metersToDisplay(a.distanceM)} {distUnit}
                                 </span>
                               )}
                             </div>

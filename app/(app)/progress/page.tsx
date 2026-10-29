@@ -6,6 +6,7 @@ import { Dumbbell, TrendingUp, Scale, Trophy, Loader2, Flame, Target, BarChart3 
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
+import { useDistanceUnit, type DistanceUnit, MI_PER_KM } from '@/lib/hooks/use-distance-unit'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,13 +35,17 @@ function fmtMetric(metric: string): string {
   return m[metric] ?? metric
 }
 
-function fmtValue(value: number, metric: string, unit: string): string {
+function fmtValue(value: number, metric: string, unit: string, distUnit: DistanceUnit = 'mi'): string {
   if (metric === 'duration') {
     const mins = Math.floor(value / 60)
     return mins > 0 ? `${mins}m` : `${value}s`
   }
   if (metric === 'distance') {
     const km = value / 1000
+    if (distUnit === 'mi') {
+      const mi = km * MI_PER_KM
+      return mi >= 0.1 ? `${mi.toFixed(2)} mi` : `${Math.round(value)} m`
+    }
     return km >= 1 ? `${km.toFixed(1)} km` : `${value} m`
   }
   const display = value % 1 === 0 ? value.toString() : value.toFixed(1)
@@ -167,6 +172,7 @@ function StatCard({ icon: Icon, label, value, sub, highlight = false }: {
 
 export default function ProgressPage() {
   const { unit, toDisplay } = useWeightUnit()
+  const { unit: distUnit } = useDistanceUnit()
   const [summary, setSummary] = useState<Summary | null>(null)
   const [volume, setVolume] = useState<VolumeData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -293,7 +299,7 @@ export default function ProgressPage() {
                   <p className="text-[11px] text-zinc-400">{fmtMetric(pr.metric)}</p>
                 </div>
                 <div className="text-right shrink-0 ml-3">
-                  <p className="text-sm font-black text-zinc-900 dark:text-white">{fmtValue(pr.value, pr.metric, pr.unit)}</p>
+                  <p className="text-sm font-black text-zinc-900 dark:text-white">{fmtValue(pr.value, pr.metric, pr.unit, distUnit)}</p>
                   <p className="text-[11px] text-zinc-400">{pr.achievedAt.slice(0, 10)}</p>
                 </div>
               </div>

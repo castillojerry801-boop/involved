@@ -11,6 +11,7 @@ import {
   type PersistedPhase,
   type ResolvedPrescription,
 } from '@/lib/training/prescription'
+import { useDistanceUnit, type DistanceUnit, formatDistanceM } from '@/lib/hooks/use-distance-unit'
 
 export interface ViewSet {
   targetRepsMin: number | null
@@ -46,11 +47,11 @@ export interface MultiWeekProgramData {
 
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-function formatPrescription(r: ResolvedPrescription): string {
+function formatPrescription(r: ResolvedPrescription, distUnit: DistanceUnit): string {
   // Cardio/endurance
   if (r.durationSeconds != null) {
     const mins = Math.round(r.durationSeconds / 60)
-    const dist = r.distanceM != null ? ` · ${(r.distanceM / 1000).toFixed(2)} km` : ''
+    const dist = r.distanceM != null ? ` · ${formatDistanceM(r.distanceM, distUnit)} ${distUnit}` : ''
     const rpe = r.targetRpe != null ? ` · RPE ${r.targetRpe}` : ''
     return `${mins} min${dist}${rpe}`
   }
@@ -70,6 +71,7 @@ export function MultiWeekProgramView({ data }: { data: MultiWeekProgramData }) {
   const totalWeeks = Math.max(1, data.durationWeeks ?? 1)
   const isMultiWeek = totalWeeks > 1
   const [week, setWeek] = useState(1)
+  const { unit: distUnit } = useDistanceUnit()
 
   const phase = useMemo(() => phaseForWeek(data.phases, week), [data.phases, week])
 
@@ -176,7 +178,7 @@ export function MultiWeekProgramView({ data }: { data: MultiWeekProgramData }) {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-zinc-900 dark:text-white">{ex.displayName}</p>
                     <p className="text-xs text-zinc-400">
-                      {formatPrescription(resolved)}
+                      {formatPrescription(resolved, distUnit)}
                       {ex.bodyPart ? ` · ${ex.bodyPart}` : ''}
                     </p>
                   </div>
