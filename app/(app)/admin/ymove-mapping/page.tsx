@@ -1,17 +1,18 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Search, CheckCircle, XCircle, Minus, ChevronDown, ChevronUp,
-  Play, RefreshCw, AlertTriangle, Star, Sparkles,
+  Play, RefreshCw, AlertTriangle, Star, Sparkles, Eye, Columns2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MatchClass, MatchSuggestion, SuggestionsSummary } from '@/lib/ymove/pipeline'
+import { MatchReviewer, type ReviewerSuggestion } from './MatchReviewer'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type MappingStatus = 'mapped' | 'no_match' | 'unmapped'
-type FilterStatus = MappingStatus | 'all' | 'starter' | 'suggestions'
+type FilterStatus = MappingStatus | 'all' | 'starter' | 'suggestions' | 'reviewer'
 
 interface ExerciseRow {
   exerciseDbId: string
@@ -25,7 +26,8 @@ interface ExerciseRow {
   primaryMuscles: string[] | null
   suggestedSearchQuery: string
   ymoveExerciseId: string | null
-  status: MappingStatus
+  verifiedAt:     string | null
+  status:         MappingStatus
   isStarterBatch: boolean
 }
 
@@ -46,7 +48,9 @@ type SuggestionFilter = MatchClass | 'all' | 'pending'
 interface EnrichedSuggestion extends MatchSuggestion {
   reviewStatus:          ReviewStatus
   currentMappedId:       string | null
+  verifiedAt:            string | null
   activeConflictDbId:    string | null
+  activeConflictName:    string | null
   suggestedConflictDbIds: string[]
 }
 
@@ -157,18 +161,23 @@ function SuggestionCard({
   selected,
   onToggleSelect,
   onApprove,
+  onForceApprove,
   onReject,
+  onReconsider,
   saving,
 }: {
   suggestion:      EnrichedSuggestion
   selected:        boolean
   onToggleSelect:  (exerciseDbId: string) => void
-  onApprove:       (exerciseDbId: string, ymoveId: string) => void
+  onApprove:       (exerciseDbId: string, ymoveId: string) => Promise<{ conflict?: boolean; existingName?: string; existingDbId?: string } | null>
+  onForceApprove:  (exerciseDbId: string, ymoveId: string) => void
   onReject:        (exerciseDbId: string) => void
+  onReconsider:    (exerciseDbId: string) => void
   saving:          boolean
 }) {
   const { topMatch, reviewStatus } = suggestion
   const [thumbVisible, setThumbVisible] = useState(false)
+  const [conflictInfo, setConflictInfo] = useState<{ existingName: string; pendingYmoveId: string } | null>(null)
 
   const REVIEW_BADGE: Record<ReviewStatus, string> = {
     pending:    'bg-zinc-800 text-zinc-400 border-zinc-700',
@@ -242,6 +251,11 @@ function SuggestionCard({
             )}>
               {REVIEW_LABEL[reviewStatus]}
             </span>
+            {suggestion.verifiedAt && (
+              <span className="flex items-center gap-0.5 rounded border border-emerald-700/60 bg-emerald-900/30 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                <Eye className="size-2.5" /> Verified
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap gap-1 text-xs text-zinc-500">
             <span className="font-mono">{suggestion.exerciseDbId}</span>
@@ -258,7 +272,7 @@ function SuggestionCard({
           {suggestion.activeConflictDbId && (
             <div className="flex items-center gap-1 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-1 text-[11px] text-amber-300">
               <AlertTriangle className="size-3 shrink-0" />
-              UUID in active mapping: #{suggestion.activeConflictDbId}
+              UUID already mapped to: {suggestion.activeConflictName ?? `#${suggestion.activeConflictDbId}`}
             </div>
           )}
           {suggestion.suggestedConflictDbIds.length > 0 && (
@@ -295,6 +309,40 @@ function SuggestionCard({
           ) : (
             <p className="text-xs text-zinc-600">No YMove candidates found for this exercise.</p>
           )}
+
+          {/* Conflict resolution — shown after Approve returns 409 */}
+          {conflictInfo && topMatch && (
+            <div className="rounded-lg border border-amber-700/60 bg-amber-900/20 p-2.5">
+              <div className="flex items-start gap-1.5">
+                <AlertTriangle className="size-3.5 text-amber-400 mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] text-amber-300">
+                    Already mapped to: <strong>{conflictInfo.existingName}</strong>
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-amber-400/80">
+                    Both exercises would share the same YMove video. Map anyway?
+                  </p>
+                  <div className="mt-1.5 flex gap-1.5">
+                    <button
+                      onClick={() => {
+                        setConflictInfo(null)
+                        onForceApprove(suggestion.exerciseDbId, conflictInfo.pendingYmoveId)
+                      }}
+                      className="rounded bg-amber-700 px-2 py-0.5 text-[11px] text-white hover:bg-amber-600"
+                    >
+                      Map anyway
+                    </button>
+                    <button
+                      onClick={() => setConflictInfo(null)}
+                      className="rounded px-2 py-0.5 text-[11px] text-zinc-400 hover:text-zinc-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Actions */}
@@ -302,7 +350,13 @@ function SuggestionCard({
           <div className="flex shrink-0 flex-col gap-1.5">
             {topMatch && (
               <button
-                onClick={() => onApprove(suggestion.exerciseDbId, topMatch.ymoveId)}
+                onClick={async () => {
+                  setConflictInfo(null)
+                  const result = await onApprove(suggestion.exerciseDbId, topMatch.ymoveId)
+                  if (result?.conflict && result.existingName) {
+                    setConflictInfo({ existingName: result.existingName, pendingYmoveId: topMatch.ymoveId })
+                  }
+                }}
                 disabled={saving}
                 className="rounded-md bg-green-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-600 disabled:opacity-50"
               >
@@ -318,6 +372,17 @@ function SuggestionCard({
             </button>
           </div>
         )}
+        {reviewStatus === 'rejected' && topMatch && (
+          <div className="flex shrink-0 flex-col gap-1.5">
+            <button
+              onClick={() => onReconsider(suggestion.exerciseDbId)}
+              disabled={saving}
+              className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50"
+            >
+              Reconsider
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -325,12 +390,156 @@ function SuggestionCard({
 
 // ── Suggestions view ───────────────────────────────────────────────────────────
 
+interface BatchResult {
+  approved: number
+  skipped:  number
+  conflicts: Array<{ exerciseDbId: string; ymoveId: string; reason: string }>
+}
+
+type QueueFilter = 'pending' | 'approved' | 'verified'
+
+const QUEUE_FILTER_TABS: { key: QueueFilter; label: string; description: string }[] = [
+  { key: 'pending',  label: 'Pending matches',    description: 'New suggestions awaiting first review' },
+  { key: 'approved', label: 'Approved mappings',  description: 'All 124 active mappings — inspect and correct' },
+  { key: 'verified', label: 'Visually verified',  description: 'Mappings with explicit movement confirmation' },
+]
+
+function ReviewerWrapper() {
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>('pending')
+
+  // Pending queue — from pipeline suggestions
+  const { data: suggestionsData, loading: suggestionsLoading, error: suggestionsError, reload: reloadSuggestions } = useSuggestions()
+
+  // Approved/verified queue — from exercise list
+  const [mappedExercises, setMappedExercises]   = useState<ExerciseRow[] | null>(null)
+  const [mappedLoading,   setMappedLoading]     = useState(false)
+  const [mappedError,     setMappedError]       = useState<string | null>(null)
+
+  const loadMappedExercises = useCallback(async () => {
+    setMappedLoading(true)
+    setMappedError(null)
+    try {
+      const res = await fetch('/api/admin/ymove-mapping?status=mapped&limit=500')
+      if (!res.ok) { setMappedError('Failed to load mapped exercises.'); return }
+      const data = await res.json() as { exercises: ExerciseRow[] }
+      setMappedExercises(data.exercises)
+    } catch {
+      setMappedError('Network error.')
+    } finally {
+      setMappedLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (queueFilter !== 'pending') void loadMappedExercises()
+  }, [queueFilter, loadMappedExercises])
+
+  // Build synthetic ReviewerSuggestion[] for approved/verified modes.
+  // The current ymoveId becomes topMatch; name is the ID (visual confirmed via thumbnail/video).
+  const approvedSuggestions = useMemo((): ReviewerSuggestion[] => {
+    if (!mappedExercises) return []
+    return mappedExercises
+      .filter(ex => ex.ymoveExerciseId !== null)
+      .map(ex => ({
+        exerciseDbId:         ex.exerciseDbId,
+        displayName:          ex.displayName,
+        bodyPart:             ex.bodyPart,
+        equipment:            ex.equipment,
+        target:               ex.target,
+        searchQuery:          ex.displayName,
+        searchedAt:           '',
+        status:               'high_confidence' as const,
+        topMatch: {
+          ymoveId:        ex.ymoveExerciseId!,
+          name:           ex.ymoveExerciseId!,
+          score:          100,
+          confidence:     'strong' as const,
+          matchReasons:   ['existing approved mapping'],
+          penaltyReasons: [],
+        },
+        otherCandidates:      [],
+        reviewStatus:         'approved' as const,
+        currentMappedId:      ex.ymoveExerciseId,
+        verifiedAt:           ex.verifiedAt,
+        activeConflictDbId:   null,
+        activeConflictName:   null,
+        suggestedConflictDbIds: [],
+      }))
+  }, [mappedExercises])
+
+  const isLoading = queueFilter === 'pending' ? suggestionsLoading : mappedLoading
+  const error     = queueFilter === 'pending' ? suggestionsError   : mappedError
+
+  const suggestions: ReviewerSuggestion[] =
+    queueFilter === 'pending'
+      ? (suggestionsData?.suggestions ?? []) as ReviewerSuggestion[]
+      : approvedSuggestions
+
+  const handleDecision = useCallback(() => {
+    if (queueFilter === 'pending') {
+      void reloadSuggestions()
+    } else {
+      void loadMappedExercises()
+    }
+  }, [queueFilter, reloadSuggestions, loadMappedExercises])
+
+  return (
+    <div className="space-y-4">
+      {/* Queue filter selector */}
+      <div className="flex flex-wrap gap-1 rounded-lg border border-zinc-800 bg-zinc-900/40 p-1.5">
+        {QUEUE_FILTER_TABS.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setQueueFilter(tab.key)}
+            title={tab.description}
+            className={cn(
+              'flex-1 rounded-md px-3 py-1.5 text-sm transition-colors text-center',
+              queueFilter === tab.key
+                ? 'bg-zinc-700 text-zinc-100'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60',
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Description */}
+      <p className="text-xs text-zinc-600">
+        {QUEUE_FILTER_TABS.find(t => t.key === queueFilter)?.description}
+      </p>
+
+      {/* Content */}
+      {isLoading && (
+        <p className="py-8 text-center text-sm text-zinc-500">Loading…</p>
+      )}
+      {!isLoading && error && (
+        <p className="py-8 text-center text-sm text-red-400">{error}</p>
+      )}
+      {!isLoading && !error && queueFilter === 'pending' && !suggestionsData?.ready && (
+        <p className="py-8 text-center text-sm text-zinc-500">
+          Pipeline not yet run. Execute:{' '}
+          <code className="rounded bg-zinc-800 px-1 text-xs">npx tsx scripts/ymove-run-pipeline.ts</code>
+        </p>
+      )}
+      {!isLoading && !error && (queueFilter !== 'pending' || suggestionsData?.ready) && (
+        <MatchReviewer
+          suggestions={suggestions}
+          onDecision={handleDecision}
+          reviewMode={queueFilter}
+        />
+      )}
+    </div>
+  )
+}
+
 function SuggestionsView() {
   const [filter,       setFilter]       = useState<SuggestionFilter>('pending')
   const [saving,       setSaving]       = useState<string | null>(null)
   const [batching,     setBatching]     = useState(false)
   const [batchConfirm, setBatchConfirm] = useState(false)
   const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set())
+  const [batchResult,  setBatchResult]  = useState<BatchResult | null>(null)
 
   const { data, loading, error, reload } = useSuggestions()
 
@@ -374,13 +583,35 @@ function SuggestionsView() {
     s => selectedIds.has(s.exerciseDbId) && s.topMatch,
   )
 
-  async function handleApprove(exerciseDbId: string, ymoveId: string) {
+  async function handleApprove(exerciseDbId: string, ymoveId: string): Promise<{ conflict?: boolean; existingName?: string; existingDbId?: string } | null> {
+    setSaving(exerciseDbId)
+    try {
+      const res = await fetch('/api/admin/ymove-mapping', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ exerciseDbId, ymoveExerciseId: ymoveId, forceOverwrite: false }),
+      })
+      if (res.status === 409) {
+        const data = await res.json() as { existingName?: string; existingDbId?: string }
+        return { conflict: true, existingName: data.existingName, existingDbId: data.existingDbId }
+      }
+      if (res.ok) {
+        setSelectedIds(prev => { const n = new Set(prev); n.delete(exerciseDbId); return n })
+        await reload()
+      }
+      return null
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  async function handleForceApprove(exerciseDbId: string, ymoveId: string) {
     setSaving(exerciseDbId)
     try {
       await fetch('/api/admin/ymove-mapping', {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ exerciseDbId, ymoveExerciseId: ymoveId, forceOverwrite: false }),
+        body:    JSON.stringify({ exerciseDbId, ymoveExerciseId: ymoveId, forceOverwrite: true }),
       })
       setSelectedIds(prev => { const n = new Set(prev); n.delete(exerciseDbId); return n })
       await reload()
@@ -404,19 +635,39 @@ function SuggestionsView() {
     }
   }
 
+  async function handleReconsider(exerciseDbId: string) {
+    setSaving(exerciseDbId)
+    try {
+      await fetch('/api/admin/ymove-mapping', {
+        method:  'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ exerciseDbId }),
+      })
+      setSelectedIds(prev => { const n = new Set(prev); n.delete(exerciseDbId); return n })
+      await reload()
+    } finally {
+      setSaving(null)
+    }
+  }
+
   async function handleBatchApprove() {
     setBatching(true)
     setBatchConfirm(false)
+    setBatchResult(null)
     try {
       const approvals = selectedItems.map(s => ({
         exerciseDbId: s.exerciseDbId,
         ymoveId: s.topMatch!.ymoveId,
       }))
-      await fetch('/api/admin/ymove-mapping/suggestions', {
+      const res = await fetch('/api/admin/ymove-mapping/suggestions', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ approvals }),
       })
+      if (res.ok) {
+        const data = await res.json() as BatchResult & { ok: boolean }
+        setBatchResult({ approved: data.approved, skipped: data.skipped, conflicts: data.conflicts })
+      }
       setSelectedIds(new Set())
       await reload()
     } finally {
@@ -454,6 +705,40 @@ function SuggestionsView() {
 
   return (
     <div className="space-y-4">
+      {/* Batch result banner */}
+      {batchResult && (
+        <div className={cn(
+          'rounded-lg border p-3 text-sm',
+          batchResult.skipped > 0
+            ? 'border-amber-700/50 bg-amber-900/20'
+            : 'border-green-700/50 bg-green-900/20',
+        )}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className={batchResult.skipped > 0 ? 'text-amber-300' : 'text-green-300'}>
+                Batch complete — <strong>{batchResult.approved}</strong> approved
+                {batchResult.skipped > 0 && (
+                  <>, <strong>{batchResult.skipped}</strong> skipped (UUID conflicts)</>
+                )}
+              </p>
+              {batchResult.conflicts.length > 0 && (
+                <ul className="mt-1 space-y-0.5 text-[11px] text-amber-400/80">
+                  {batchResult.conflicts.map(c => (
+                    <li key={c.exerciseDbId}>#{c.exerciseDbId}: {c.reason}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <button
+              onClick={() => setBatchResult(null)}
+              className="shrink-0 text-current opacity-50 hover:opacity-100"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Stats bar */}
       {summary && (
         <div className="grid grid-cols-3 gap-3 text-center">
@@ -576,7 +861,9 @@ function SuggestionsView() {
                 selected={selectedIds.has(s.exerciseDbId)}
                 onToggleSelect={toggleOne}
                 onApprove={handleApprove}
+                onForceApprove={handleForceApprove}
                 onReject={handleReject}
+                onReconsider={handleReconsider}
                 saving={saving === s.exerciseDbId || batching}
               />
             ))}
@@ -996,24 +1283,25 @@ export default function YmoveMappingPage() {
   }
 
   const FILTER_TABS: { key: FilterStatus; label: string; count?: number }[] = [
+    { key: 'reviewer',    label: 'Reviewer' },
+    { key: 'suggestions', label: 'Suggestions' },
     { key: 'starter',     label: 'Starter Batch', count: undefined },
     { key: 'unmapped',    label: 'Unmapped' },
     { key: 'mapped',      label: 'Mapped' },
     { key: 'no_match',    label: 'No Match' },
     { key: 'all',         label: 'All' },
-    { key: 'suggestions', label: 'Suggestions' },
   ]
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className={cn(
+      'mx-auto px-4 py-8',
+      filterStatus === 'reviewer' ? 'max-w-5xl' : 'max-w-3xl',
+    )}>
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-zinc-100">ymove Exercise Mapping</h1>
         <p className="mt-1 text-sm text-zinc-400">
           Build the verified ExerciseDB → ymove mapping. Approve entries individually — nothing auto-maps.
-          Changes write to{' '}
-          <code className="rounded bg-zinc-800 px-1 text-xs">data/ymove-exercise-mapping.json</code>
-          {' '}— commit the file to deploy.
         </p>
       </div>
 
@@ -1030,18 +1318,21 @@ export default function YmoveMappingPage() {
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60',
             )}
           >
+            {tab.key === 'reviewer'    && <Columns2 className="size-3 text-emerald-400" />}
             {tab.key === 'starter'     && <Star     className="size-3 text-amber-400" />}
             {tab.key === 'suggestions' && <Sparkles className="size-3 text-blue-400" />}
             {tab.label}
-            {tab.key !== 'starter' && tab.key !== 'all' && tab.key !== 'suggestions' && (
+            {tab.key !== 'starter' && tab.key !== 'all' && tab.key !== 'suggestions' && tab.key !== 'reviewer' && (
               <span className="text-xs opacity-60">({counts[tab.key as MappingStatus] ?? total})</span>
             )}
           </button>
         ))}
       </div>
 
-      {/* Suggestions view */}
-      {filterStatus === 'suggestions' ? (
+      {/* Reviewer view */}
+      {filterStatus === 'reviewer' ? (
+        <ReviewerWrapper />
+      ) : filterStatus === 'suggestions' ? (
         <SuggestionsView />
       ) : (
         <>

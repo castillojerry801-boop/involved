@@ -5,6 +5,11 @@ import { prisma } from '@/lib/prisma'
 
 type Mapping = Record<string, string | null>
 
+export interface MappingMeta {
+  ymoveId:    string | null
+  verifiedAt: Date | null
+}
+
 function loadJsonBaseline(): Mapping {
   try {
     return JSON.parse(readFileSync(join(process.cwd(), 'data/ymove-exercise-mapping.json'), 'utf8')) as Mapping
@@ -45,21 +50,53 @@ export async function getYmoveExerciseId(exerciseDbId: string): Promise<string |
 }
 
 /**
- * Returns all mappings (JSON baseline merged with DB).
+ * Returns all mappings (JSON baseline merged with DB) as exerciseDbId → ymoveId.
+ * Callers that only need ymoveId should use this (fast path).
  */
 export async function getAllMappings(): Promise<Mapping> {
   return loadMapping()
 }
 
 /**
- * Upsert a single mapping entry to the database.
- * null = explicitly no ymove match. Works in production.
+ * Returns all mappings with full metadata (ymoveId + verifiedAt).
+ * DB rows always win over JSON baseline. JSON baseline items have verifiedAt=null.
  */
-export async function upsertMapping(exerciseDbId: string, ymoveId: string | null): Promise<void> {
+export async function getAllMappingsWithMeta(): Promise<Record<string, MappingMeta>> {
+  const [json, rows] = await Promise.all([
+    Promise.resolve(loadJsonBaseline()),
+    prisma.ymoveMapping.findMany(),
+  ])
+  const result: Record<string, MappingMeta> = {}
+  // JSON baseline (unverified by definition)
+  for (const [exerciseDbId, ymoveId] of Object.entries(json)) {
+    result[exerciseDbId] = { ymoveId, verifiedAt: null }
+  }
+  // DB rows override JSON
+  for (const row of rows) {
+    result[row.exerciseDbId] = {
+      ymoveId:    row.ymoveId ?? null,
+      verifiedAt: row.verifiedAt ?? null,
+    }
+  }
+  return result
+}
+
+/**
+ * Upsert a single mapping entry to the database.
+ * - ymoveId: null = explicitly no ymove match.
+ * - verified: true = admin watched the video and confirmed; sets verifiedAt = now().
+ *   Omitting or passing false clears verifiedAt (verification resets on any write).
+ */
+export async function upsertMapping(
+  exerciseDbId: string,
+  ymoveId: string | null,
+  verified = false,
+): Promise<void> {
+  const verifiedAt = verified ? new Date() : null
   await prisma.ymoveMapping.upsert({
     where:  { exerciseDbId },
-    create: { exerciseDbId, ymoveId },
-    update: { ymoveId },
+    create: { exerciseDbId, ymoveId, verifiedAt },
+    update: { ymoveId, verifiedAt },
   })
 }
 

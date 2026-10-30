@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUser } from '@/lib/supabase/server'
 import { isAdmin } from '@/lib/admin/auth'
 import { loadSuggestions } from '@/lib/ymove/suggestions-store'
-import { getAllMappings, upsertMapping } from '@/lib/ymove/mapping'
+import { getAllMappings, getAllMappingsWithMeta, upsertMapping } from '@/lib/ymove/mapping'
+import { exercises } from '@/lib/exercises'
+import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { type MatchClass } from '@/lib/ymove/pipeline'
 
 function forbidden() {
@@ -34,7 +36,10 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  const mapping = await getAllMappings()
+  const [mapping, mappingMeta] = await Promise.all([
+    getAllMappings(),
+    getAllMappingsWithMeta(),
+  ])
 
   // Reverse map: ymoveId → exerciseDbId (active non-null mappings only)
   const ymoveToActiveDbId = new Map<string, string>()
@@ -75,16 +80,26 @@ export async function GET(req: NextRequest) {
     const activeConflictDbId = topYmoveId
       ? (ymoveToActiveDbId.get(topYmoveId) ?? null)
       : null
+    const activeConflictName = activeConflictDbId
+      ? (() => {
+          const ex = exercises.find(e => e.id === activeConflictDbId)
+          return ex ? getInvolvedDisplayName(activeConflictDbId, ex.name) : activeConflictDbId
+        })()
+      : null
     // other exerciseDbIds in the pipeline that also suggest this ymoveId
     const suggestedConflictDbIds = topYmoveId
       ? (ymoveToSuggestedDbIds.get(topYmoveId) ?? []).filter(id => id !== s.exerciseDbId)
       : []
 
+    const verifiedAt = mappingMeta[s.exerciseDbId]?.verifiedAt?.toISOString() ?? null
+
     return {
       ...s,
       reviewStatus,
       currentMappedId: currentId ?? null,
+      verifiedAt,
       activeConflictDbId,
+      activeConflictName,
       suggestedConflictDbIds,
     }
   })

@@ -1604,9 +1604,10 @@ enum HealthSyncState {
 }
 
 model YmoveMapping {
-  exerciseDbId String   @id
+  exerciseDbId String    @id
   ymoveId      String?
-  updatedAt    DateTime @updatedAt
+  verifiedAt   DateTime? @map("verified_at")
+  updatedAt    DateTime  @updatedAt
 
   @@map("ymove_mapping")
 }

@@ -2,7 +2,7 @@ import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { getUser } from '@/lib/supabase/server'
 import { isAdmin } from '@/lib/admin/auth'
-import { getAllMappings, upsertMapping, deleteMapping } from '@/lib/ymove/mapping'
+import { getAllMappings, getAllMappingsWithMeta, upsertMapping, deleteMapping } from '@/lib/ymove/mapping'
 import { searchYmoveCandidates, getYmoveById } from '@/lib/ymove/client'
 import { exercises } from '@/lib/exercises'
 import { getInvolvedDisplayName, getCanonicalByExerciseDbId, MOVEMENT_PATTERN_LABELS } from '@/lib/exercises/canonical'
@@ -110,7 +110,10 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Exercise list ─────────────────────────────────────────────────────────
-  const mapping = await getAllMappings()
+  const [mapping, mappingMeta] = await Promise.all([
+    getAllMappings(),
+    getAllMappingsWithMeta(),
+  ])
   const statusFilter = sp.get('status') ?? 'all'
   const batchFilter  = sp.get('batch')
   const idsFilter    = sp.get('ids')?.split(',').filter(Boolean)
@@ -142,6 +145,7 @@ export async function GET(req: NextRequest) {
   const result = paginated.map(ex => {
     const meta   = buildMetadata(ex)
     const mapped = mapping[ex.id]
+    const meta2  = mappingMeta[ex.id]
     const status: 'mapped' | 'no_match' | 'unmapped' = ex.id in mapping
       ? (mapped === null ? 'no_match' : 'mapped')
       : 'unmapped'
@@ -158,6 +162,7 @@ export async function GET(req: NextRequest) {
       primaryMuscles:       meta.primaryMuscles ?? null,
       suggestedSearchQuery: buildSearchQuery(meta),
       ymoveExerciseId:      mapped ?? null,
+      verifiedAt:           meta2?.verifiedAt?.toISOString() ?? null,
       status,
       isStarterBatch:       STARTER_BATCH_IDS.has(ex.id),
     }
@@ -168,7 +173,12 @@ export async function GET(req: NextRequest) {
 
 /**
  * PATCH /api/admin/ymove-mapping
- * Body: { exerciseDbId: string; ymoveExerciseId: string | null; forceOverwrite?: boolean }
+ * Body: {
+ *   exerciseDbId: string
+ *   ymoveExerciseId: string | null
+ *   forceOverwrite?: boolean
+ *   verified?: boolean   — true = admin watched video and confirmed; sets verifiedAt = now()
+ * }
  */
 export async function PATCH(req: NextRequest) {
   const user = await getUser()
@@ -178,8 +188,9 @@ export async function PATCH(req: NextRequest) {
     exerciseDbId?: string
     ymoveExerciseId?: string | null
     forceOverwrite?: boolean
+    verified?: boolean
   }
-  const { exerciseDbId, ymoveExerciseId, forceOverwrite = false } = body
+  const { exerciseDbId, ymoveExerciseId, forceOverwrite = false, verified = false } = body
 
   if (!exerciseDbId || typeof exerciseDbId !== 'string') {
     return NextResponse.json({ error: 'exerciseDbId is required' }, { status: 400 })
@@ -212,12 +223,12 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  await upsertMapping(exerciseDbId, ymoveExerciseId ?? null)
+  await upsertMapping(exerciseDbId, ymoveExerciseId ?? null, verified)
 
   const ex          = exercises.find(e => e.id === exerciseDbId)
   const displayName = ex ? getInvolvedDisplayName(exerciseDbId, ex.name) : exerciseDbId
 
-  return NextResponse.json({ ok: true, exerciseDbId, displayName, ymoveExerciseId })
+  return NextResponse.json({ ok: true, exerciseDbId, displayName, ymoveExerciseId, verified })
 }
 
 /**
