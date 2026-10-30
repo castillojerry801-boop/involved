@@ -21,25 +21,32 @@ export async function GET(
   // Only show ymove media when a verified mapping exists.
   const ymoveId = await getYmoveExerciseId(exerciseId)
   if (ymoveId) {
+    if (!includeVideo) {
+      // Thumbnail mode: ymoveId is all we need — the client fetches the thumbnail
+      // via /api/ymove/thumbnail/:id (separate proxy, no cap charge).
+      // Calling getYmoveById here would hit includeVideos=false which returns
+      // incomplete data; skip it entirely to avoid a silent exercisedb fallback.
+      return NextResponse.json({ source: 'ymove', ymoveId, fallbackGifUrl })
+    }
+
+    // Video mode: fetch the live playable URL (charges cap; only triggered by user play action).
     try {
-      const ymove = await getYmoveById(ymoveId, includeVideo)
-      if (ymove) {
+      const ymove = await getYmoveById(ymoveId, true)
+      if (ymove?.videoUrl) {
         return NextResponse.json({
-          source: 'ymove',
-          ymoveId: ymove.ymoveId,
-          ...(includeVideo && ymove.videoUrl
-            ? {
-                videoUrl:          ymove.videoUrl,
-                videoHlsUrl:       ymove.videoHlsUrl,
-                videoDurationSecs: ymove.videoDurationSecs,
-              }
-            : {}),
+          source:            'ymove',
+          ymoveId:           ymove.ymoveId,
+          videoUrl:          ymove.videoUrl,
+          videoHlsUrl:       ymove.videoHlsUrl,
+          videoDurationSecs: ymove.videoDurationSecs,
           fallbackGifUrl,
         })
       }
     } catch (err) {
-      console.error('[ymove] fetch failed for', exerciseId, '(ymoveId:', ymoveId, ')', err)
+      console.error('[ymove] video fetch failed for', exerciseId, '(ymoveId:', ymoveId, ')', err)
     }
+    // Video unavailable but mapping is valid — return ymove source so thumbnail still works.
+    return NextResponse.json({ source: 'ymove', ymoveId, fallbackGifUrl })
   }
 
   return NextResponse.json({ source: 'exercisedb', fallbackGifUrl })

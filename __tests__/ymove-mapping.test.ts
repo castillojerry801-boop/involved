@@ -78,15 +78,11 @@ describe('ymove verified mapping architecture', () => {
     setMockMapping({})
   })
 
-  // 1. Mapped exercise returns ymove source with ymoveId
+  // 1. Mapped exercise returns correct ymoveId
   it('returns the ymove UUID when exercise has a verified mapping', async () => {
     setMockMapping({ '0026': YMOVE_UUID })
     const ymoveId = await getYmoveExerciseId('0026')
     expect(ymoveId).toBe(YMOVE_UUID)
-
-    const media = await getYmoveById(ymoveId!, false)
-    expect(media?.ymoveId).toBe(YMOVE_UUID)
-    expect(mockGetYmoveById).toHaveBeenCalledWith(YMOVE_UUID, false)
   })
 
   // 2. Unmapped exercise returns undefined
@@ -125,15 +121,18 @@ describe('ymove verified mapping architecture', () => {
     expect(media).toBeNull()
   })
 
-  // 6. Video included only when explicitly requested
-  it('getYmoveById is called with includeVideo=false by default', async () => {
+  // 6. Thumbnail mode: getYmoveById is NOT called (media route returns ymoveId directly)
+  it('getYmoveById is not needed for thumbnail mode — ymoveId from mapping is sufficient', async () => {
     setMockMapping({ '0026': YMOVE_UUID })
-    await getYmoveById(YMOVE_UUID, false)
-    expect(mockGetYmoveById).toHaveBeenCalledWith(YMOVE_UUID, false)
+    const ymoveId = await getYmoveExerciseId('0026')
+    // Media route in thumbnail mode returns { source: 'ymove', ymoveId } without calling getYmoveById.
+    // Confirm ymoveId is truthy and getYmoveById was never called.
+    expect(ymoveId).toBe(YMOVE_UUID)
+    expect(mockGetYmoveById).not.toHaveBeenCalled()
   })
 
-  // 7. Video included when includeVideo=true
-  it('getYmoveById is called with includeVideo=true for ?video=true requests', async () => {
+  // 7. Video mode: getYmoveById called with includeVideo=true only
+  it('getYmoveById is called with includeVideo=true for video requests', async () => {
     setMockMapping({ '0026': YMOVE_UUID })
     await getYmoveById(YMOVE_UUID, true)
     expect(mockGetYmoveById).toHaveBeenCalledWith(YMOVE_UUID, true)
