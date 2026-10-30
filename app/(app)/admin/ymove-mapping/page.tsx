@@ -3,14 +3,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Search, CheckCircle, XCircle, Minus, ChevronDown, ChevronUp,
-  Play, RefreshCw, AlertTriangle, Star,
+  Play, RefreshCw, AlertTriangle, Star, Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import type { MatchClass, MatchSuggestion, SuggestionsSummary } from '@/lib/ymove/pipeline'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type MappingStatus = 'mapped' | 'no_match' | 'unmapped'
-type FilterStatus = MappingStatus | 'all' | 'starter'
+type FilterStatus = MappingStatus | 'all' | 'starter' | 'suggestions'
 
 interface ExerciseRow {
   exerciseDbId: string
@@ -37,6 +38,25 @@ interface ScoredCandidate {
   penaltyReasons: string[]
   alreadyMappedTo: string | null
   alreadyMappedDbId: string | null
+}
+
+type ReviewStatus = 'pending' | 'approved' | 'rejected' | 'overridden'
+type SuggestionFilter = MatchClass | 'all' | 'pending'
+
+interface EnrichedSuggestion extends MatchSuggestion {
+  reviewStatus:          ReviewStatus
+  currentMappedId:       string | null
+  activeConflictDbId:    string | null
+  suggestedConflictDbIds: string[]
+}
+
+interface SuggestionsResponse {
+  ready:       boolean
+  message?:    string
+  generatedAt?: string
+  summary?:    SuggestionsSummary
+  suggestions?: EnrichedSuggestion[]
+  total?:      number
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -105,6 +125,466 @@ function useExercises(filter: FilterStatus, nameSearch: string) {
     : exercises
 
   return { exercises: filtered, total, loading, error, reload: load }
+}
+
+function useSuggestions() {
+  const [data,    setData]    = useState<SuggestionsResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/ymove-mapping/suggestions?limit=500')
+      if (!res.ok) { setError('Failed to load suggestions.'); return }
+      setData(await res.json() as SuggestionsResponse)
+    } catch {
+      setError('Network error.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+  return { data, loading, error, reload: load }
+}
+
+// ── Suggestion card ────────────────────────────────────────────────────────────
+
+function SuggestionCard({
+  suggestion,
+  selected,
+  onToggleSelect,
+  onApprove,
+  onReject,
+  saving,
+}: {
+  suggestion:      EnrichedSuggestion
+  selected:        boolean
+  onToggleSelect:  (exerciseDbId: string) => void
+  onApprove:       (exerciseDbId: string, ymoveId: string) => void
+  onReject:        (exerciseDbId: string) => void
+  saving:          boolean
+}) {
+  const { topMatch, reviewStatus } = suggestion
+  const [thumbVisible, setThumbVisible] = useState(false)
+
+  const REVIEW_BADGE: Record<ReviewStatus, string> = {
+    pending:    'bg-zinc-800 text-zinc-400 border-zinc-700',
+    approved:   'bg-green-900/60 text-green-300 border-green-700',
+    rejected:   'bg-zinc-800 text-zinc-500 border-zinc-700',
+    overridden: 'bg-blue-900/60 text-blue-300 border-blue-700',
+  }
+  const REVIEW_LABEL: Record<ReviewStatus, string> = {
+    pending:    'Pending',
+    approved:   '✓ Approved',
+    rejected:   '✗ Rejected',
+    overridden: '↔ Overridden',
+  }
+
+  const hasConflict = !!suggestion.activeConflictDbId || suggestion.suggestedConflictDbIds.length > 0
+
+  return (
+    <div className={cn(
+      'rounded-lg border bg-zinc-900/60 p-3',
+      reviewStatus === 'approved'   ? 'border-green-800/50' :
+      reviewStatus === 'rejected'   ? 'border-zinc-800 opacity-60' :
+      reviewStatus === 'overridden' ? 'border-blue-800/50' :
+      hasConflict                   ? 'border-amber-800/50' :
+      'border-zinc-800',
+    )}>
+      <div className="flex items-start gap-3">
+        {/* Checkbox (only on pending items) */}
+        {reviewStatus === 'pending' && topMatch && (
+          <div className="mt-0.5 shrink-0">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onToggleSelect(suggestion.exerciseDbId)}
+              className="size-4 cursor-pointer accent-green-500"
+              aria-label={`Select ${suggestion.displayName}`}
+            />
+          </div>
+        )}
+
+        {/* Thumbnail (on-demand via proxy — no cap charge) */}
+        <div className="shrink-0">
+          {topMatch && thumbVisible ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={`/api/ymove/thumbnail/${topMatch.ymoveId}?crop=square`}
+              alt={topMatch.name}
+              className="size-14 rounded object-cover"
+            />
+          ) : topMatch ? (
+            <button
+              onClick={() => setThumbVisible(true)}
+              className="flex size-14 items-center justify-center rounded border border-zinc-700 bg-zinc-800 text-xs text-zinc-500 hover:bg-zinc-700"
+              title="Load thumbnail"
+            >
+              <Play className="size-3.5" />
+            </button>
+          ) : (
+            <div className="flex size-14 items-center justify-center rounded border border-zinc-800 bg-zinc-900 text-zinc-700">
+              <XCircle className="size-4" />
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1 space-y-1">
+          {/* ExerciseDB exercise */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-sm font-medium text-zinc-100">{suggestion.displayName}</span>
+            <span className={cn(
+              'rounded border px-1.5 py-0.5 text-[10px] font-semibold',
+              REVIEW_BADGE[reviewStatus],
+            )}>
+              {REVIEW_LABEL[reviewStatus]}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1 text-xs text-zinc-500">
+            <span className="font-mono">{suggestion.exerciseDbId}</span>
+            {suggestion.equipment !== 'body weight' && (
+              <span className="rounded bg-zinc-800 px-1">{suggestion.equipment}</span>
+            )}
+            {suggestion.bodyPart && <span>{suggestion.bodyPart}</span>}
+            {suggestion.target && suggestion.target !== suggestion.bodyPart && (
+              <span>→ {suggestion.target}</span>
+            )}
+          </div>
+
+          {/* Conflict warnings */}
+          {suggestion.activeConflictDbId && (
+            <div className="flex items-center gap-1 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-1 text-[11px] text-amber-300">
+              <AlertTriangle className="size-3 shrink-0" />
+              UUID in active mapping: #{suggestion.activeConflictDbId}
+            </div>
+          )}
+          {suggestion.suggestedConflictDbIds.length > 0 && (
+            <div className="flex items-center gap-1 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-1 text-[11px] text-amber-300">
+              <AlertTriangle className="size-3 shrink-0" />
+              UUID also suggested for: #{suggestion.suggestedConflictDbIds.join(', #')}
+            </div>
+          )}
+
+          {/* Top match */}
+          {topMatch ? (
+            <div className="mt-1.5 rounded border border-zinc-700/50 bg-zinc-800/50 px-2 py-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className={cn(
+                  'rounded border px-1.5 py-0.5 text-[10px] font-semibold',
+                  CONFIDENCE_COLORS[topMatch.confidence],
+                )}>
+                  {topMatch.score} · {topMatch.confidence}
+                </span>
+              </div>
+              <p className="mt-0.5 text-sm text-zinc-200">{topMatch.name}</p>
+              <p className="font-mono text-[10px] text-zinc-600">{topMatch.ymoveId}</p>
+              {(topMatch.matchReasons.length > 0 || topMatch.penaltyReasons.length > 0) && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {topMatch.matchReasons.map(r => (
+                    <span key={r} className="rounded bg-green-900/30 px-1 py-0.5 text-[10px] text-green-400">✓ {r}</span>
+                  ))}
+                  {topMatch.penaltyReasons.map(r => (
+                    <span key={r} className="rounded bg-red-900/30 px-1 py-0.5 text-[10px] text-red-400">✗ {r}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-zinc-600">No YMove candidates found for this exercise.</p>
+          )}
+        </div>
+
+        {/* Actions */}
+        {reviewStatus === 'pending' && (
+          <div className="flex shrink-0 flex-col gap-1.5">
+            {topMatch && (
+              <button
+                onClick={() => onApprove(suggestion.exerciseDbId, topMatch.ymoveId)}
+                disabled={saving}
+                className="rounded-md bg-green-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-600 disabled:opacity-50"
+              >
+                Approve
+              </button>
+            )}
+            <button
+              onClick={() => onReject(suggestion.exerciseDbId)}
+              disabled={saving}
+              className="rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50"
+            >
+              No match
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Suggestions view ───────────────────────────────────────────────────────────
+
+function SuggestionsView() {
+  const [filter,       setFilter]       = useState<SuggestionFilter>('pending')
+  const [saving,       setSaving]       = useState<string | null>(null)
+  const [batching,     setBatching]     = useState(false)
+  const [batchConfirm, setBatchConfirm] = useState(false)
+  const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set())
+
+  const { data, loading, error, reload } = useSuggestions()
+
+  const allSuggestions = data?.suggestions ?? []
+  const summary        = data?.summary
+
+  // Apply client-side filter
+  const suggestions =
+    filter === 'pending'
+      ? allSuggestions.filter(s => s.reviewStatus === 'pending')
+      : filter === 'all'
+        ? allSuggestions
+        : allSuggestions.filter(s => s.status === filter)
+
+  // Selectable: pending items with a top match (no existing conflict in active mapping)
+  const selectablePendingIds = suggestions
+    .filter(s => s.reviewStatus === 'pending' && s.topMatch && !s.activeConflictDbId)
+    .map(s => s.exerciseDbId)
+
+  const allSelected = selectablePendingIds.length > 0 &&
+    selectablePendingIds.every(id => selectedIds.has(id))
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(selectablePendingIds))
+    }
+  }
+
+  function toggleOne(exerciseDbId: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(exerciseDbId)) next.delete(exerciseDbId)
+      else next.add(exerciseDbId)
+      return next
+    })
+  }
+
+  const selectedItems = suggestions.filter(
+    s => selectedIds.has(s.exerciseDbId) && s.topMatch,
+  )
+
+  async function handleApprove(exerciseDbId: string, ymoveId: string) {
+    setSaving(exerciseDbId)
+    try {
+      await fetch('/api/admin/ymove-mapping', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ exerciseDbId, ymoveExerciseId: ymoveId, forceOverwrite: false }),
+      })
+      setSelectedIds(prev => { const n = new Set(prev); n.delete(exerciseDbId); return n })
+      await reload()
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  async function handleReject(exerciseDbId: string) {
+    setSaving(exerciseDbId)
+    try {
+      await fetch('/api/admin/ymove-mapping', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ exerciseDbId, ymoveExerciseId: null }),
+      })
+      setSelectedIds(prev => { const n = new Set(prev); n.delete(exerciseDbId); return n })
+      await reload()
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  async function handleBatchApprove() {
+    setBatching(true)
+    setBatchConfirm(false)
+    try {
+      const approvals = selectedItems.map(s => ({
+        exerciseDbId: s.exerciseDbId,
+        ymoveId: s.topMatch!.ymoveId,
+      }))
+      await fetch('/api/admin/ymove-mapping/suggestions', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ approvals }),
+      })
+      setSelectedIds(new Set())
+      await reload()
+    } finally {
+      setBatching(false)
+    }
+  }
+
+  if (!data?.ready) {
+    return (
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-6 py-10 text-center">
+        <Sparkles className="mx-auto mb-3 size-8 text-zinc-600" />
+        <p className="text-sm font-medium text-zinc-300">No suggestions yet</p>
+        <p className="mt-1 text-xs text-zinc-500">
+          Run the matching pipeline to generate suggestions:
+        </p>
+        <code className="mt-2 block rounded bg-zinc-800 px-3 py-2 text-xs text-zinc-300">
+          npx tsx scripts/ymove-run-pipeline.ts
+        </code>
+        {data?.message && (
+          <p className="mt-3 text-xs text-zinc-600">{data.message}</p>
+        )}
+      </div>
+    )
+  }
+
+  const pendingCount = allSuggestions.filter(s => s.reviewStatus === 'pending').length
+
+  const SUGGESTION_FILTERS: { key: SuggestionFilter; label: string; count?: number }[] = [
+    { key: 'pending',         label: 'Pending',         count: pendingCount },
+    { key: 'high_confidence', label: 'High Confidence', count: summary?.highConfidence },
+    { key: 'needs_review',    label: 'Needs Review',    count: summary?.needsReview },
+    { key: 'unmatched',       label: 'Unmatched',       count: summary?.unmatched },
+    { key: 'all',             label: 'All',             count: summary?.total },
+  ]
+
+  return (
+    <div className="space-y-4">
+      {/* Stats bar */}
+      {summary && (
+        <div className="grid grid-cols-3 gap-3 text-center">
+          <div className="rounded-lg border border-green-800/40 bg-green-900/20 py-3">
+            <p className="text-xl font-semibold text-green-300">{summary.highConfidence}</p>
+            <p className="text-xs text-green-500">High confidence</p>
+          </div>
+          <div className="rounded-lg border border-yellow-800/40 bg-yellow-900/20 py-3">
+            <p className="text-xl font-semibold text-yellow-300">{summary.needsReview}</p>
+            <p className="text-xs text-yellow-500">Needs review</p>
+          </div>
+          <div className="rounded-lg border border-zinc-700/40 bg-zinc-800/40 py-3">
+            <p className="text-xl font-semibold text-zinc-400">{summary.unmatched}</p>
+            <p className="text-xs text-zinc-500">Unmatched</p>
+          </div>
+        </div>
+      )}
+
+      {/* Batch approve toolbar */}
+      {selectedIds.size > 0 && (
+        <div className="rounded-lg border border-green-800/40 bg-green-900/10 p-3">
+          {batchConfirm ? (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-green-300">
+                Approve {selectedIds.size} selected match{selectedIds.size !== 1 ? 'es' : ''}?
+              </p>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  onClick={handleBatchApprove}
+                  disabled={batching}
+                  className="rounded-md bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-600 disabled:opacity-50"
+                >
+                  {batching ? 'Approving…' : 'Confirm'}
+                </button>
+                <button
+                  onClick={() => setBatchConfirm(false)}
+                  className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-green-300">
+                <span className="font-semibold">{selectedIds.size}</span> selected
+              </p>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => setBatchConfirm(true)}
+                  className="rounded-md bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-600"
+                >
+                  Approve selected ({selectedIds.size})
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Filter tabs */}
+      <div className="flex flex-wrap gap-1">
+        {SUGGESTION_FILTERS.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => { setFilter(tab.key); setSelectedIds(new Set()) }}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors',
+              filter === tab.key
+                ? 'bg-zinc-700 text-zinc-100'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60',
+            )}
+          >
+            {tab.label}
+            {tab.count !== undefined && (
+              <span className="text-xs opacity-60">({tab.count})</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Suggestion list */}
+      {loading ? (
+        <p className="py-8 text-center text-sm text-zinc-500">Loading…</p>
+      ) : error ? (
+        <p className="text-sm text-red-400">{error}</p>
+      ) : suggestions.length === 0 ? (
+        <p className="py-8 text-center text-sm text-zinc-500">
+          No suggestions in this category.
+        </p>
+      ) : (
+        <>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-zinc-600">
+              {suggestions.length} suggestion{suggestions.length !== 1 ? 's' : ''}
+              {data.generatedAt && (
+                <> · generated {new Date(data.generatedAt).toLocaleDateString()}</>
+              )}
+            </p>
+            {selectablePendingIds.length > 0 && (
+              <button
+                onClick={toggleSelectAll}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                {allSelected ? 'Deselect all' : `Select all (${selectablePendingIds.length})`}
+              </button>
+            )}
+          </div>
+          <div className="space-y-2">
+            {suggestions.map(s => (
+              <SuggestionCard
+                key={s.exerciseDbId}
+                suggestion={s}
+                selected={selectedIds.has(s.exerciseDbId)}
+                onToggleSelect={toggleOne}
+                onApprove={handleApprove}
+                onReject={handleReject}
+                saving={saving === s.exerciseDbId || batching}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
 }
 
 // ── Candidate card ─────────────────────────────────────────────────────────────
@@ -516,11 +996,12 @@ export default function YmoveMappingPage() {
   }
 
   const FILTER_TABS: { key: FilterStatus; label: string; count?: number }[] = [
-    { key: 'starter',   label: 'Starter Batch', count: undefined },
-    { key: 'unmapped',  label: 'Unmapped' },
-    { key: 'mapped',    label: 'Mapped' },
-    { key: 'no_match',  label: 'No Match' },
-    { key: 'all',       label: 'All' },
+    { key: 'starter',     label: 'Starter Batch', count: undefined },
+    { key: 'unmapped',    label: 'Unmapped' },
+    { key: 'mapped',      label: 'Mapped' },
+    { key: 'no_match',    label: 'No Match' },
+    { key: 'all',         label: 'All' },
+    { key: 'suggestions', label: 'Suggestions' },
   ]
 
   return (
@@ -549,53 +1030,61 @@ export default function YmoveMappingPage() {
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60',
             )}
           >
-            {tab.key === 'starter' && <Star className="size-3 text-amber-400" />}
+            {tab.key === 'starter'     && <Star     className="size-3 text-amber-400" />}
+            {tab.key === 'suggestions' && <Sparkles className="size-3 text-blue-400" />}
             {tab.label}
-            {tab.key !== 'starter' && tab.key !== 'all' && (
+            {tab.key !== 'starter' && tab.key !== 'all' && tab.key !== 'suggestions' && (
               <span className="text-xs opacity-60">({counts[tab.key as MappingStatus] ?? total})</span>
             )}
           </button>
         ))}
       </div>
 
-      {/* Name search */}
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-500" />
-        <input
-          value={nameSearch}
-          onChange={e => setNameSearch(e.target.value)}
-          placeholder="Filter by name or ID…"
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 py-2 pl-9 pr-4 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
-        />
-      </div>
-
-      {/* Body */}
-      {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-
-      {loading ? (
-        <p className="py-8 text-center text-sm text-zinc-500">Loading…</p>
-      ) : exercises.length === 0 ? (
-        <p className="py-8 text-center text-sm text-zinc-500">
-          No exercises match the current filter.
-        </p>
+      {/* Suggestions view */}
+      {filterStatus === 'suggestions' ? (
+        <SuggestionsView />
       ) : (
         <>
-          <p className="mb-3 text-xs text-zinc-600">
-            Showing {exercises.length}{total !== exercises.length ? ` of ${total}` : ''} exercises
-          </p>
-          <div className="space-y-1.5">
-            {exercises.map(ex => (
-              <ExerciseRow
-                key={ex.exerciseDbId}
-                ex={ex}
-                expanded={expanded === ex.exerciseDbId}
-                onToggle={() => setExpanded(prev => prev === ex.exerciseDbId ? null : ex.exerciseDbId)}
-                onSave={(ymoveId, force) => handleSave(ex.exerciseDbId, ymoveId, force)}
-                onClear={() => void handleClear(ex.exerciseDbId)}
-                saving={saving === ex.exerciseDbId}
-              />
-            ))}
+          {/* Name search */}
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-zinc-500" />
+            <input
+              value={nameSearch}
+              onChange={e => setNameSearch(e.target.value)}
+              placeholder="Filter by name or ID…"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-800/50 py-2 pl-9 pr-4 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+            />
           </div>
+
+          {/* Body */}
+          {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+
+          {loading ? (
+            <p className="py-8 text-center text-sm text-zinc-500">Loading…</p>
+          ) : exercises.length === 0 ? (
+            <p className="py-8 text-center text-sm text-zinc-500">
+              No exercises match the current filter.
+            </p>
+          ) : (
+            <>
+              <p className="mb-3 text-xs text-zinc-600">
+                Showing {exercises.length}{total !== exercises.length ? ` of ${total}` : ''} exercises
+              </p>
+              <div className="space-y-1.5">
+                {exercises.map(ex => (
+                  <ExerciseRow
+                    key={ex.exerciseDbId}
+                    ex={ex}
+                    expanded={expanded === ex.exerciseDbId}
+                    onToggle={() => setExpanded(prev => prev === ex.exerciseDbId ? null : ex.exerciseDbId)}
+                    onSave={(ymoveId, force) => handleSave(ex.exerciseDbId, ymoveId, force)}
+                    onClear={() => void handleClear(ex.exerciseDbId)}
+                    saving={saving === ex.exerciseDbId}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

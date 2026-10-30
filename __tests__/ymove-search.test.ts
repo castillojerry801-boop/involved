@@ -190,6 +190,95 @@ describe('scoreCandidate', () => {
     expect(s2).toBeGreaterThan(s1)
     expect(scoreCandidate(incline, META_BARBELL_BENCH).penaltyReasons.some(r => r.includes('incline'))).toBe(true)
   })
+
+  // ── Regression tests for Phase 2B scoring fixes ───────────────────────────
+
+  // Fix 1: 2-char token "jm" must be retained — JM Bench Press ≠ Bench Press
+  it('treats 2-char tokens as significant (JM Bench Press ≠ Bench Press)', () => {
+    const jmMeta: ExerciseMetadata = {
+      exerciseDbId: '0052',
+      displayName: 'Barbell Jm Bench Press',
+      equipment: 'barbell',
+      bodyPart: 'chest',
+      target: 'triceps',
+    }
+    const plainBench: YmoveCandidateRaw = { ymoveId: 'bb', name: 'Barbell Bench Press' }
+    const scored = scoreCandidate(plainBench, jmMeta)
+    // Before fix: score was 70 (strong); after: jm is retained as a token → Jaccard drops
+    expect(scored.confidence).not.toBe('strong')
+    expect(scored.score).toBeLessThan(65)
+  })
+
+  // Fix 2: hyphenated modifier names must not receive false modifier penalties
+  it('does not penalise close-grip when candidate also has close grip', () => {
+    const closeGripMeta: ExerciseMetadata = {
+      exerciseDbId: '0296',
+      displayName: 'Dumbbell Close-grip Press',
+      equipment: 'dumbbell',
+      bodyPart: 'chest',
+      target: 'triceps',
+    }
+    const candidate: YmoveCandidateRaw = { ymoveId: 'cg', name: 'Close Grip Dumbbell Press' }
+    const scored = scoreCandidate(candidate, closeGripMeta)
+    expect(scored.penaltyReasons.some(r => r.includes('close grip'))).toBe(false)
+    expect(scored.confidence).toBe('strong')
+  })
+
+  it('does not penalise wide-grip when candidate also has wide grip', () => {
+    const wideGripMeta: ExerciseMetadata = {
+      exerciseDbId: '0218',
+      displayName: 'Cable Seated Wide-grip Row',
+      equipment: 'cable',
+      bodyPart: 'back',
+      target: 'lats',
+    }
+    const candidate: YmoveCandidateRaw = { ymoveId: 'wg', name: 'Seated Cable Row Wide Grip' }
+    const scored = scoreCandidate(candidate, wideGripMeta)
+    expect(scored.penaltyReasons.some(r => r.includes('wide grip'))).toBe(false)
+  })
+
+  // Fix 3: "alternate" must be treated as equivalent to "alternating" (both unilateral)
+  it('does not penalise alternating candidate when canonical uses alternate', () => {
+    const alternateMeta: ExerciseMetadata = {
+      exerciseDbId: '0285',
+      displayName: 'Dumbbell Alternate Biceps Curl',
+      equipment: 'dumbbell',
+      bodyPart: 'upper arms',
+      target: 'biceps',
+    }
+    const alternatingCand: YmoveCandidateRaw = { ymoveId: 'alt', name: 'Alternating Dumbbell Biceps Curl' }
+    const scored = scoreCandidate(alternatingCand, alternateMeta)
+    expect(scored.penaltyReasons).not.toContain('unilateral variant')
+    expect(scored.score).toBeGreaterThanOrEqual(45)
+  })
+
+  // Fix 4: body weight exercises with unspecified-equipment candidates get compatibility bonus
+  it('awards body weight compatible bonus when candidate has no equipment indicator', () => {
+    const deadBugMeta: ExerciseMetadata = {
+      exerciseDbId: '0276',
+      displayName: 'Dead Bug',
+      equipment: 'body weight',
+      bodyPart: 'waist',
+      target: 'abs',
+    }
+    const candidate: YmoveCandidateRaw = { ymoveId: 'db', name: 'Dead Bug' }
+    const scored = scoreCandidate(candidate, deadBugMeta)
+    expect(scored.matchReasons).toContain('body weight compatible')
+    expect(scored.score).toBeGreaterThanOrEqual(45)
+  })
+
+  it('does not award body weight bonus when candidate specifies different equipment', () => {
+    const deadBugMeta: ExerciseMetadata = {
+      exerciseDbId: '0276',
+      displayName: 'Dead Bug',
+      equipment: 'body weight',
+      bodyPart: 'waist',
+      target: 'abs',
+    }
+    const barbellCand: YmoveCandidateRaw = { ymoveId: 'bd', name: 'Barbell Dead Bug' }
+    const scored = scoreCandidate(barbellCand, deadBugMeta)
+    expect(scored.matchReasons).not.toContain('body weight compatible')
+  })
 })
 
 // ── rankCandidates ────────────────────────────────────────────────────────────

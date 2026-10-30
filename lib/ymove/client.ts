@@ -27,7 +27,7 @@ export interface YmoveMedia {
 export interface YmoveCandidate {
   ymoveId: string
   name: string
-  thumbnailUrl: string
+  thumbnailUrl?: string  // absent in browse mode on non-Scale plans; always load via proxy
 }
 
 // In-memory cache: ymove UUID → thumbnail data.
@@ -54,9 +54,13 @@ function parseMedia(data: Record<string, any>): YmoveMedia {
   }
 }
 
-async function fetchByUuid(uuid: string): Promise<YmoveMedia | null> {
+// includeVideos is always sent explicitly — never rely on key-default behaviour.
+// includeVideos=false → browse mode, does not charge the monthly exercise cap.
+// includeVideos=true  → charges cap; only used when caller actually needs the video URL.
+async function fetchByUuid(uuid: string, includeVideo = false): Promise<YmoveMedia | null> {
+  const qs = includeVideo ? 'includeVideos=true' : 'includeVideos=false'
   const res = await fetch(
-    `${YMOVE_BASE}/exercises/${encodeURIComponent(uuid)}?includeVideos=true`,
+    `${YMOVE_BASE}/exercises/${encodeURIComponent(uuid)}?${qs}`,
     { headers: { 'X-API-Key': apiKey() }, cache: 'no-store' },
   )
   if (!res.ok) return null
@@ -80,7 +84,7 @@ export async function getYmoveById(
     return _uuidCache.get(ymoveId) ?? null
   }
 
-  const media = await fetchByUuid(ymoveId)
+  const media = await fetchByUuid(ymoveId, includeVideo)
 
   if (!includeVideo) _uuidCache.set(ymoveId, media)
   return media
@@ -99,8 +103,10 @@ export async function searchYmoveCandidates(
   query: string,
   limit = 5,
 ): Promise<YmoveCandidate[]> {
+  // Browse mode — includeVideos=false does not count against the monthly exercise cap.
+  // Thumbnails are loaded on demand via the /api/ymove/thumbnail proxy, not from this response.
   const res = await fetch(
-    `${YMOVE_BASE}/exercises?search=${encodeURIComponent(query)}&pageSize=${limit}&includeVideos=true`,
+    `${YMOVE_BASE}/exercises?search=${encodeURIComponent(query)}&pageSize=${limit}&includeVideos=false`,
     { headers: { 'X-API-Key': apiKey() }, cache: 'no-store' },
   )
   if (!res.ok) return []

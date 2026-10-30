@@ -118,13 +118,13 @@ function tokens(name: string): Set<string> {
       .replace(/[^a-z0-9 -]/g, ' ')
       .replace(/-/g, ' ')
       .split(/\s+/)
-      .filter(w => w.length > 2 && !STOP_WORDS.has(w)),
+      .filter(w => w.length > 1 && !STOP_WORDS.has(w)),
   )
 }
 
 // ── Variant detection ──────────────────────────────────────────────────────────
 
-const UNILATERAL_WORDS = ['single arm', 'one arm', 'single leg', 'one leg', 'unilateral', 'alternating']
+const UNILATERAL_WORDS = ['single arm', 'one arm', 'single leg', 'one leg', 'unilateral', 'alternating', 'alternate']
 const MODIFICATION_WORDS = ['incline', 'decline', 'close grip', 'wide grip', 'reverse grip', 'neutral grip', 'sumo', 'stiff leg', 'straight leg']
 
 // ── Main exports ───────────────────────────────────────────────────────────────
@@ -186,6 +186,10 @@ export function scoreCandidate(
       score -= 20
       penaltyReasons.push(`equipment mismatch: wanted ${meta.equipment}`)
     }
+  } else if (ourEq === 'body_weight' && candEq === null) {
+    // Candidate name doesn't mention equipment → assume body weight compatible.
+    score += 10
+    matchReasons.push('body weight compatible')
   }
 
   // ── 3. Movement pattern (0–15 pts) ────────────────────────────────────────
@@ -223,7 +227,10 @@ export function scoreCandidate(
   }
 
   // modifiers not in canonical (incline/decline/grip etc)
-  const extraMods = MODIFICATION_WORDS.filter(w => candLower.includes(w) && !ourLower.includes(w))
+  // Normalize hyphens before checking so "close-grip" matches "close grip".
+  const candLowerNorm = candLower.replace(/-/g, ' ')
+  const ourLowerNorm  = ourLower.replace(/-/g, ' ')
+  const extraMods = MODIFICATION_WORDS.filter(w => candLowerNorm.includes(w) && !ourLowerNorm.includes(w))
   if (extraMods.length > 0) {
     score -= 5 * extraMods.length
     penaltyReasons.push(`variant: ${extraMods.join(', ')}`)
