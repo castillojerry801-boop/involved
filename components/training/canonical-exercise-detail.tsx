@@ -1,13 +1,14 @@
 'use client'
 
 import { ArrowLeft, AlertTriangle, ImageIcon, Link2, Clock, Lightbulb } from 'lucide-react'
-import { type Exercise, getExerciseById, getGifUrl } from '@/lib/exercises'
+import { type Exercise, getExerciseById } from '@/lib/exercises'
 import {
   type CanonicalExercise,
   type CanonicalImplementation,
   getCanonicalFamily,
 } from '@/lib/exercises/canonical'
 import { cn } from '@/lib/utils'
+import { ExerciseMedia } from './ExerciseMedia'
 
 interface Props {
   exercise: CanonicalExercise
@@ -62,14 +63,14 @@ function ImplementationCard({ impl, onSelect }: {
 
   return (
     <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-      <div className="bg-zinc-50 dark:bg-zinc-800 h-40 flex items-center justify-center">
+      <div className="bg-zinc-50 dark:bg-zinc-800 h-40 flex items-center justify-center overflow-hidden">
         {exerciseId ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={getGifUrl(exerciseId)}
-            alt={impl.displayLabel}
-            className="h-full w-auto object-contain"
-            loading="lazy"
+          <ExerciseMedia
+            exerciseId={exerciseId}
+            exerciseName={impl.displayLabel}
+            className="h-full w-full"
+            crop="square"
+            showVideo
           />
         ) : (
           <div className="flex flex-col items-center gap-2 text-zinc-300 dark:text-zinc-600">
