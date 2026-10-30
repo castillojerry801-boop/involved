@@ -33,13 +33,19 @@ export async function GET(req: NextRequest) {
         { headers: { 'X-API-Key': apiKey() }, cache: 'no-store' },
       )
       if (!res.ok) return NextResponse.json({ error: 'Not found' }, { status: res.status })
-      const data = await res.json()
+      const body = await res.json()
+      // API wraps exercise in a `data` key: { data: {...}, _notice: {} }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ex = ((body?.data ?? body) as Record<string, any>)
+      // videoUrl may be top-level or in videos[] — prefer primary
+      const videos = (ex.videos ?? []) as Record<string, unknown>[]
+      const primaryVid = (videos.find((v: Record<string, unknown>) => v.isPrimary) ?? videos[0] ?? null) as Record<string, unknown> | null
       return NextResponse.json({
-        ymoveId: data.id,
-        name: data.name ?? data.title ?? '',
-        videoUrl: data.videoUrl ?? null,
-        videoHlsUrl: data.videoHlsUrl ?? null,
-        videoDurationSecs: data.videoDurationSecs ?? null,
+        ymoveId: ex.id,
+        name: ex.name ?? ex.title ?? '',
+        videoUrl: (ex.videoUrl ?? primaryVid?.videoUrl) ?? null,
+        videoHlsUrl: (ex.videoHlsUrl ?? primaryVid?.videoHlsUrl) ?? null,
+        videoDurationSecs: (ex.videoDurationSecs ?? primaryVid?.videoDurationSecs) ?? null,
       })
     } catch (err) {
       console.error('[ymove-browse] video error:', err)

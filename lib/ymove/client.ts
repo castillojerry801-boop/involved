@@ -39,6 +39,12 @@ const _uuidCache = new Map<string, YmoveMedia | null>()
 function parseMedia(data: Record<string, any>): YmoveMedia {
   const t = (data.thumbnails ?? {}) as Record<string, string>
   const base = (data.thumbnailUrl ?? '') as string
+
+  // Video URLs may be at the top level (convenience alias) or inside videos[].
+  // Use the top-level alias first; fall back to the primary (or first) video object.
+  const videos = (data.videos ?? []) as Record<string, any>[]
+  const primaryVideo = videos.find(v => v.isPrimary) ?? videos[0] ?? null
+
   return {
     ymoveId:   data.id as string,
     thumbnailUrl: base,
@@ -48,9 +54,9 @@ function parseMedia(data: Record<string, any>): YmoveMedia {
       portrait:  t.portrait  ?? base,
       landscape: t.landscape ?? base,
     },
-    videoUrl:          data.videoUrl          as string | undefined,
-    videoHlsUrl:       data.videoHlsUrl       as string | undefined,
-    videoDurationSecs: data.videoDurationSecs  as number | undefined,
+    videoUrl:          (data.videoUrl          as string | undefined) || (primaryVideo?.videoUrl          as string | undefined),
+    videoHlsUrl:       (data.videoHlsUrl       as string | undefined) || (primaryVideo?.videoHlsUrl       as string | undefined),
+    videoDurationSecs: (data.videoDurationSecs  as number | undefined) ?? (primaryVideo?.videoDurationSecs as number | undefined),
   }
 }
 
@@ -64,7 +70,11 @@ async function fetchByUuid(uuid: string, includeVideo = false): Promise<YmoveMed
     { headers: { 'X-API-Key': apiKey() }, cache: 'no-store' },
   )
   if (!res.ok) return null
-  const data = await res.json()
+  const body = await res.json()
+  // The API wraps the exercise in a `data` key: { data: { id, ... }, _notice: {} }.
+  // Fall back to the raw body for any future response shapes that omit the wrapper.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = ((body?.data ?? body) as Record<string, any>)
   if (!data?.id) return null
   return parseMedia(data)
 }

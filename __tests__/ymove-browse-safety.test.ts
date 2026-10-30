@@ -18,6 +18,7 @@ vi.mock('server-only', () => ({}))
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
 
+// Flat response (legacy / forward-compat path)
 function makeFetchResponse(overrides: Record<string, unknown> = {}) {
   return {
     ok:   true,
@@ -27,6 +28,23 @@ function makeFetchResponse(overrides: Record<string, unknown> = {}) {
       thumbnailUrl: '',
       thumbnails:   { default: '', square: '', portrait: '', landscape: '' },
       ...overrides,
+    }),
+  }
+}
+
+// Wrapped response — mirrors the real YMove API shape: { data: {...}, _notice: {...} }
+function makeWrappedFetchResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    ok:   true,
+    json: async () => ({
+      data: {
+        id:           'aaaa-bbbb-cccc-dddd',
+        title:        'Test Exercise',
+        thumbnailUrl: '',
+        thumbnails:   { default: '', square: '', portrait: '', landscape: '' },
+        ...overrides,
+      },
+      _notice: { message: 'test', reason: 'browse_mode' },
     }),
   }
 }
@@ -198,5 +216,117 @@ describe('API key safety', () => {
     expect(url).not.toContain('test-key-do-not-expose')
     const headers = init.headers as Record<string, string>
     expect(headers['X-API-Key']).toBe('test-key-do-not-expose')
+  })
+})
+
+// ── API response wrapper unwrapping ─────────────────────────────────────────
+// YMove returns { data: { id, ... }, _notice: {} } — parseMedia must unwrap it.
+// These tests reproduce the real API shape and verify the fix.
+
+describe('getYmoveById — data wrapper unwrapping', () => {
+  it('correctly parses a wrapped response (real API shape)', async () => {
+    mockFetch.mockResolvedValue(makeWrappedFetchResponse({ videoUrl: 'https://cdn.example.com/v.mp4' }))
+    const { getYmoveById } = await import('@/lib/ymove/client')
+    const media = await getYmoveById('aaaa-bbbb-cccc-dddd', true)
+
+    expect(media).not.toBeNull()
+    expect(media?.ymoveId).toBe('aaaa-bbbb-cccc-dddd')
+    expect(media?.videoUrl).toBe('https://cdn.example.com/v.mp4')
+  })
+
+  it('returns null when wrapper has no nested id (malformed response)', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: null, _notice: {} }),
+    })
+    const { getYmoveById } = await import('@/lib/ymove/client')
+    const media = await getYmoveById('aaaa-bbbb-cccc-dddd', true)
+    expect(media).toBeNull()
+  })
+
+  it('also handles a flat response without wrapper (forward compat)', async () => {
+    mockFetch.mockResolvedValue(makeFetchResponse({ videoUrl: 'https://cdn.example.com/flat.mp4' }))
+    const { getYmoveById } = await import('@/lib/ymove/client')
+    const media = await getYmoveById('aaaa-bbbb-cccc-dddd', true)
+
+    expect(media).not.toBeNull()
+    expect(media?.videoUrl).toBe('https://cdn.example.com/flat.mp4')
+  })
+})
+
+// ── videos[] array fallback ──────────────────────────────────────────────────
+// When top-level videoUrl is absent, the primary video in videos[] is used.
+
+describe('parseMedia — videos[] array fallback', () => {
+  it('uses videos[].videoUrl when top-level videoUrl is absent', async () => {
+    mockFetch.mockResolvedValue(makeWrappedFetchResponse({
+      videoUrl: undefined,
+      videos: [
+        { videoUrl: 'https://cdn.example.com/nested.mp4', videoHlsUrl: 'https://cdn.example.com/nested.m3u8', isPrimary: true },
+      ],
+    }))
+    const { getYmoveById } = await import('@/lib/ymove/client')
+    const media = await getYmoveById('aaaa-bbbb-cccc-dddd', true)
+
+    expect(media?.videoUrl).toBe('https://cdn.example.com/nested.mp4')
+    expect(media?.videoHlsUrl).toBe('https://cdn.example.com/nested.m3u8')
+  })
+
+  it('prefers isPrimary video when multiple videos exist', async () => {
+    mockFetch.mockResolvedValue(makeWrappedFetchResponse({
+      videoUrl: undefined,
+      videos: [
+        { videoUrl: 'https://cdn.example.com/secondary.mp4', isPrimary: false },
+        { videoUrl: 'https://cdn.example.com/primary.mp4',   isPrimary: true  },
+      ],
+    }))
+    const { getYmoveById } = await import('@/lib/ymove/client')
+    const media = await getYmoveById('aaaa-bbbb-cccc-dddd', true)
+
+    expect(media?.videoUrl).toBe('https://cdn.example.com/primary.mp4')
+  })
+
+  it('top-level videoUrl takes precedence over videos[] alias', async () => {
+    mockFetch.mockResolvedValue(makeWrappedFetchResponse({
+      videoUrl: 'https://cdn.example.com/top-level.mp4',
+      videos: [{ videoUrl: 'https://cdn.example.com/nested.mp4', isPrimary: true }],
+    }))
+    const { getYmoveById } = await import('@/lib/ymove/client')
+    const media = await getYmoveById('aaaa-bbbb-cccc-dddd', true)
+
+    expect(media?.videoUrl).toBe('https://cdn.example.com/top-level.mp4')
+  })
+
+  it('returns null videoUrl when neither top-level nor videos[] has one', async () => {
+    mockFetch.mockResolvedValue(makeWrappedFetchResponse({ videoUrl: undefined, videos: [] }))
+    const { getYmoveById } = await import('@/lib/ymove/client')
+    const media = await getYmoveById('aaaa-bbbb-cccc-dddd', true)
+
+    expect(media).not.toBeNull()
+    expect(media?.videoUrl).toBeUndefined()
+  })
+})
+
+// ── Provider HTTP error + usage-limit ────────────────────────────────────────
+
+describe('getYmoveById — provider error handling', () => {
+  it('returns null on provider 500', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+    const { getYmoveById } = await import('@/lib/ymove/client')
+    expect(await getYmoveById('error-uuid', true)).toBeNull()
+  })
+
+  it('returns null on provider 429 (usage limit hit)', async () => {
+    mockFetch.mockResolvedValue({ ok: false, status: 429, json: async () => ({ error: 'limit exceeded' }) })
+    const { getYmoveById } = await import('@/lib/ymove/client')
+    expect(await getYmoveById('limit-uuid', true)).toBeNull()
+  })
+
+  it('returns null when fetch throws (network error)', async () => {
+    mockFetch.mockRejectedValue(new Error('network error'))
+    const { getYmoveById } = await import('@/lib/ymove/client')
+    // The client doesn't catch network errors — the media route does.
+    // Verify that a throw propagates (route catches it).
+    await expect(getYmoveById('network-uuid', true)).rejects.toThrow('network error')
   })
 })

@@ -150,6 +150,30 @@ describe('GET /api/training/exercises/[exerciseId]/media', () => {
     expect(body.source).toBe('exercisedb')
     expect(mockGetYmoveById).not.toHaveBeenCalled()
   })
+
+  // ── video mode error / no-URL states ───────────────────────────────────────
+  // These reproduce the real failure: getYmoveById returns non-null but has no
+  // videoUrl. Route must return ymoveId (thumbnail still works) without videoUrl
+  // so ExerciseMedia can show the "No video" error state.
+
+  it('video mode: getYmoveById returns media without videoUrl → no videoUrl in response', async () => {
+    setMapping({ '0026': YMOVE_UUID })
+    mockGetYmoveById.mockResolvedValue({ ...MOCK_YMOVE_VIDEO, videoUrl: undefined, videoHlsUrl: undefined })
+    const { body } = await callRoute('0026', true)
+    expect(body.source).toBe('ymove')
+    expect(body.ymoveId).toBe(YMOVE_UUID)
+    expect(body.videoUrl).toBeUndefined()
+    expect(body.fallbackGifUrl).toContain('0026')
+  })
+
+  it('video mode: provider 429 → route catches, returns ymove source without videoUrl', async () => {
+    setMapping({ '0026': YMOVE_UUID })
+    mockGetYmoveById.mockRejectedValue(Object.assign(new Error('429'), { status: 429 }))
+    const { body } = await callRoute('0026', true)
+    expect(body.source).toBe('ymove')
+    expect(body.ymoveId).toBe(YMOVE_UUID)
+    expect(body.videoUrl).toBeUndefined()
+  })
 })
 
 // ── ExerciseMedia play-button display contract ──────────────────────────────

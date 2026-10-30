@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { getGifUrl } from '@/lib/exercises'
-import { Play, X } from 'lucide-react'
+import { Play, X, VideoOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface MediaResponse {
@@ -43,6 +43,7 @@ export function ExerciseMedia({
   const [playing, setPlaying] = useState(false)
   const [videoSrc, setVideoSrc] = useState<string | null>(null)
   const [videoLoading, setVideoLoading] = useState(false)
+  const [videoError, setVideoError] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -60,6 +61,7 @@ export function ExerciseMedia({
     // firing when the user taps the play overlay.
     e?.stopPropagation()
     if (videoSrc) { setPlaying(true); return }
+    setVideoError(false)
     setVideoLoading(true)
     try {
       const res = await fetch(`/api/training/exercises/${exerciseId}/media?video=true`)
@@ -71,6 +73,8 @@ export function ExerciseMedia({
           return
         }
       }
+      // Provider returned no playable URL — show feedback instead of silently doing nothing.
+      setVideoError(true)
     } finally {
       setVideoLoading(false)
     }
@@ -122,18 +126,29 @@ export function ExerciseMedia({
       />
       {showVideo && hasYmove && (
         <button
-          onClick={handlePlay}
-          disabled={videoLoading}
+          onClick={videoError ? undefined : handlePlay}
+          disabled={videoLoading || videoError}
           className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/20 transition-colors group"
-          aria-label={`Play ${exerciseName} video`}
+          aria-label={videoError ? `No video available for ${exerciseName}` : `Play ${exerciseName} video`}
         >
-          <div className={cn(
-            'flex size-10 items-center justify-center rounded-full bg-white/90 shadow-md',
-            'opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity',
-            videoLoading && 'opacity-100 animate-pulse',
-          )}>
-            <Play className="size-4 text-zinc-900 fill-zinc-900 ml-0.5" />
-          </div>
+          {videoError ? (
+            <div className="flex flex-col items-center gap-1.5">
+              <div className="flex size-10 items-center justify-center rounded-full bg-black/60 shadow-md">
+                <VideoOff className="size-4 text-white/80" />
+              </div>
+              <span className="rounded px-1.5 py-0.5 bg-black/50 text-[10px] text-white/80 leading-none">
+                No video
+              </span>
+            </div>
+          ) : (
+            <div className={cn(
+              'flex size-10 items-center justify-center rounded-full bg-white/90 shadow-md',
+              'opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity',
+              videoLoading && 'opacity-100 animate-pulse',
+            )}>
+              <Play className="size-4 text-zinc-900 fill-zinc-900 ml-0.5" />
+            </div>
+          )}
         </button>
       )}
     </div>
