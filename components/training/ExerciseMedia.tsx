@@ -55,7 +55,10 @@ export function ExerciseMedia({
     return () => { cancelled = true }
   }, [exerciseId])
 
-  async function handlePlay() {
+  async function handlePlay(e?: React.MouseEvent) {
+    // Prevent parent click handlers (e.g. collapse buttons in workout session) from
+    // firing when the user taps the play overlay.
+    e?.stopPropagation()
     if (videoSrc) { setPlaying(true); return }
     setVideoLoading(true)
     try {
@@ -126,7 +129,7 @@ export function ExerciseMedia({
         >
           <div className={cn(
             'flex size-10 items-center justify-center rounded-full bg-white/90 shadow-md',
-            'opacity-0 group-hover:opacity-100 transition-opacity',
+            'opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity',
             videoLoading && 'opacity-100 animate-pulse',
           )}>
             <Play className="size-4 text-zinc-900 fill-zinc-900 ml-0.5" />
