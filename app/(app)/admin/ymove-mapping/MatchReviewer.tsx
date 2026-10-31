@@ -12,7 +12,8 @@ import type { MatchSuggestion, ScoredCandidate } from '@/lib/ymove/pipeline'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ReviewStatus = 'pending' | 'approved' | 'rejected' | 'overridden'
-export type ReviewMode = 'pending' | 'approved' | 'verified'
+export type ReviewMode = 'pending' | 'approved' | 'verified' | 'needs_review' | 'unmapped'
+export type QueueStatus = 'unmapped' | 'rejected' | 'approved_unverified' | 'verified'
 
 export interface ReviewerSuggestion extends MatchSuggestion {
   reviewStatus:          ReviewStatus
@@ -21,6 +22,12 @@ export interface ReviewerSuggestion extends MatchSuggestion {
   activeConflictDbId:    string | null
   activeConflictName:    string | null
   suggestedConflictDbIds: string[]
+  queueStatus?:          QueueStatus
+}
+
+export interface DecisionCallbackOpts {
+  type:         'verified' | 'approved' | 'rejected' | 'reconsider'
+  exerciseDbId: string
 }
 
 interface ConflictInfo {
@@ -61,13 +68,14 @@ const CONFIDENCE_COLORS = {
 
 interface MatchReviewerProps {
   suggestions: ReviewerSuggestion[]
-  onDecision:  () => void
+  onDecision:  (opts?: DecisionCallbackOpts) => void
   reviewMode:  ReviewMode
 }
 
 export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchReviewerProps) {
   // Build queue based on the active review mode
   const queue = suggestions.filter(s => {
+    if (reviewMode === 'needs_review' || reviewMode === 'unmapped') return true
     if (reviewMode === 'pending') {
       return s.reviewStatus === 'pending' && (s.topMatch || s.otherCandidates.length > 0)
     }
@@ -258,21 +266,26 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
     return { ok: res.ok }
   }
 
-  function advanceQueue() {
+  function advanceQueue(opts?: DecisionCallbackOpts) {
+    if (reviewMode === 'needs_review' || reviewMode === 'unmapped') {
+      if (opts) onDecision(opts)
+      if (!opts || opts.type !== 'verified') {
+        setQueueIndex(i => i + 1)
+      }
+      return
+    }
     if (reviewMode === 'pending') {
-      // Pending mode: reload parent data after each decision so the item leaves the queue
       if (queueIndex >= total - 1) {
-        onDecision()
+        onDecision(opts)
       } else {
         setQueueIndex(i => Math.min(i, total - 2))
-        onDecision()
+        onDecision(opts)
       }
     } else {
-      // Approved/verified mode: advance through the static list; reload at the end
       if (queueIndex < total - 1) {
         setQueueIndex(i => i + 1)
       } else {
-        onDecision() // reached end — refresh
+        onDecision(opts)
       }
     }
   }
@@ -296,7 +309,12 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
       if (result.ok) {
         const type = reviewMode === 'pending' ? 'approved' : 'confirmed'
         setLastResult({ type, exerciseName: exercise.displayName, verified: ownerConfirmed })
-        advanceQueue()
+        const isQueueMode = reviewMode === 'needs_review' || reviewMode === 'unmapped'
+        if (isQueueMode && ownerConfirmed) {
+          advanceQueue({ type: 'verified', exerciseDbId: exercise.exerciseDbId })
+        } else {
+          advanceQueue({ type: 'approved', exerciseDbId: exercise.exerciseDbId })
+        }
       } else {
         setLastResult({ type: 'error', exerciseName: exercise.displayName, errorMessage: 'Save failed' })
       }
@@ -387,7 +405,12 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
         exerciseName: exercise.displayName,
         verified:     ownerConfirmed,
       })
-      advanceQueue()
+      const isQueueModeT = reviewMode === 'needs_review' || reviewMode === 'unmapped'
+      if (isQueueModeT && ownerConfirmed) {
+        advanceQueue({ type: 'verified', exerciseDbId: exercise.exerciseDbId })
+      } else {
+        advanceQueue({ type: 'approved', exerciseDbId: exercise.exerciseDbId })
+      }
     } finally {
       setTransferPending(false)
     }
@@ -401,7 +424,7 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
       const result = await patchMapping(exercise.exerciseDbId, null)
       if (result.ok) {
         setLastResult({ type: 'rejected', exerciseName: exercise.displayName })
-        advanceQueue()
+        advanceQueue({ type: 'rejected', exerciseDbId: exercise.exerciseDbId })
       } else {
         setLastResult({ type: 'error', exerciseName: exercise.displayName, errorMessage: 'Save failed' })
       }
@@ -416,13 +439,35 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
     setQueueIndex(i => (i + 1) % Math.max(1, queue.length))
   }
 
+  async function handleReconsider() {
+    if (!exercise) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/ymove-mapping', {
+        method:  'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ exerciseDbId: exercise.exerciseDbId }),
+      })
+      if (res.ok) {
+        setLastResult({ type: 'skipped', exerciseName: exercise.displayName })
+        onDecision({ type: 'reconsider', exerciseDbId: exercise.exerciseDbId })
+      } else {
+        setLastResult({ type: 'error', exerciseName: exercise.displayName, errorMessage: 'Reconsider failed' })
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // ── Empty / done state ────────────────────────────────────────────────────
 
   if (total === 0) {
     const messages: Record<ReviewMode, { heading: string; sub: string }> = {
-      pending:  { heading: 'All pending matches reviewed', sub: 'Switch to "Approved" to inspect existing mappings.' },
-      approved: { heading: 'No approved mappings found', sub: 'Run the pipeline and approve some suggestions first.' },
-      verified: { heading: 'No visually verified mappings yet', sub: 'Use this mode after confirming movements in the "Approved" queue.' },
+      pending:      { heading: 'All pending matches reviewed',      sub: 'Switch to "Approved" to inspect existing mappings.' },
+      approved:     { heading: 'No approved mappings found',        sub: 'Run the pipeline and approve some suggestions first.' },
+      verified:     { heading: 'No visually verified mappings yet', sub: 'Confirm movements in the "Needs Review" queue.' },
+      needs_review: { heading: 'All exercises reviewed',            sub: 'Every exercise has been visually verified.' },
+      unmapped:     { heading: 'No unmapped exercises',             sub: 'Every exercise has an effective YMove assignment.' },
     }
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -442,11 +487,13 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
 
   // Action button label adapts to context
   const approveLabel =
-    reviewMode === 'pending'
+    (reviewMode === 'pending' || exercise?.queueStatus === 'unmapped')
       ? 'Approve'
       : isMappingChange
         ? 'Replace mapping'
-        : 'Confirm mapping'
+        : exercise?.queueStatus === 'approved_unverified'
+          ? 'Verify mapping'
+          : 'Confirm mapping'
 
   return (
     <div className="space-y-3">
@@ -467,9 +514,23 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
               Needs review
             </span>
           )}
-          {reviewMode !== 'pending' && exercise?.verifiedAt && (
+          {reviewMode !== 'pending' && reviewMode !== 'needs_review' && reviewMode !== 'unmapped' && exercise?.verifiedAt && (
             <span className="flex items-center gap-1 rounded border border-green-700/50 bg-green-900/30 px-1.5 py-0.5 text-[10px] text-green-300">
               <ShieldCheck className="size-3" /> Verified
+            </span>
+          )}
+          {exercise?.queueStatus && (reviewMode === 'needs_review' || reviewMode === 'unmapped') && (
+            <span className={cn(
+              'rounded border px-1.5 py-0.5 text-[10px]',
+              exercise.queueStatus === 'unmapped'            && 'border-zinc-700 bg-zinc-800 text-zinc-400',
+              exercise.queueStatus === 'rejected'            && 'border-red-700/40 bg-red-900/20 text-red-400',
+              exercise.queueStatus === 'approved_unverified' && 'border-blue-700/40 bg-blue-900/20 text-blue-300',
+              exercise.queueStatus === 'verified'            && 'border-green-700/40 bg-green-900/20 text-green-300',
+            )}>
+              {exercise.queueStatus === 'unmapped'            && 'Unmapped'}
+              {exercise.queueStatus === 'rejected'            && 'Previously Rejected'}
+              {exercise.queueStatus === 'approved_unverified' && 'Approved · Unverified'}
+              {exercise.queueStatus === 'verified'            && 'Verified'}
             </span>
           )}
         </div>
@@ -1041,20 +1102,31 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
 
       {/* Action bar */}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3">
-        <button
-          onClick={handleApprove}
-          disabled={saving || !candidate}
-          className={cn(
-            'flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium text-white',
-            'bg-green-700 hover:bg-green-600 disabled:opacity-50',
-          )}
-        >
-          <CheckCircle className="size-4" />
-          {saving ? 'Saving…' : approveLabel}
-          {ownerConfirmed && !saving && (
-            <span className="ml-1 rounded bg-green-600/50 px-1 py-0.5 text-[10px]">verified</span>
-          )}
-        </button>
+        {exercise?.queueStatus === 'rejected' && (reviewMode === 'needs_review' || reviewMode === 'unmapped') ? (
+          <button
+            onClick={() => void handleReconsider()}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-md border border-zinc-600 px-4 py-2 text-sm text-zinc-200 hover:border-zinc-400 hover:text-zinc-100 disabled:opacity-50"
+          >
+            <RefreshCw className="size-4" />
+            {saving ? 'Working…' : 'Reconsider'}
+          </button>
+        ) : (
+          <button
+            onClick={handleApprove}
+            disabled={saving || !candidate}
+            className={cn(
+              'flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium text-white',
+              'bg-green-700 hover:bg-green-600 disabled:opacity-50',
+            )}
+          >
+            <CheckCircle className="size-4" />
+            {saving ? 'Saving…' : approveLabel}
+            {ownerConfirmed && !saving && (
+              <span className="ml-1 rounded bg-green-600/50 px-1 py-0.5 text-[10px]">verified</span>
+            )}
+          </button>
+        )}
 
         <button
           onClick={handleReject}

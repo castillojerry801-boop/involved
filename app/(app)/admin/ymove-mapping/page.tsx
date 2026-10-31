@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Search, CheckCircle, XCircle, Minus, ChevronDown, ChevronUp,
-  Play, RefreshCw, AlertTriangle, Star, Sparkles, Eye, Columns2,
+  Play, RefreshCw, AlertTriangle, Star, Sparkles, Eye, Columns2, VideoOff,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MatchClass, MatchSuggestion, SuggestionsSummary } from '@/lib/ymove/pipeline'
@@ -396,138 +396,333 @@ interface BatchResult {
   conflicts: Array<{ exerciseDbId: string; ymoveId: string; reason: string }>
 }
 
-type QueueFilter = 'pending' | 'approved' | 'verified'
+type QueueFilter = 'needs_review' | 'verified' | 'unmapped' | 'unused_ymove'
 
-const QUEUE_FILTER_TABS: { key: QueueFilter; label: string; description: string }[] = [
-  { key: 'pending',  label: 'Pending matches',    description: 'New suggestions awaiting first review' },
-  { key: 'approved', label: 'Approved mappings',  description: 'All 124 active mappings — inspect and correct' },
-  { key: 'verified', label: 'Visually verified',  description: 'Mappings with explicit movement confirmation' },
-]
+interface QueueCounts {
+  needs_review: number
+  verified:     number
+  unmapped:     number
+}
+
+type QueueMode = Exclude<QueueFilter, 'unused_ymove'>
 
 function ReviewerWrapper() {
-  const [queueFilter, setQueueFilter] = useState<QueueFilter>('pending')
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>('needs_review')
 
-  // Pending queue — from pipeline suggestions
-  const { data: suggestionsData, loading: suggestionsLoading, error: suggestionsError, reload: reloadSuggestions } = useSuggestions()
+  const [queueItems,   setQueueItems]   = useState<ReviewerSuggestion[]>([])
+  const [counts,       setCounts]       = useState<QueueCounts>({ needs_review: 0, verified: 0, unmapped: 0 })
+  const [queueLoading, setQueueLoading] = useState(false)
+  const [queueError,   setQueueError]   = useState<string | null>(null)
+  // Load all exercises in one request — avoids offset-shift skipping when items are removed mid-session
+  const QUEUE_LIMIT = 1400
 
-  // Approved/verified queue — from exercise list
-  const [mappedExercises, setMappedExercises]   = useState<ExerciseRow[] | null>(null)
-  const [mappedLoading,   setMappedLoading]     = useState(false)
-  const [mappedError,     setMappedError]       = useState<string | null>(null)
-
-  const loadMappedExercises = useCallback(async () => {
-    setMappedLoading(true)
-    setMappedError(null)
+  const loadQueuePage = useCallback(async (page: number, mode: QueueMode) => {
+    setQueueLoading(true)
+    setQueueError(null)
     try {
-      const res = await fetch('/api/admin/ymove-mapping?status=mapped&limit=500')
-      if (!res.ok) { setMappedError('Failed to load mapped exercises.'); return }
-      const data = await res.json() as { exercises: ExerciseRow[] }
-      setMappedExercises(data.exercises)
+      const res = await fetch(
+        `/api/admin/ymove-mapping/queue?mode=${mode}&page=${page}&limit=${QUEUE_LIMIT}`,
+      )
+      if (!res.ok) { setQueueError('Failed to load queue.'); return }
+      const data = await res.json() as {
+        exercises: Array<{
+          exerciseDbId: string; displayName: string; equipment: string
+          bodyPart: string; target: string; ymoveExerciseId: string | null
+          verifiedAt: string | null; queueStatus: string
+          suggestedSearchQuery: string; primaryMuscles: string[] | null
+          movementPatternLabel: string | null
+        }>
+        counts: QueueCounts; total: number; page: number
+      }
+      setCounts(data.counts)
+
+      const suggestions: ReviewerSuggestion[] = data.exercises.map(ex => ({
+        exerciseDbId:    ex.exerciseDbId,
+        displayName:     ex.displayName,
+        bodyPart:        ex.bodyPart,
+        equipment:       ex.equipment,
+        target:          ex.target,
+        searchQuery:     ex.suggestedSearchQuery,
+        searchedAt:      '',
+        status:          ex.ymoveExerciseId ? 'high_confidence' as const : 'unmatched' as const,
+        topMatch: ex.ymoveExerciseId ? {
+          ymoveId:        ex.ymoveExerciseId,
+          name:           ex.ymoveExerciseId,
+          score:          100,
+          confidence:     'strong' as const,
+          matchReasons:   ['existing mapping'],
+          penaltyReasons: [],
+        } : null,
+        otherCandidates:        [],
+        reviewStatus:
+          ex.queueStatus === 'rejected' ? 'rejected' as const
+          : ex.ymoveExerciseId          ? 'approved' as const
+          : 'pending' as const,
+        currentMappedId:        ex.ymoveExerciseId,
+        verifiedAt:             ex.verifiedAt,
+        activeConflictDbId:     null,
+        activeConflictName:     null,
+        suggestedConflictDbIds: [],
+        queueStatus:            ex.queueStatus as import('./MatchReviewer').QueueStatus,
+      }))
+
+      setQueueItems(suggestions)
     } catch {
-      setMappedError('Network error.')
+      setQueueError('Network error.')
     } finally {
-      setMappedLoading(false)
+      setQueueLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    if (queueFilter !== 'pending') void loadMappedExercises()
-  }, [queueFilter, loadMappedExercises])
+    if (queueFilter === 'unused_ymove') return
+    void loadQueuePage(1, queueFilter as QueueMode)
+  }, [queueFilter, loadQueuePage])
 
-  // Build synthetic ReviewerSuggestion[] for approved/verified modes.
-  // The current ymoveId becomes topMatch; name is the ID (visual confirmed via thumbnail/video).
-  const approvedSuggestions = useMemo((): ReviewerSuggestion[] => {
-    if (!mappedExercises) return []
-    return mappedExercises
-      .filter(ex => ex.ymoveExerciseId !== null)
-      .map(ex => ({
-        exerciseDbId:         ex.exerciseDbId,
-        displayName:          ex.displayName,
-        bodyPart:             ex.bodyPart,
-        equipment:            ex.equipment,
-        target:               ex.target,
-        searchQuery:          ex.displayName,
-        searchedAt:           '',
-        status:               'high_confidence' as const,
-        topMatch: {
-          ymoveId:        ex.ymoveExerciseId!,
-          name:           ex.ymoveExerciseId!,
-          score:          100,
-          confidence:     'strong' as const,
-          matchReasons:   ['existing approved mapping'],
-          penaltyReasons: [],
-        },
-        otherCandidates:      [],
-        reviewStatus:         'approved' as const,
-        currentMappedId:      ex.ymoveExerciseId,
-        verifiedAt:           ex.verifiedAt,
-        activeConflictDbId:   null,
-        activeConflictName:   null,
-        suggestedConflictDbIds: [],
-      }))
-  }, [mappedExercises])
+  // Background count refresh after approve/reject — keeps unmapped count accurate without a full reload
+  const refreshCounts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/ymove-mapping/queue?mode=all&page=1&limit=1')
+      if (res.ok) {
+        const data = await res.json() as { counts: QueueCounts }
+        setCounts(data.counts)
+      }
+    } catch { /* non-critical */ }
+  }, [])
 
-  const isLoading = queueFilter === 'pending' ? suggestionsLoading : mappedLoading
-  const error     = queueFilter === 'pending' ? suggestionsError   : mappedError
-
-  const suggestions: ReviewerSuggestion[] =
-    queueFilter === 'pending'
-      ? (suggestionsData?.suggestions ?? []) as ReviewerSuggestion[]
-      : approvedSuggestions
-
-  const handleDecision = useCallback(() => {
-    if (queueFilter === 'pending') {
-      void reloadSuggestions()
-    } else {
-      void loadMappedExercises()
+  const handleDecision = useCallback((opts?: import('./MatchReviewer').DecisionCallbackOpts) => {
+    if (!opts) {
+      // No-op: new queue modes handle all decisions via typed opts; this branch is unreachable
+      return
     }
-  }, [queueFilter, reloadSuggestions, loadMappedExercises])
+    if (opts.type === 'verified') {
+      // Immediately remove from queue; bump both counts
+      setQueueItems(prev => prev.filter(s => s.exerciseDbId !== opts.exerciseDbId))
+      setCounts(prev => ({
+        needs_review: Math.max(0, prev.needs_review - 1),
+        verified:     prev.verified + 1,
+        unmapped:     prev.unmapped,
+      }))
+    } else if (opts.type === 'reconsider') {
+      // Update in-place: rejected → unmapped so the admin can search for a new candidate
+      setQueueItems(prev => prev.map(s =>
+        s.exerciseDbId === opts.exerciseDbId
+          ? {
+              ...s,
+              reviewStatus:    'pending' as const,
+              queueStatus:     'unmapped' as import('./MatchReviewer').QueueStatus,
+              topMatch:        null,
+              currentMappedId: null,
+            }
+          : s,
+      ))
+    } else if (opts.type === 'approved' || opts.type === 'rejected') {
+      // MatchReviewer already advanced queueIndex internally; just refresh counts in background
+      void refreshCounts()
+    }
+  }, [queueFilter, loadQueuePage, refreshCounts])
+
+  const REVIEWER_TABS: { key: QueueFilter; label: string; count?: number; description: string }[] = [
+    { key: 'needs_review', label: 'Needs Review',  count: counts.needs_review, description: 'Every exercise not yet visually verified — unmapped, approved-but-unverified, and previously rejected' },
+    { key: 'verified',     label: 'Verified',      count: counts.verified,     description: 'Exercises with an active YMove mapping that has been visually confirmed' },
+    { key: 'unmapped',     label: 'Unmapped',      count: counts.unmapped,     description: 'Exercises with no effective YMove assignment — never checked or explicitly rejected' },
+    { key: 'unused_ymove', label: 'Unused YMove',  count: undefined,           description: 'Browse YMove catalog — videos not assigned to any ExerciseDB exercise' },
+  ]
 
   return (
     <div className="space-y-4">
-      {/* Queue filter selector */}
+      {/* Queue filter tabs */}
       <div className="flex flex-wrap gap-1 rounded-lg border border-zinc-800 bg-zinc-900/40 p-1.5">
-        {QUEUE_FILTER_TABS.map(tab => (
+        {REVIEWER_TABS.map(tab => (
           <button
             key={tab.key}
             onClick={() => setQueueFilter(tab.key)}
             title={tab.description}
             className={cn(
-              'flex-1 rounded-md px-3 py-1.5 text-sm transition-colors text-center',
+              'flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors',
               queueFilter === tab.key
                 ? 'bg-zinc-700 text-zinc-100'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60',
             )}
           >
             {tab.label}
+            {tab.count !== undefined && (
+              <span className={cn(
+                'rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                queueFilter === tab.key
+                  ? 'bg-zinc-600 text-zinc-200'
+                  : 'bg-zinc-800 text-zinc-500',
+              )}>
+                {tab.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
       {/* Description */}
       <p className="text-xs text-zinc-600">
-        {QUEUE_FILTER_TABS.find(t => t.key === queueFilter)?.description}
+        {REVIEWER_TABS.find(t => t.key === queueFilter)?.description}
       </p>
 
       {/* Content */}
-      {isLoading && (
-        <p className="py-8 text-center text-sm text-zinc-500">Loading…</p>
+      {queueFilter === 'unused_ymove' ? (
+        <UnusedYMoveTab />
+      ) : (
+        <>
+          {queueLoading && (
+            <p className="py-8 text-center text-sm text-zinc-500">Loading…</p>
+          )}
+          {!queueLoading && queueError && (
+            <p className="py-8 text-center text-sm text-red-400">{queueError}</p>
+          )}
+          {!queueLoading && !queueError && (
+            <MatchReviewer
+              suggestions={queueItems}
+              onDecision={handleDecision}
+              reviewMode={queueFilter as import('./MatchReviewer').ReviewMode}
+            />
+          )}
+        </>
       )}
-      {!isLoading && error && (
-        <p className="py-8 text-center text-sm text-red-400">{error}</p>
-      )}
-      {!isLoading && !error && queueFilter === 'pending' && !suggestionsData?.ready && (
+    </div>
+  )
+}
+
+interface YMoveItem {
+  ymoveId:     string
+  name:        string
+  category:    string | null
+  muscleGroup: string | null
+  equipment:   string | null
+  difficulty:  string | null
+  hasVideo:    boolean
+  mappedTo:    string | null
+}
+
+function UnusedYMoveTab() {
+  const [items,       setItems]       = useState<YMoveItem[]>([])
+  const [page,        setPage]        = useState(1)
+  const [hasMore,     setHasMore]     = useState(false)
+  const [loading,     setLoading]     = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
+  const [search,      setSearch]      = useState('')
+  const [unusedOnly,  setUnusedOnly]  = useState(true)
+  const [thumbErrors, setThumbErrors] = useState<Set<string>>(new Set())
+
+  const load = useCallback(async (p: number, q: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams({ page: String(p), pageSize: '48' })
+      if (q.trim()) params.set('search', q.trim())
+      const res = await fetch(`/api/admin/ymove-browse?${params.toString()}`)
+      if (!res.ok) { setError('Failed to load YMove catalog.'); return }
+      const data = await res.json() as { items: YMoveItem[]; hasMore: boolean }
+      if (p === 1) setItems(data.items)
+      else setItems(prev => [...prev, ...data.items])
+      setPage(p)
+      setHasMore(data.hasMore)
+    } catch {
+      setError('Network error.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void load(1, search) }, [load, search])
+
+  const displayed = unusedOnly ? items.filter(it => it.mappedTo === null) : items
+  const usedCount = items.filter(it => it.mappedTo !== null).length
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-1 items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5">
+          <Search className="size-3.5 shrink-0 text-zinc-500" />
+          <input
+            value={search}
+            onChange={e => { setSearch(e.target.value); void load(1, e.target.value) }}
+            placeholder="Search YMove exercises…"
+            className="flex-1 bg-transparent text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
+          />
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-400">
+          <input
+            type="checkbox"
+            checked={unusedOnly}
+            onChange={e => setUnusedOnly(e.target.checked)}
+            className="accent-zinc-400"
+          />
+          Show unused only
+          {unusedOnly && usedCount > 0 && (
+            <span className="text-zinc-600">({usedCount} hidden)</span>
+          )}
+        </label>
+      </div>
+
+      {error && <p className="py-4 text-center text-sm text-red-400">{error}</p>}
+      {!error && displayed.length === 0 && !loading && (
         <p className="py-8 text-center text-sm text-zinc-500">
-          Pipeline not yet run. Execute:{' '}
-          <code className="rounded bg-zinc-800 px-1 text-xs">npx tsx scripts/ymove-run-pipeline.ts</code>
+          {unusedOnly ? 'No unused YMove exercises found for this search.' : 'No results.'}
         </p>
       )}
-      {!isLoading && !error && (queueFilter !== 'pending' || suggestionsData?.ready) && (
-        <MatchReviewer
-          suggestions={suggestions}
-          onDecision={handleDecision}
-          reviewMode={queueFilter}
-        />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        {displayed.map(item => (
+          <div
+            key={item.ymoveId}
+            className={cn(
+              'rounded-lg border p-2 text-left transition-colors',
+              item.mappedTo
+                ? 'border-zinc-700/50 bg-zinc-900/30 opacity-60'
+                : 'border-zinc-700 bg-zinc-900/60',
+            )}
+          >
+            <div className="relative mb-2 aspect-square w-full overflow-hidden rounded-md bg-zinc-800">
+              {thumbErrors.has(item.ymoveId) ? (
+                <div className="flex h-full items-center justify-center text-zinc-600">
+                  <VideoOff className="size-5" />
+                </div>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`/api/ymove/thumbnail/${item.ymoveId}?crop=square`}
+                  alt={item.name}
+                  className="h-full w-full object-contain"
+                  loading="lazy"
+                  onError={() => setThumbErrors(prev => new Set([...prev, item.ymoveId]))}
+                />
+              )}
+            </div>
+            <p className="line-clamp-2 text-[11px] font-medium leading-tight text-zinc-200">{item.name}</p>
+            <p className="mt-0.5 font-mono text-[9px] text-zinc-600">{item.ymoveId}</p>
+            <div className="mt-1 flex flex-wrap gap-0.5">
+              {item.equipment && (
+                <span className="rounded bg-zinc-800 px-1 py-0.5 text-[9px] text-zinc-400">{item.equipment}</span>
+              )}
+              {item.muscleGroup && (
+                <span className="rounded bg-zinc-800 px-1 py-0.5 text-[9px] text-zinc-400">{item.muscleGroup}</span>
+              )}
+            </div>
+            {item.mappedTo && (
+              <p className="mt-1 text-[9px] text-zinc-500">→ {item.mappedTo}</p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {(loading || hasMore) && (
+        <div className="flex justify-center">
+          {loading
+            ? <p className="text-sm text-zinc-500">Loading…</p>
+            : <button
+                onClick={() => void load(page + 1, search)}
+                className="rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+              >
+                Load more
+              </button>
+          }
+        </div>
       )}
     </div>
   )
