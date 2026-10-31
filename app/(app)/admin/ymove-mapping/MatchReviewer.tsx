@@ -67,12 +67,13 @@ const CONFIDENCE_COLORS = {
 // ── MatchReviewer ─────────────────────────────────────────────────────────────
 
 interface MatchReviewerProps {
-  suggestions: ReviewerSuggestion[]
-  onDecision:  (opts?: DecisionCallbackOpts) => void
-  reviewMode:  ReviewMode
+  suggestions:    ReviewerSuggestion[]
+  onDecision:     (opts?: DecisionCallbackOpts) => void
+  reviewMode:     ReviewMode
+  equipmentLabel?: string
 }
 
-export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchReviewerProps) {
+export function MatchReviewer({ suggestions, onDecision, reviewMode, equipmentLabel }: MatchReviewerProps) {
   // Build queue based on the active review mode
   const queue = suggestions.filter(s => {
     if (reviewMode === 'needs_review' || reviewMode === 'unmapped') return true
@@ -462,12 +463,23 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
   // ── Empty / done state ────────────────────────────────────────────────────
 
   if (total === 0) {
+    const eq = equipmentLabel
     const messages: Record<ReviewMode, { heading: string; sub: string }> = {
       pending:      { heading: 'All pending matches reviewed',      sub: 'Switch to "Approved" to inspect existing mappings.' },
       approved:     { heading: 'No approved mappings found',        sub: 'Run the pipeline and approve some suggestions first.' },
-      verified:     { heading: 'No visually verified mappings yet', sub: 'Confirm movements in the "Needs Review" queue.' },
-      needs_review: { heading: 'All exercises reviewed',            sub: 'Every exercise has been visually verified.' },
-      unmapped:     { heading: 'No unmapped exercises',             sub: 'Every exercise has an effective YMove assignment.' },
+      verified:     {
+        heading: eq ? `No verified ${eq} mappings`                  : 'No visually verified mappings yet',
+        sub:     eq ? `No ${eq} exercises have been confirmed yet.`  : 'Confirm movements in the "Needs Review" queue.',
+      },
+      needs_review: {
+        heading: eq ? `All ${eq} exercises reviewed`                                         : 'All exercises reviewed',
+        sub:     eq ? `Every ${eq} exercise has been reviewed. Try a different equipment or switch queue.`
+                    : 'Every exercise has been visually verified.',
+      },
+      unmapped:     {
+        heading: eq ? `No unmapped ${eq} exercises`                                    : 'No unmapped exercises',
+        sub:     eq ? `Every ${eq} exercise has an effective YMove assignment.`        : 'Every exercise has an effective YMove assignment.',
+      },
     }
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">

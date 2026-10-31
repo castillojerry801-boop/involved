@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Search, CheckCircle, XCircle, Minus, ChevronDown, ChevronUp,
-  Play, RefreshCw, AlertTriangle, Star, Sparkles, Eye, Columns2, VideoOff,
+  Play, RefreshCw, AlertTriangle, Star, Sparkles, Eye, Columns2, VideoOff, Filter,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MatchClass, MatchSuggestion, SuggestionsSummary } from '@/lib/ymove/pipeline'
 import { MatchReviewer, type ReviewerSuggestion } from './MatchReviewer'
+import { filterQueueByEquipment, getSortedEquipmentOptions } from '@/lib/ymove/equipment-filter'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -407,7 +408,8 @@ interface QueueCounts {
 type QueueMode = Exclude<QueueFilter, 'unused_ymove'>
 
 function ReviewerWrapper() {
-  const [queueFilter, setQueueFilter] = useState<QueueFilter>('needs_review')
+  const [queueFilter,     setQueueFilter]     = useState<QueueFilter>('needs_review')
+  const [equipmentFilter, setEquipmentFilter] = useState('')
 
   const [queueItems,   setQueueItems]   = useState<ReviewerSuggestion[]>([])
   const [counts,       setCounts]       = useState<QueueCounts>({ needs_review: 0, verified: 0, unmapped: 0 })
@@ -415,6 +417,14 @@ function ReviewerWrapper() {
   const [queueError,   setQueueError]   = useState<string | null>(null)
   // Load all exercises in one request — avoids offset-shift skipping when items are removed mid-session
   const QUEUE_LIMIT = 1400
+
+  // Compute filtered queue and available equipment options from the full loaded set.
+  // This runs entirely client-side so switching equipment requires no extra network requests.
+  const filteredQueueItems = useMemo(
+    () => filterQueueByEquipment(queueItems, equipmentFilter),
+    [queueItems, equipmentFilter],
+  )
+  const equipmentOptions = useMemo(() => getSortedEquipmentOptions(queueItems), [queueItems])
 
   const loadQueuePage = useCallback(async (page: number, mode: QueueMode) => {
     setQueueLoading(true)
@@ -560,6 +570,48 @@ function ReviewerWrapper() {
         ))}
       </div>
 
+      {/* Equipment filter + count */}
+      {queueFilter !== 'unused_ymove' && (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Filter className="size-3 shrink-0 text-zinc-500" />
+            <label htmlFor="equipment-filter" className="text-xs text-zinc-500 shrink-0">
+              Equipment
+            </label>
+            <select
+              id="equipment-filter"
+              value={equipmentFilter}
+              onChange={e => setEquipmentFilter(e.target.value)}
+              className="rounded-md border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+            >
+              <option value="">All Equipment</option>
+              {equipmentOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.value} ({opt.count})
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-xs text-zinc-500">
+            <span className="text-zinc-300">{filteredQueueItems.length}</span>
+            {' '}exercise{filteredQueueItems.length !== 1 ? 's' : ''}
+            {equipmentFilter && (
+              <>
+                {' '}·{' '}
+                <span className="text-zinc-400">{equipmentFilter}</span>
+                <button
+                  onClick={() => setEquipmentFilter('')}
+                  className="ml-1.5 text-zinc-600 hover:text-zinc-400"
+                  aria-label="Clear equipment filter"
+                >
+                  ×
+                </button>
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
       {/* Description */}
       <p className="text-xs text-zinc-600">
         {REVIEWER_TABS.find(t => t.key === queueFilter)?.description}
@@ -578,9 +630,11 @@ function ReviewerWrapper() {
           )}
           {!queueLoading && !queueError && (
             <MatchReviewer
-              suggestions={queueItems}
+              key={`${queueFilter}::${equipmentFilter}`}
+              suggestions={filteredQueueItems}
               onDecision={handleDecision}
               reviewMode={queueFilter as import('./MatchReviewer').ReviewMode}
+              equipmentLabel={equipmentFilter || undefined}
             />
           )}
         </>
