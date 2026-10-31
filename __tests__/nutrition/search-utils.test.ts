@@ -6,6 +6,7 @@ import {
   passesQualityGate,
   scoreResult,
   normDedup,
+  normBarcodeForDedup,
 } from '@/lib/nutrition/search-utils'
 import type { ExternalFoodResult } from '@/lib/nutrition/providers/types'
 
@@ -310,5 +311,43 @@ describe('normDedup', () => {
 
   it('trims leading and trailing whitespace', () => {
     expect(normDedup('  rice  ')).toBe('rice')
+  })
+})
+
+// ── normBarcodeForDedup ────────────────────────────────────────────────────────
+
+describe('normBarcodeForDedup', () => {
+  it('returns 12-digit UPC-A unchanged', () => {
+    expect(normBarcodeForDedup('049000042566')).toBe('049000042566')
+  })
+
+  it('converts EAN-13 with leading zero to 12-digit UPC-A', () => {
+    expect(normBarcodeForDedup('0049000042566')).toBe('049000042566')
+  })
+
+  it('EAN-13 and UPC-A variants of the same barcode produce identical keys', () => {
+    expect(normBarcodeForDedup('0049000042566')).toBe(normBarcodeForDedup('049000042566'))
+  })
+
+  it('returns 13-digit EAN-13 unchanged when it does NOT start with zero', () => {
+    expect(normBarcodeForDedup('6009699701339')).toBe('6009699701339')
+  })
+
+  it('strips internal whitespace from barcode strings', () => {
+    expect(normBarcodeForDedup('04900 00425 66')).toBe('049000042566')
+  })
+
+  it('returns 8-digit EAN-8 unchanged', () => {
+    expect(normBarcodeForDedup('01234565')).toBe('01234565')
+  })
+
+  it('does not strip leading zeros from 8-digit codes (EAN-8 starts with 0 but is not EAN-13)', () => {
+    expect(normBarcodeForDedup('09999999')).toBe('09999999')
+  })
+
+  it('is idempotent — normalizing twice gives the same result', () => {
+    const once  = normBarcodeForDedup('0049000042566')
+    const twice = normBarcodeForDedup(once)
+    expect(once).toBe(twice)
   })
 })

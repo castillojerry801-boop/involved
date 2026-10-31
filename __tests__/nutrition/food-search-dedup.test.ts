@@ -234,3 +234,162 @@ describe('Log route — dedup with original externalId', () => {
     expect(created.householdServingText).toBe('1 tortilla')
   })
 })
+
+// ── Barcode EAN-13/UPC-A cross-provider dedup (normBarcodeForDedup) ───────────
+//
+// Regression suite for the barcode normalization fix applied to step 5 and step 7
+// of app/api/nutrition/search/route.ts.
+//
+// Before the fix: seenBarcodes used raw barcode strings; if one provider returned
+// "049000042566" (UPC-A, 12 digits) and another returned "0049000042566" (EAN-13,
+// 13 digits with leading zero), the same physical product could appear twice.
+//
+// After the fix: normBarcodeForDedup("0049000042566") → "049000042566" so both
+// variants hash to the same key and only the higher-scored result survives.
+
+describe('Search route — EAN-13/UPC-A barcode dedup (cross-provider)', () => {
+  it('two providers returning EAN-13 vs UPC-A for the same product yield one result', async () => {
+    // Provider A returns UPC-A (12-digit, FatSecret style)
+    // Provider B returns EAN-13 (13-digit with leading zero, OpenFoodFacts style)
+    mockProviders[0].search.mockResolvedValue([
+      {
+        provider: 'fatsecret',
+        externalId: 'fs-12345',
+        name: 'Coca-Cola Classic',
+        brand: 'Coca-Cola',
+        barcode: '049000042566',           // UPC-A
+        servingSize: 355,
+        servingUnit: 'mL',
+        coreNutrients: { calories: 140, proteinG: 0, carbohydrateG: 39, fatG: 0 },
+      },
+      {
+        provider: 'open_food_facts',
+        externalId: 'off-12345',
+        name: 'Coca-Cola Classic',
+        brand: 'Coca-Cola',
+        barcode: '0049000042566',          // EAN-13 — same physical product
+        servingSize: 355,
+        servingUnit: 'mL',
+        coreNutrients: { calories: 140, proteinG: 0, carbohydrateG: 39, fatG: 0 },
+      },
+    ])
+
+    const res = await searchGet(makeSearchReq('coca cola'))
+    expect(res.status).toBe(200)
+    const data = await res.json() as { results: Array<{ barcode: string; provider: string }> }
+
+    // Only one Coca-Cola should appear — the higher-scored FatSecret result wins
+    const cocaColas = data.results.filter(r => r.barcode === '049000042566' || r.barcode === '0049000042566')
+    expect(cocaColas.length).toBe(1)
+    expect(cocaColas[0].provider).toBe('fatsecret')  // higher provider bonus (15 vs 5)
+  })
+
+  it('EAN-13 result is kept when it scores higher than the UPC-A result', async () => {
+    // Use a food with non-zero macros so both candidates survive the nutrition gate.
+    // FatSecret has the higher provider bonus (15) so it wins even though it returns UPC-A.
+    mockProviders[0].search.mockResolvedValue([
+      {
+        provider: 'open_food_facts',
+        externalId: 'off-abc',
+        name: 'Oat Milk',
+        brand: 'Oatly',
+        barcode: '0748252103536',          // EAN-13
+        servingSize: 240,
+        servingUnit: 'mL',
+        coreNutrients: { calories: 120, proteinG: 3, carbohydrateG: 16, fatG: 5 },
+      },
+      {
+        provider: 'fatsecret',
+        externalId: 'fs-abc',
+        name: 'Oat Milk',
+        brand: 'Oatly',
+        barcode: '748252103536',           // UPC-A — same product
+        servingSize: 240,
+        servingUnit: 'mL',
+        coreNutrients: { calories: 120, proteinG: 3, carbohydrateG: 16, fatG: 5 },
+      },
+    ])
+
+    const res = await searchGet(makeSearchReq('oatly'))
+    const data = await res.json() as { results: Array<{ barcode: string }> }
+
+    const milks = data.results.filter(r =>
+      r.barcode === '748252103536' || r.barcode === '0748252103536',
+    )
+    expect(milks.length).toBe(1)
+  })
+
+  it('two results with genuinely different barcodes both survive dedup', async () => {
+    // EAN-13 "0049000042566" (Coke) and EAN-13 "0012000001086" (Pepsi) differ after norm.
+    mockProviders[0].search.mockResolvedValue([
+      {
+        provider: 'fatsecret',
+        externalId: 'fs-coke',
+        name: 'Coca-Cola Classic',
+        brand: 'Coca-Cola',
+        barcode: '0049000042566',
+        servingSize: 355,
+        servingUnit: 'mL',
+        coreNutrients: { calories: 140, proteinG: 0, carbohydrateG: 39, fatG: 0 },
+      },
+      {
+        provider: 'fatsecret',
+        externalId: 'fs-pepsi',
+        name: 'Pepsi Cola',
+        brand: 'Pepsi',
+        barcode: '0012000001086',
+        servingSize: 355,
+        servingUnit: 'mL',
+        coreNutrients: { calories: 150, proteinG: 0, carbohydrateG: 41, fatG: 0 },
+      },
+    ])
+
+    const res = await searchGet(makeSearchReq('cola'))
+    const data = await res.json() as { results: Array<{ barcode: string }> }
+
+    const barcodes = data.results.map(r => r.barcode)
+    expect(barcodes).toContain('0049000042566')
+    expect(barcodes).toContain('0012000001086')
+  })
+
+  it('step 7 cache-skip: library EAN-13 blocks external UPC-A duplicate', async () => {
+    // Library has the EAN-13 form; external provider returns UPC-A.
+    // Step 7 should recognise them as the same product and exclude the external result.
+    const ean13 = '0049000042566'
+    const upcA  = '049000042566'
+    mockPrisma.foodItem.findMany.mockResolvedValue([
+      {
+        ...TORTILLA_DB,
+        id: 'cache-coca-cola-uuid',
+        externalId: ean13,
+        name: 'Coca-Cola Classic',
+        brand: 'Coca-Cola',
+        barcode: ean13,
+        sourceProvider: 'open_food_facts',
+      },
+    ])
+    mockProviders[0].search.mockResolvedValue([
+      {
+        provider: 'fatsecret',
+        externalId: 'fs-coke',
+        name: 'Coca-Cola Classic',
+        brand: 'Coca-Cola',
+        barcode: upcA,                     // UPC-A — same physical product as cached EAN-13
+        servingSize: 355,
+        servingUnit: 'mL',
+        coreNutrients: { calories: 140, proteinG: 0, carbohydrateG: 39, fatG: 0 },
+      },
+    ])
+
+    const res = await searchGet(makeSearchReq('coca cola'))
+    const data = await res.json() as { results: Array<{ source: string; barcode?: string }> }
+
+    // Library result present
+    const lib = data.results.find(r => r.source === 'library')
+    expect(lib).toBeDefined()
+
+    // External duplicate blocked — it shares the same normalized barcode
+    const external = data.results.filter(r => r.source === 'external')
+    expect(external.length).toBe(0)
+  })
+})

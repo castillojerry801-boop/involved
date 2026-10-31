@@ -8,6 +8,7 @@ import {
   passesQualityGate,
   scoreResult,
   normDedup,
+  normBarcodeForDedup,
 } from '@/lib/nutrition/search-utils'
 
 // ── Supplement gate ───────────────────────────────────────────────────────────
@@ -152,13 +153,17 @@ export async function GET(req: NextRequest) {
     })
     .sort((a, b) => b.score - a.score)
 
-  // 5. Deduplicate: barcode-first, then normalized name+brand
+  // 5. Deduplicate: barcode-first (EAN-13/UPC-A normalized), then normalized name+brand.
+  //    normBarcodeForDedup converts EAN-13 "0049000042566" → "049000042566" so that
+  //    providers returning different but equivalent barcode forms for the same product
+  //    are caught here rather than surfacing as two results.
   const seenBarcodes  = new Set<string>()
   const seenNameBrand = new Set<string>()
   const deduped = scored.filter(({ r }) => {
     if (r.barcode) {
-      if (seenBarcodes.has(r.barcode)) return false
-      seenBarcodes.add(r.barcode)
+      const bKey = normBarcodeForDedup(r.barcode)
+      if (seenBarcodes.has(bKey)) return false
+      seenBarcodes.add(bKey)
     }
     const key = `${normDedup(r.name)}|${normDedup(r.brand ?? '')}`
     if (seenNameBrand.has(key)) return false
@@ -171,13 +176,15 @@ export async function GET(req: NextRequest) {
   //    by the DB contains filter above.
   const relevant = deduped.filter(r => passesQualityGate(r, query))
 
-  // 7. Skip items already covered by the local cache
-  const cachedBarcodes  = new Set(cachedResults.map(r => r.barcode).filter(Boolean))
+  // 7. Skip items already covered by the local cache (same normalization as step 5)
+  const cachedBarcodes  = new Set(
+    cachedResults.map(r => r.barcode ? normBarcodeForDedup(r.barcode) : null).filter((b): b is string => b !== null),
+  )
   const cachedNameBrand = new Set(cachedResults.map(r =>
     `${normDedup(r.name)}|${normDedup(r.brand ?? '')}`
   ))
   const external = relevant.filter(r => {
-    if (r.barcode && cachedBarcodes.has(r.barcode)) return false
+    if (r.barcode && cachedBarcodes.has(normBarcodeForDedup(r.barcode))) return false
     const key = `${normDedup(r.name)}|${normDedup(r.brand ?? '')}`
     return !cachedNameBrand.has(key)
   })

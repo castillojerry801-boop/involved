@@ -262,3 +262,16 @@ export function barcodeResultQuality(r: ExternalFoodDetail): number {
 export function normDedup(str: string): string {
   return str.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
 }
+
+/**
+ * Normalize a barcode for cross-provider deduplication.
+ * Converts EAN-13 with a single leading zero to 12-digit UPC-A so that
+ * "0049000042566" (EAN-13) and "049000042566" (UPC-A) resolve to the same key.
+ * Without this, the same physical product can pass the barcode dedup check and
+ * appear twice in search results when one provider stores EAN-13 and another UPC-A.
+ */
+export function normBarcodeForDedup(barcode: string): string {
+  const clean = barcode.replace(/\s/g, '')
+  if (clean.length === 13 && clean.startsWith('0')) return clean.slice(1)
+  return clean
+}
