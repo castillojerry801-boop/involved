@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ChefHat, Plus, Loader2 } from 'lucide-react'
+import { ChefHat, Plus, Loader2, ArrowRight, Leaf } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { RecipeCard, type RecipeCardData } from '@/components/recipes/recipe-card'
@@ -96,6 +97,21 @@ export default function RecipesPage() {
           New
         </Button>
       </PageHeader>
+
+      {/* Healthy Recipes banner */}
+      <Link
+        href="/recipes/healthy"
+        className="mb-5 flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 to-emerald-500/5 dark:from-emerald-500/10 dark:to-transparent px-4 py-3.5 hover:from-emerald-500/15 hover:to-emerald-500/10 transition-colors"
+      >
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20">
+          <Leaf className="size-4 text-emerald-500" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-zinc-900 dark:text-white text-sm">Healthy Recipes</p>
+          <p className="text-xs text-zinc-500">2,999+ curated recipes from YMove</p>
+        </div>
+        <ArrowRight className="size-4 text-zinc-400 shrink-0" />
+      </Link>
 
       {/* Tabs */}
       <div className="mb-5 flex rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-1 gap-1">
