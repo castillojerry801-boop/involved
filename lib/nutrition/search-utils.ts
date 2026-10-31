@@ -2,7 +2,7 @@
 // Import from here so that both the search route and the matching service share
 // the same quality gate / scoring logic without duplication.
 
-import type { ExternalFoodResult } from '@/lib/nutrition/providers/types'
+import type { ExternalFoodResult, ExternalFoodDetail } from '@/lib/nutrition/providers/types'
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
 
@@ -217,7 +217,7 @@ export function scoreResult(r: ExternalFoodResult, query: string): number {
 
   // Provider baseline quality
   const providerBonus: Record<string, number> = {
-    fatsecret: 15, usda_fooddata: 12, nih_dsld: 8, open_food_facts: 5,
+    fatsecret: 15, usda_fooddata: 12, nih_dsld: 8, ymove: 8, open_food_facts: 5,
   }
   score += providerBonus[r.provider] ?? 0
 
@@ -225,10 +225,36 @@ export function scoreResult(r: ExternalFoodResult, query: string): number {
   const n = r.coreNutrients
   if (n.calories > 0 && n.proteinG > 0 && n.carbohydrateG > 0 && n.fatG > 0) score += 8
 
-  // Barcode present
-  if (r.barcode) score += 5
+  // Barcode: +15 when the result barcode matches a barcode-format query (confirmed lookup);
+  // +5 when the result simply carries any barcode (data richness signal).
+  if (r.barcode) {
+    if (/^\d{8,14}$/.test(query)) {
+      const norm = (b: string) => { const c = b.replace(/\s/g, ''); return c.length === 13 && c.startsWith('0') ? c.slice(1) : c }
+      score += norm(r.barcode) === norm(query) ? 15 : 5
+    } else {
+      score += 5
+    }
+  }
 
   return score
+}
+
+// ── Barcode lookup quality ─────────────────────────────────────────────────────
+//
+// Used by the barcode route to pick the best result from multi-provider fan-out.
+// All candidates already passed barcode identity validation inside their provider's
+// searchByBarcode(); this ranks by nutrition data completeness, not name similarity.
+
+export function barcodeResultQuality(r: ExternalFoodDetail): number {
+  let s = 0
+  const n = r.coreNutrients
+  if (n.calories > 0 && n.proteinG > 0 && n.carbohydrateG > 0 && n.fatG > 0) s += 20
+  if (r.servingSize > 0 && !r.servingSizeIsEstimated) s += 10
+  if (r.extendedNutrients && Object.keys(r.extendedNutrients).length > 0) s += 5
+  if (r.brand) s += 3
+  const providerBonus: Record<string, number> = { fatsecret: 4, usda_fooddata: 3, ymove: 2, open_food_facts: 1 }
+  s += providerBonus[r.provider] ?? 0
+  return s
 }
 
 // ── Deduplication ─────────────────────────────────────────────────────────────

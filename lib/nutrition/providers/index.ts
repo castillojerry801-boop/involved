@@ -13,16 +13,19 @@ import { FatSecretProvider } from './fatsecret'
 import { OpenFoodFactsProvider } from './open-food-facts'
 import { UsdaFoodDataProvider } from './usda-fooddata'
 import { NihDsldProvider } from './nih-dsld'
+import { YMoveNutritionProvider, isYMoveNutritionEnabled } from './ymove'
 
 // Priority order:
 //   FatSecret   — best global food DB + barcode coverage
 //   USDA        — authoritative whole foods (chicken, rice, eggs)
 //   NIH DSLD    — supplement-specific (protein powder, vitamins, creatine)
+//   YMove       — additional branded/barcode coverage (enabled via YMOVE_NUTRITION_ENABLED)
 //   Open Food Facts — catch-all barcode fallback
 export const FOOD_PROVIDERS: FoodProvider[] = [
   new FatSecretProvider(),
   new UsdaFoodDataProvider(),
   new NihDsldProvider(),
+  ...(isYMoveNutritionEnabled() ? [new YMoveNutritionProvider()] : []),
   new OpenFoodFactsProvider(),
 ]
 

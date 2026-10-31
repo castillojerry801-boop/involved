@@ -4,12 +4,15 @@ import { createClient } from '@/lib/supabase/server'
 import { FatSecretProvider } from '@/lib/nutrition/providers/fatsecret'
 import { OpenFoodFactsProvider } from '@/lib/nutrition/providers/open-food-facts'
 import { UsdaFoodDataProvider } from '@/lib/nutrition/providers/usda-fooddata'
+import { YMoveNutritionProvider, isYMoveNutritionEnabled } from '@/lib/nutrition/providers/ymove'
 import { prisma } from '@/lib/prisma'
 import type { ExternalFoodDetail } from '@/lib/nutrition/providers/types'
+import { barcodeResultQuality } from '@/lib/nutrition/search-utils'
 
 const fatsecret = new FatSecretProvider()
 const off = new OpenFoodFactsProvider()
 const usda = new UsdaFoodDataProvider()
+const ymove = new YMoveNutritionProvider()
 
 // EAN-13 (13-digit) ↔ UPC-A (12-digit) normalization.
 // Scanners often return EAN-13 for products stored as UPC-A (and vice versa).
@@ -117,9 +120,17 @@ export async function GET(req: NextRequest) {
     fatsecret.searchByBarcode(bc).catch(() => null),
     off.searchByBarcode(bc).catch(() => null),
     usda.searchByBarcode(bc).catch(() => null),
+    ...(isYMoveNutritionEnabled() ? [ymove.searchByBarcode(bc).catch(() => null)] : []),
   ])
   const allResults = await Promise.all(lookups)
-  const result = allResults.find(r => r != null) ?? null
+  // Pick the highest-quality result, not the first non-null one.
+  // All candidates already passed barcode identity validation inside their provider.
+  const candidates = allResults.filter((r): r is ExternalFoodDetail => r != null)
+  const result = candidates.length === 0
+    ? null
+    : candidates.reduce((best, cur) =>
+        barcodeResultQuality(cur) > barcodeResultQuality(best) ? cur : best
+      )
 
   if (result) {
     if (process.env.NODE_ENV === 'development') {
