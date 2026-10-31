@@ -69,6 +69,7 @@ model Profile {
   savedMeals       SavedMeal[]
   recipes          Recipe[]
   recipeSaves      RecipeSave[]
+  ymoveRecipeSaves YMoveRecipeSave[]
 
   // Health / wearable
   healthActivities HealthActivity[]
@@ -568,6 +569,35 @@ model RecipeSave {
   @@unique([userId, recipeId])
   @@index([userId])
   @@map("recipe_saves")
+}
+
+// Saves a reference to a YMove-catalog recipe without copying the full record.
+// Snapshot fields capture display data at save time so the Saved tab renders
+// without a live YMove API call per card.
+model YMoveRecipeSave {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id")        @db.Uuid
+  ymoveRecipeId String   @map("ymove_recipe_id") @db.VarChar(100)
+
+  snapshotTitle    String   @map("snapshot_title")     @db.VarChar(300)
+  snapshotCalories Decimal  @map("snapshot_calories")  @db.Decimal(8, 2)
+  snapshotProtein  Decimal  @map("snapshot_protein")   @db.Decimal(8, 3)
+  snapshotCarbs    Decimal  @map("snapshot_carbs")     @db.Decimal(8, 3)
+  snapshotFat      Decimal  @map("snapshot_fat")       @db.Decimal(8, 3)
+  snapshotImageUrl String?  @map("snapshot_image_url") @db.VarChar(500)
+  snapshotMealType String?  @map("snapshot_meal_type") @db.VarChar(50)
+  snapshotDietTags Json     @default("[]")             @map("snapshot_diet_tags")
+  snapshotServings Int      @default(1)                @map("snapshot_servings")
+  snapshotPrepMin  Int?     @map("snapshot_prep_min")
+  snapshotCookMin  Int?     @map("snapshot_cook_min")
+
+  savedAt DateTime @default(now()) @map("saved_at")
+
+  profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ymoveRecipeId])
+  @@index([userId])
+  @@map("ymove_recipe_saves")
 }
 
 // ═════════════════════════════════════════════════════════════════════

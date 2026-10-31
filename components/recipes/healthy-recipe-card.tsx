@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChefHat, Clock } from 'lucide-react'
+import { ChefHat, Clock, Bookmark, BookmarkCheck } from 'lucide-react'
 import type { YMoveRecipeSummary } from '@/lib/ymove/recipes'
 
 const DIET_LABELS: Record<string, string> = {
@@ -19,9 +19,12 @@ interface HealthyRecipeCardProps {
   recipe: YMoveRecipeSummary
   goalsCalories?: number | null
   goalsProtein?: number | null
+  savedByMe?: boolean
+  savePending?: boolean
+  onSave?: (recipe: YMoveRecipeSummary) => void
 }
 
-export function HealthyRecipeCard({ recipe, goalsCalories, goalsProtein }: HealthyRecipeCardProps) {
+export function HealthyRecipeCard({ recipe, goalsCalories, goalsProtein, savedByMe, savePending, onSave }: HealthyRecipeCardProps) {
   const totalMin = (recipe.prepTimeMin ?? 0) + (recipe.cookTimeMin ?? 0)
 
   const fitsGoals =
@@ -59,6 +62,19 @@ export function HealthyRecipeCard({ recipe, goalsCalories, goalsProtein }: Healt
           <span className="absolute top-2 left-2 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-semibold border border-emerald-200 dark:border-emerald-700/50">
             Fits goals
           </span>
+        )}
+
+        {onSave && (
+          <button
+            onClick={(e) => { e.preventDefault(); onSave(recipe) }}
+            disabled={savePending}
+            aria-label={savedByMe ? 'Unsave recipe' : 'Save recipe'}
+            className="absolute top-2 right-2 flex size-7 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm hover:bg-black/70 transition-colors disabled:opacity-50"
+          >
+            {savedByMe
+              ? <BookmarkCheck className="size-3.5 text-emerald-400" />
+              : <Bookmark className="size-3.5" />}
+          </button>
         )}
 
         {totalMin > 0 && (
