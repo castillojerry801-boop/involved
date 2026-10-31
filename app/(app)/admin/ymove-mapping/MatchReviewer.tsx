@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   ChevronLeft, ChevronRight, Play, X, RefreshCw,
   CheckCircle, XCircle, SkipForward, AlertTriangle, Eye, EyeOff,
-  Search, VideoOff, ShieldCheck,
+  Search, VideoOff, ShieldCheck, ZoomIn,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { MatchSuggestion, ScoredCandidate } from '@/lib/ymove/pipeline'
@@ -24,11 +24,21 @@ export interface ReviewerSuggestion extends MatchSuggestion {
 }
 
 interface ConflictInfo {
-  existingName:         string
-  existingDbId:         string
-  pendingYmoveId:       string
-  requiresVideo:        boolean   // !videoPlayed — need to see the video first
-  requiresConfirmation: boolean   // !ownerConfirmed — need explicit "I verified this"
+  existingName:   string
+  existingDbId:   string
+  pendingYmoveId: string
+}
+
+interface OwnerInfo {
+  exerciseDbId: string
+  displayName:  string
+  bodyPart:     string
+  equipment:    string
+  target:       string
+  gifUrl:       string
+  verifiedAt:   string | null
+  updatedAt:    string | null  // null for JSON-only entries
+  isJsonOnly:   boolean
 }
 
 interface DecisionResult {
@@ -92,6 +102,17 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
   const [playing,        setPlaying]        = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
+  // ── Conflict comparison panel state ──────────────────────────────────────
+  const [conflictPanelOpen,     setConflictPanelOpen]     = useState(false)
+  const [conflictOwners,        setConflictOwners]        = useState<OwnerInfo[] | null>(null)
+  const [conflictOwnersLoading, setConflictOwnersLoading] = useState(false)
+  const [conflictOwnersError,   setConflictOwnersError]   = useState<string | null>(null)
+  const [conflictIsStale,       setConflictIsStale]       = useState(false)
+  const [selectedRevokeIds,     setSelectedRevokeIds]     = useState<Set<string>>(new Set())
+  const [transferPending,       setTransferPending]       = useState(false)
+  const [expandedGifOwner,      setExpandedGifOwner]      = useState<string | null>(null)
+  const [conflictDestState,     setConflictDestState]     = useState<{ updatedAt: string | null } | null>(null)
+
   const exercise    = queue[queueIndex] ?? null
   const allCandidates: ScoredCandidate[] = exercise
     ? searchResults ?? [
@@ -120,6 +141,14 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
     setVideoLoading(false)
     setVideoError(false)
     setPlaying(false)
+    setConflictPanelOpen(false)
+    setConflictOwners(null)
+    setConflictOwnersError(null)
+    setConflictIsStale(false)
+    setSelectedRevokeIds(new Set())
+    setTransferPending(false)
+    setExpandedGifOwner(null)
+    setConflictDestState(null)
   }, [queueIndex])
 
   // Reset video/confirmation state when candidate changes
@@ -131,6 +160,13 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
     setVideoError(false)
     setPlaying(false)
     setConflictInfo(null)
+    setConflictPanelOpen(false)
+    setConflictOwners(null)
+    setConflictOwnersError(null)
+    setConflictIsStale(false)
+    setSelectedRevokeIds(new Set())
+    setExpandedGifOwner(null)
+    setConflictDestState(null)
   }, [candidateIndex, searchResults])
 
   // Keyboard navigation (← → for candidates; skip when focused on an input)
@@ -246,17 +282,14 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
     setSaving(true)
     setConflictInfo(null)
     try {
-      // Only set verified=true when the owner explicitly confirmed the movement
       const result = await patchMapping(exercise.exerciseDbId, candidate.ymoveId, {
         verified: ownerConfirmed,
       })
       if (result.conflict) {
         setConflictInfo({
-          existingName:         result.existingName ?? result.existingDbId ?? 'another exercise',
-          existingDbId:         result.existingDbId ?? '',
-          pendingYmoveId:       candidate.ymoveId,
-          requiresVideo:        !videoPlayed,
-          requiresConfirmation: !ownerConfirmed,
+          existingName:   result.existingName ?? result.existingDbId ?? 'another exercise',
+          existingDbId:   result.existingDbId ?? '',
+          pendingYmoveId: candidate.ymoveId,
         })
         return
       }
@@ -272,29 +305,91 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
     }
   }
 
-  async function handleForceApprove() {
-    if (!exercise || !conflictInfo) return
-    // Both video preview AND explicit confirmation required before overriding a duplicate UUID
-    if (conflictInfo.requiresVideo || conflictInfo.requiresConfirmation) return
-    setSaving(true)
+  async function loadConflictOwners(ymoveId: string) {
+    if (!exercise) return
+    setConflictOwnersLoading(true)
+    setConflictOwnersError(null)
+    setConflictIsStale(false)
+    setConflictOwners(null)
+    setConflictDestState(null)
+    setExpandedGifOwner(null)
     try {
-      const result = await patchMapping(exercise.exerciseDbId, conflictInfo.pendingYmoveId, {
-        forceOverwrite: true,
-        verified:       ownerConfirmed,
-      })
-      if (result.ok) {
-        setConflictInfo(null)
-        setLastResult({
-          type:         reviewMode === 'pending' ? 'approved' : 'confirmed',
-          exerciseName: exercise.displayName,
-          verified:     ownerConfirmed,
-        })
-        advanceQueue()
-      } else {
-        setLastResult({ type: 'error', exerciseName: exercise.displayName, errorMessage: 'Save failed' })
-      }
+      const url = `/api/admin/ymove-mapping/transfer?ymoveId=${encodeURIComponent(ymoveId)}&destExerciseDbId=${encodeURIComponent(exercise.exerciseDbId)}`
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Failed to load owners')
+      const data = await res.json() as { owners: OwnerInfo[]; destState: { updatedAt: string | null } }
+      setConflictOwners(data.owners)
+      setConflictDestState(data.destState)
+      // Pre-select all owners for revoke
+      setSelectedRevokeIds(new Set(data.owners.map(o => o.exerciseDbId)))
+    } catch {
+      setConflictOwnersError('Could not load existing assignments. Try again.')
     } finally {
-      setSaving(false)
+      setConflictOwnersLoading(false)
+    }
+  }
+
+  async function handleTransfer(action: 'move_here' | 'use_for_both') {
+    if (!exercise || !conflictInfo || !conflictOwners) return
+    if (!videoPlayed || !ownerConfirmed) return
+    if (action === 'move_here' && selectedRevokeIds.size === 0) return
+
+    setTransferPending(true)
+    try {
+      const revokeFromDbIds  = action === 'move_here' ? Array.from(selectedRevokeIds) : []
+      const isJsonOnlyIds    = conflictOwners
+        .filter(o => o.isJsonOnly && revokeFromDbIds.includes(o.exerciseDbId))
+        .map(o => o.exerciseDbId)
+      const expectedUpdatedAts: Record<string, string> = {}
+      for (const owner of conflictOwners) {
+        if (!owner.isJsonOnly && owner.updatedAt && revokeFromDbIds.includes(owner.exerciseDbId)) {
+          expectedUpdatedAts[owner.exerciseDbId] = owner.updatedAt
+        }
+      }
+
+      const res = await fetch('/api/admin/ymove-mapping/transfer', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          action,
+          destExerciseDbId:      exercise.exerciseDbId,
+          ymoveId:               conflictInfo.pendingYmoveId,
+          revokeFromDbIds,
+          isJsonOnlyIds,
+          verified:              ownerConfirmed,
+          expectedUpdatedAts,
+          expectedDestUpdatedAt: conflictDestState?.updatedAt ?? null,
+          expectedOwnerDbIds:    conflictOwners.map(o => o.exerciseDbId),
+        }),
+      })
+
+      if (res.status === 409) {
+        const data = await res.json() as { stale?: boolean; message?: string }
+        setConflictOwnersError(
+          data.stale
+            ? (data.message ?? 'A concurrent change was detected. Reload owners to see the current state.')
+            : `Conflict: ${data.message ?? 'unknown error'}`,
+        )
+        setConflictIsStale(true)
+        return
+      }
+      if (!res.ok) {
+        setConflictOwnersError('Transfer failed. Try again.')
+        return
+      }
+
+      // Success — clear conflict state and advance
+      setConflictInfo(null)
+      setConflictPanelOpen(false)
+      setConflictOwners(null)
+      setLastResult({
+        type:         reviewMode === 'pending' ? 'approved' : 'confirmed',
+        exerciseName: exercise.displayName,
+        verified:     ownerConfirmed,
+      })
+      advanceQueue()
+    } finally {
+      setTransferPending(false)
     }
   }
 
@@ -695,54 +790,250 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode }: MatchRevi
         </div>
       </div>
 
-      {/* Conflict resolution banner */}
+      {/* Conflict resolution panel */}
       {conflictInfo && (
         <div className="rounded-lg border border-amber-700/60 bg-amber-900/20 p-3">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-400" />
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 space-y-2">
               <p className="text-sm text-amber-300">
-                This YMove video is already mapped to: <strong>{conflictInfo.existingName}</strong>
-              </p>
-              <p className="mt-0.5 text-xs text-amber-400/80">
-                Both exercises would share the same YMove video demonstration.
-              </p>
-              <div className="mt-1.5 flex flex-col gap-1">
-                {conflictInfo.requiresVideo && (
-                  <p className="flex items-center gap-1 text-xs text-amber-500">
-                    <EyeOff className="size-3 shrink-0" />
-                    Step 1: Play the video above to preview it first.
-                  </p>
+                UUID conflict — this YMove video is already mapped to:{' '}
+                <strong>{conflictInfo.existingName}</strong>
+                {conflictOwners && conflictOwners.length > 1 && (
+                  <span className="ml-1 text-xs text-amber-400/60">
+                    (+{conflictOwners.length - 1} more)
+                  </span>
                 )}
-                {!conflictInfo.requiresVideo && conflictInfo.requiresConfirmation && (
-                  <p className="flex items-center gap-1 text-xs text-amber-500">
-                    <ShieldCheck className="size-3 shrink-0" />
-                    Step 2: Confirm the movement matches using the button above.
-                  </p>
-                )}
-              </div>
-              <div className="mt-2 flex gap-2">
-                <button
-                  onClick={handleForceApprove}
-                  disabled={saving || conflictInfo.requiresVideo || conflictInfo.requiresConfirmation}
-                  className="rounded bg-amber-700 px-2.5 py-1 text-xs text-white hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed"
-                  title={
-                    conflictInfo.requiresVideo
-                      ? 'Watch the video first'
-                      : conflictInfo.requiresConfirmation
-                        ? 'Confirm the movement match above first'
-                        : undefined
-                  }
-                >
-                  Override and map anyway
-                </button>
-                <button
-                  onClick={() => setConflictInfo(null)}
-                  className="rounded px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200"
-                >
-                  Cancel
-                </button>
-              </div>
+              </p>
+
+              {/* Step 1: play the video first */}
+              {!videoPlayed && (
+                <p className="flex items-center gap-1 text-xs text-amber-500">
+                  <EyeOff className="size-3 shrink-0" />
+                  Play the video above to unlock conflict resolution.
+                </p>
+              )}
+
+              {/* Step 2: open the comparison panel */}
+              {videoPlayed && !conflictPanelOpen && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => {
+                      setConflictPanelOpen(true)
+                      void loadConflictOwners(conflictInfo.pendingYmoveId)
+                    }}
+                    className="flex items-center gap-1.5 rounded border border-amber-600/50 bg-amber-900/30 px-2.5 py-1 text-xs text-amber-300 hover:border-amber-500 hover:text-amber-200"
+                  >
+                    <Eye className="size-3" />
+                    Compare existing assignment
+                  </button>
+                  <button
+                    onClick={() => setConflictInfo(null)}
+                    className="rounded px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {/* Comparison panel */}
+              {conflictPanelOpen && (
+                <div className="space-y-3 pt-1">
+                  {conflictOwnersLoading && (
+                    <p className="flex items-center gap-1.5 text-xs text-amber-400/70">
+                      <RefreshCw className="size-3 animate-spin" />
+                      Loading existing assignments…
+                    </p>
+                  )}
+
+                  {conflictOwnersError && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs text-red-400">{conflictOwnersError}</p>
+                      {conflictIsStale && (
+                        <button
+                          onClick={() => void loadConflictOwners(conflictInfo!.pendingYmoveId)}
+                          className="flex items-center gap-1 rounded border border-zinc-600 px-2 py-0.5 text-[11px] text-zinc-300 hover:border-zinc-400 hover:text-zinc-100"
+                        >
+                          <RefreshCw className="size-3" />
+                          Reload owners
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {conflictOwners && conflictOwners.length > 0 && (
+                    <>
+                      {/* Owner cards — selectable for move_here; thumbnail is clickable to expand */}
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {conflictOwners.map(owner => {
+                          const isChecked  = selectedRevokeIds.has(owner.exerciseDbId)
+                          const isExpanded = expandedGifOwner === owner.exerciseDbId
+                          return (
+                            <div
+                              key={owner.exerciseDbId}
+                              className={cn(
+                                'rounded-md border p-2 transition-colors',
+                                isChecked
+                                  ? 'border-amber-700/60 bg-amber-900/30'
+                                  : 'border-zinc-700 bg-zinc-800/60',
+                              )}
+                            >
+                              {/* Card row */}
+                              <div
+                                className="flex cursor-pointer gap-2"
+                                onClick={() => setSelectedRevokeIds(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(owner.exerciseDbId)) next.delete(owner.exerciseDbId)
+                                  else next.add(owner.exerciseDbId)
+                                  return next
+                                })}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {/* handled by parent onClick */}}
+                                  className="mt-0.5 shrink-0 accent-amber-500 pointer-events-none"
+                                  title="Check to revoke via Move video here"
+                                />
+                                {/* Thumbnail — click to expand; stopPropagation prevents checkbox toggle */}
+                                <button
+                                  type="button"
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    setExpandedGifOwner(prev =>
+                                      prev === owner.exerciseDbId ? null : owner.exerciseDbId,
+                                    )
+                                  }}
+                                  className="group relative size-16 shrink-0 cursor-zoom-in overflow-hidden rounded bg-zinc-700"
+                                  title={isExpanded ? 'Collapse preview' : 'Expand to compare movement'}
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={owner.gifUrl}
+                                    alt={owner.displayName}
+                                    className="h-full w-full object-contain"
+                                    loading="lazy"
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/40">
+                                    <ZoomIn className="size-4 text-white opacity-0 transition-opacity group-hover:opacity-100" />
+                                  </div>
+                                </button>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-medium leading-tight text-zinc-100">
+                                    {owner.displayName}
+                                  </p>
+                                  <p className="font-mono text-[10px] text-zinc-500">#{owner.exerciseDbId}</p>
+                                  <div className="mt-0.5 flex flex-wrap gap-1">
+                                    {owner.equipment && (
+                                      <span className="rounded bg-zinc-700 px-1 py-0.5 text-[10px] text-zinc-400">
+                                        {owner.equipment}
+                                      </span>
+                                    )}
+                                    {owner.bodyPart && (
+                                      <span className="rounded bg-zinc-700 px-1 py-0.5 text-[10px] text-zinc-400">
+                                        {owner.bodyPart}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-0.5 flex flex-wrap gap-1">
+                                    {owner.isJsonOnly && (
+                                      <span className="rounded bg-zinc-900 px-1 py-0.5 text-[10px] text-zinc-500">
+                                        JSON baseline
+                                      </span>
+                                    )}
+                                    {owner.verifiedAt && (
+                                      <span className="rounded bg-green-900/40 px-1 py-0.5 text-[10px] text-green-500">
+                                        ✓ verified
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Expanded GIF preview (300–400px, inline below card row) */}
+                              {isExpanded && (
+                                <div className="relative mt-2">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={owner.gifUrl}
+                                    alt={owner.displayName}
+                                    className="mx-auto max-h-[320px] w-full max-w-[360px] rounded object-contain"
+                                    loading="lazy"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedGifOwner(null)}
+                                    className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                                    aria-label="Collapse preview"
+                                  >
+                                    <X className="size-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {conflictOwners.length > 1 && (
+                        <p className="text-[10px] text-amber-400/60">
+                          Checked exercises will have their video revoked by "Move video here".
+                          Uncheck to keep their existing assignment.
+                        </p>
+                      )}
+
+                      {/* Confirmation gate */}
+                      {!ownerConfirmed && (
+                        <p className="flex items-center gap-1 text-xs text-amber-500/80">
+                          <ShieldCheck className="size-3 shrink-0" />
+                          Confirm the movement matches above before choosing an action.
+                        </p>
+                      )}
+
+                      {/* Action buttons */}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => void handleTransfer('move_here')}
+                          disabled={transferPending || !ownerConfirmed || selectedRevokeIds.size === 0}
+                          title={
+                            !ownerConfirmed
+                              ? 'Confirm the movement matches above first'
+                              : selectedRevokeIds.size === 0
+                                ? 'Select at least one exercise to revoke'
+                                : undefined
+                          }
+                          className="flex items-center gap-1.5 rounded bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {transferPending && <RefreshCw className="size-3 animate-spin" />}
+                          Move video here
+                          {selectedRevokeIds.size > 0 && (
+                            <span className="ml-0.5 opacity-70">(revoke {selectedRevokeIds.size})</span>
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => void handleTransfer('use_for_both')}
+                          disabled={transferPending || !ownerConfirmed}
+                          title={!ownerConfirmed ? 'Confirm the movement matches above first' : undefined}
+                          className="flex items-center gap-1.5 rounded border border-zinc-600 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {transferPending && <RefreshCw className="size-3 animate-spin" />}
+                          Use for both
+                          {conflictOwners.length > 1 && ` (${conflictOwners.length} exercises)`}
+                        </button>
+
+                        <button
+                          onClick={() => { setConflictPanelOpen(false); setConflictInfo(null); setConflictOwners(null) }}
+                          disabled={transferPending}
+                          className="rounded px-2.5 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
