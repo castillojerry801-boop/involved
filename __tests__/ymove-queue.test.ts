@@ -34,6 +34,10 @@ vi.mock('@/lib/ymove/mapping', () => ({
   getAllMappingsWithMeta: vi.fn(),
 }))
 
+vi.mock('@/lib/ymove/catalog-curation', () => ({
+  getThumbnailMediaIds: vi.fn().mockResolvedValue(new Map()),
+}))
+
 import { getAllMappingsWithMeta } from '@/lib/ymove/mapping'
 import { getUser } from '@/lib/supabase/server'
 import { isAdmin } from '@/lib/admin/auth'

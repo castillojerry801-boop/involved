@@ -7,6 +7,7 @@ import { searchYmoveCandidates, getYmoveById } from '@/lib/ymove/client'
 import { exercises } from '@/lib/exercises'
 import { getInvolvedDisplayName, getCanonicalByExerciseDbId, MOVEMENT_PATTERN_LABELS } from '@/lib/exercises/canonical'
 import { buildSearchQuery, rankCandidates, STARTER_BATCH_IDS, type ExerciseMetadata } from '@/lib/ymove/search'
+import { getThumbnailMediaIds } from '@/lib/ymove/catalog-curation'
 
 function forbidden() {
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -102,7 +103,9 @@ export async function GET(req: NextRequest) {
         return { ...c, alreadyMappedTo: null, alreadyMappedDbId: null }
       })
 
-      return NextResponse.json({ candidates: withDupCheck, searchQuery, exerciseId: exerciseIdForSearch })
+      const thumbMap = await getThumbnailMediaIds(withDupCheck.map(c => c.ymoveId))
+      const enriched = withDupCheck.map(c => ({ ...c, thumbnailMediaId: thumbMap.get(c.ymoveId) ?? null }))
+      return NextResponse.json({ candidates: enriched, searchQuery, exerciseId: exerciseIdForSearch })
     } catch (err) {
       console.error('[ymove-mapping] search error:', err)
       return NextResponse.json({ error: 'ymove search failed' }, { status: 502 })

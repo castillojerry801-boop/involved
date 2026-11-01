@@ -96,6 +96,10 @@ vi.mock('@/lib/ymove/search', () => ({
   STARTER_BATCH_IDS: new Set(['0026']),
 }))
 
+vi.mock('@/lib/ymove/catalog-curation', () => ({
+  getThumbnailMediaIds: vi.fn().mockResolvedValue(new Map()),
+}))
+
 vi.mock('@/lib/ymove/suggestions-store', () => ({
   loadSuggestions: () => ({
     generatedAt: '2026-01-01T00:00:00Z',

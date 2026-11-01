@@ -66,6 +66,10 @@ vi.mock('@/lib/ymove/search', () => ({
   STARTER_BATCH_IDS: new Set(['0026']),
 }))
 
+vi.mock('@/lib/ymove/catalog-curation', () => ({
+  getThumbnailMediaIds: vi.fn().mockResolvedValue(new Map()),
+}))
+
 // ── Route imports ─────────────────────────────────────────────────────────────
 
 import { PATCH, DELETE as DELETE_ROUTE } from '@/app/api/admin/ymove-mapping/route'

@@ -6,6 +6,7 @@ import { exercises } from '@/lib/exercises'
 import { getAllMappingsWithMeta } from '@/lib/ymove/mapping'
 import { getInvolvedDisplayName, getCanonicalByExerciseDbId, MOVEMENT_PATTERN_LABELS } from '@/lib/exercises/canonical'
 import { buildSearchQuery } from '@/lib/ymove/search'
+import { getThumbnailMediaIds } from '@/lib/ymove/catalog-curation'
 
 function forbidden() {
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -20,6 +21,7 @@ export interface QueueExercise {
   bodyPart:             string
   target:               string
   ymoveExerciseId:      string | null
+  thumbnailMediaId:     string | null
   verifiedAt:           string | null
   queueStatus:          QueueStatus
   suggestedSearchQuery: string
@@ -90,6 +92,10 @@ export async function GET(req: NextRequest): Promise<NextResponse<QueueResponse 
   const total = filtered.length
   const paged = filtered.slice((page - 1) * limit, page * limit)
 
+  // Batch-fetch thumbnailMediaId for all exercises that have a mapped ymoveId.
+  const mappedYmoveIds = paged.map(ex => meta[ex.id]?.ymoveId).filter((id): id is string => !!id)
+  const thumbMap = await getThumbnailMediaIds(mappedYmoveIds)
+
   const result: QueueExercise[] = paged.map(ex => {
     const s         = getStatus(ex.id)
     const m         = meta[ex.id]
@@ -102,6 +108,7 @@ export async function GET(req: NextRequest): Promise<NextResponse<QueueResponse 
       bodyPart:             ex.bodyPart,
       target:               ex.target,
       ymoveExerciseId:      (m?.ymoveId ?? null) as string | null,
+      thumbnailMediaId:     m?.ymoveId ? (thumbMap.get(m.ymoveId) ?? null) : null,
       verifiedAt:           m?.verifiedAt?.toISOString() ?? null,
       queueStatus:          s,
       suggestedSearchQuery: buildSearchQuery({

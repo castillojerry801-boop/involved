@@ -1677,10 +1677,29 @@ model YmoveExerciseCatalog {
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
+  // ── Curation fields — managed by admin curation workflow only.
+  // syncYmoveCatalog never writes these (they are absent from its upsert
+  // update clause), so re-syncing preserves all curation decisions.
+  curationStatus   String    @default("pending_review") @map("curation_status") @db.VarChar(30)
+  // Exact ExerciseDB exercise_id this YMove exercise is the verified media
+  // source for (e.g. '0025'). Does NOT change training-identity tracking.
+  verifiedMediaFor String?   @map("verified_media_for") @db.VarChar(100)
+  // ymove_id of the preferred record when curation_status = 'duplicate'.
+  isDuplicateOf    String?   @map("is_duplicate_of") @db.VarChar(36)
+  // Optional canonical grouping hint (e.g. 'inv_bench_press').
+  canonicalId      String?   @map("canonical_id") @db.VarChar(200)
+  curatorNotes     String?   @map("curator_notes") @db.VarChar(500)
+  curatedAt        DateTime? @map("curated_at")
+  curatedBy        String?   @map("curated_by") @db.VarChar(200)
+
   @@index([equipment])
   @@index([category])
   @@index([difficulty])
   @@index([primaryMuscleGroup, name])
+  @@index([curationStatus])
+  @@index([verifiedMediaFor])
+  @@index([canonicalId])
+  @@index([isDuplicateOf])
   @@map("ymove_exercise_catalog")
 }
 

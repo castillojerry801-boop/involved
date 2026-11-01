@@ -5,6 +5,7 @@ import { isAdmin } from '@/lib/admin/auth'
 import { getAllMappings } from '@/lib/ymove/mapping'
 import { exercises as dbExercises } from '@/lib/exercises'
 import { getInvolvedDisplayName, getCanonicalByExerciseDbId, MOVEMENT_PATTERN_LABELS } from '@/lib/exercises/canonical'
+import { getThumbnailMediaIds } from '@/lib/ymove/catalog-curation'
 
 const YMOVE_BASE = 'https://exercise-api.ymove.app/api/v2'
 
@@ -129,6 +130,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const ymoveIds = list.map(item => item.id as string)
+    const thumbMap = await getThumbnailMediaIds(ymoveIds)
+
     const items = list.map(item => ({
       ymoveId: item.id as string,
       name: (item.name ?? item.title ?? '') as string,
@@ -138,6 +142,7 @@ export async function GET(req: NextRequest) {
       difficulty: (item.difficulty ?? null) as string | null,
       hasVideo: (item.hasVideo ?? false) as boolean,
       mappedTo: reverseMap[item.id as string] ?? null,
+      thumbnailMediaId: thumbMap.get(item.id as string) ?? null,
     }))
 
     return NextResponse.json({

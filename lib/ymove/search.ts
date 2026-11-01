@@ -29,6 +29,10 @@ export interface ScoredCandidate extends YmoveCandidateRaw {
   confidence: 'strong' | 'likely' | 'possible' | 'weak'
   matchReasons: string[] // positive signals
   penaltyReasons: string[] // negative signals
+  // Media UUID from ymove_exercise_catalog — required for the thumbnail proxy.
+  // Populated by API layers that enrich candidates from the catalog; absent
+  // when the exercise has not been synced or failed domain validation.
+  thumbnailMediaId?: string | null
 }
 
 // ── Equipment ─────────────────────────────────────────────────────────────────

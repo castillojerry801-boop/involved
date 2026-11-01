@@ -7,6 +7,7 @@ import { getAllMappings, getAllMappingsWithMeta, upsertMapping } from '@/lib/ymo
 import { exercises } from '@/lib/exercises'
 import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { type MatchClass } from '@/lib/ymove/pipeline'
+import { getThumbnailMediaIds } from '@/lib/ymove/catalog-curation'
 
 function forbidden() {
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -104,14 +105,32 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  const total     = enriched.length
-  const paginated = enriched.slice((page - 1) * limit, page * limit)
+  // Enrich topMatch and otherCandidates with thumbnailMediaId from the catalog.
+  const allYmoveIds = enriched.flatMap(s => [
+    s.topMatch?.ymoveId,
+    ...(s.otherCandidates ?? []).map(c => c.ymoveId),
+  ]).filter((id): id is string => !!id)
+  const thumbMap = await getThumbnailMediaIds(allYmoveIds)
+
+  const withThumbs = enriched.map(s => ({
+    ...s,
+    topMatch: s.topMatch
+      ? { ...s.topMatch, thumbnailMediaId: thumbMap.get(s.topMatch.ymoveId) ?? null }
+      : null,
+    otherCandidates: (s.otherCandidates ?? []).map(c => ({
+      ...c,
+      thumbnailMediaId: thumbMap.get(c.ymoveId) ?? null,
+    })),
+  }))
+
+  const total     = withThumbs.length
+  const paginated = withThumbs.slice((page - 1) * limit, page * limit)
 
   return NextResponse.json({
     ready:       true,
     generatedAt: suggestions.generatedAt,
     summary:     suggestions.summary,
-    suggestions: paginated,
+    suggestions: paginated as typeof withThumbs,
     total,
     page,
     limit,

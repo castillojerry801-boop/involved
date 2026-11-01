@@ -41,6 +41,7 @@ interface ScoredCandidate {
   penaltyReasons: string[]
   alreadyMappedTo: string | null
   alreadyMappedDbId: string | null
+  thumbnailMediaId?: string | null
 }
 
 type ReviewStatus = 'pending' | 'approved' | 'rejected' | 'overridden'
@@ -220,10 +221,10 @@ function SuggestionCard({
 
         {/* Thumbnail (on-demand via proxy — no cap charge) */}
         <div className="shrink-0">
-          {topMatch && thumbVisible ? (
+          {topMatch && thumbVisible && topMatch.thumbnailMediaId ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
-              src={`/api/ymove/thumbnail/${topMatch.ymoveId}?crop=square`}
+              src={`/api/ymove/thumbnail/${topMatch.thumbnailMediaId}?crop=square`}
               alt={topMatch.name}
               className="size-14 rounded object-cover"
             />
@@ -644,14 +645,15 @@ function ReviewerWrapper() {
 }
 
 interface YMoveItem {
-  ymoveId:     string
-  name:        string
-  category:    string | null
-  muscleGroup: string | null
-  equipment:   string | null
-  difficulty:  string | null
-  hasVideo:    boolean
-  mappedTo:    string | null
+  ymoveId:          string
+  name:             string
+  category:         string | null
+  muscleGroup:      string | null
+  equipment:        string | null
+  difficulty:       string | null
+  hasVideo:         boolean
+  mappedTo:         string | null
+  thumbnailMediaId: string | null
 }
 
 function UnusedYMoveTab() {
@@ -733,14 +735,14 @@ function UnusedYMoveTab() {
             )}
           >
             <div className="relative mb-2 aspect-square w-full overflow-hidden rounded-md bg-zinc-800">
-              {thumbErrors.has(item.ymoveId) ? (
+              {!item.thumbnailMediaId || thumbErrors.has(item.ymoveId) ? (
                 <div className="flex h-full items-center justify-center text-zinc-600">
                   <VideoOff className="size-5" />
                 </div>
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={`/api/ymove/thumbnail/${item.ymoveId}?crop=square`}
+                  src={`/api/ymove/thumbnail/${item.thumbnailMediaId}?crop=square`}
                   alt={item.name}
                   className="h-full w-full object-contain"
                   loading="lazy"
@@ -1189,7 +1191,7 @@ function CandidateCard({
               <div className="relative size-16">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={`/api/ymove/thumbnail/${candidate.ymoveId}?crop=square`}
+                  src={candidate.thumbnailMediaId ? `/api/ymove/thumbnail/${candidate.thumbnailMediaId}?crop=square` : ''}
                   alt={candidate.name}
                   className="size-16 rounded object-cover"
                 />

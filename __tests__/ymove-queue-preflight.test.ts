@@ -52,6 +52,10 @@ vi.mock('@/lib/ymove/search', () => ({
   buildSearchQuery: (meta: { displayName: string }) => `search:${meta.displayName}`,
 }))
 
+vi.mock('@/lib/ymove/catalog-curation', () => ({
+  getThumbnailMediaIds: vi.fn().mockResolvedValue(new Map()),
+}))
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 import { getAllMappingsWithMeta } from '@/lib/ymove/mapping'

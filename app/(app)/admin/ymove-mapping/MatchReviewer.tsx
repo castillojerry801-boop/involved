@@ -493,8 +493,8 @@ export function MatchReviewer({ suggestions, onDecision, reviewMode, equipmentLa
   const exerciseGifSrc = exercise
     ? `https://cthozkricqchjgciwztx.supabase.co/storage/v1/object/public/exercise-gifs/${exercise.exerciseDbId}.gif`
     : null
-  const thumbSrc = candidate
-    ? `/api/ymove/thumbnail/${candidate.ymoveId}?crop=square`
+  const thumbSrc = candidate?.thumbnailMediaId
+    ? `/api/ymove/thumbnail/${candidate.thumbnailMediaId}?crop=square`
     : null
 
   // Action button label adapts to context
