@@ -3,7 +3,9 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById, isCustomExerciseId } from '@/lib/exercises'
+import { isYmvId } from '@/lib/exercises/identity'
 import { verifyCustomExerciseIds } from '@/lib/training/custom-exercises'
+import { verifyYmvIds } from '@/lib/ymove/resolver'
 
 type Params = { params: Promise<{ id: string; exerciseId: string }> }
 
@@ -24,11 +26,14 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!exercise) return Response.json({ error: 'Not found' }, { status: 404 })
 
     if (body.newExerciseId !== undefined) {
-      if (!isCustomExerciseId(body.newExerciseId) && !getExerciseById(body.newExerciseId)) {
+      if (!isYmvId(body.newExerciseId) && !isCustomExerciseId(body.newExerciseId) && !getExerciseById(body.newExerciseId)) {
         return Response.json({ error: 'Exercise not found' }, { status: 400 })
       }
       if (!(await verifyCustomExerciseIds([body.newExerciseId], user.id))) {
         return Response.json({ error: 'Custom exercise not found' }, { status: 400 })
+      }
+      if (!(await verifyYmvIds([body.newExerciseId], prisma))) {
+        return Response.json({ error: 'YMove exercise not found' }, { status: 400 })
       }
     }
 

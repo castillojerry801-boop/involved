@@ -1,6 +1,9 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import type { ExerciseMeta } from '@/lib/exercises'
+import { isYmvId, parseYmvId, formatYmvId } from '@/lib/exercises/identity'
+import { ymvToMeta } from '@/lib/ymove/resolver'
 import { getExperienceDialogue } from './experience-dialogue'
 import { jsToWeekday, WEEKDAY_SHORT } from '@/lib/training/program-scheduling'
 
@@ -268,6 +271,23 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
     }).catch(() => null),
   ])
 
+  // Batch-prefetch ymv: exercise metadata to avoid N+1 Prisma calls in the loops below
+  const allWorkoutExerciseIds = recentWorkouts.flatMap(w => w.exercises.map(e => e.exerciseId))
+  const prExerciseIds = prs.map(p => p.exerciseId)
+  const allIds = [...allWorkoutExerciseIds, ...prExerciseIds]
+  const ymvBareIds = [...new Set(allIds.filter(isYmvId).map(id => parseYmvId(id)!))]
+  const ymvRows = ymvBareIds.length > 0
+    ? await prisma.ymoveExerciseCatalog.findMany({
+        where: { ymoveId: { in: ymvBareIds } },
+        select: { ymoveId: true, name: true, equipment: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
+      }).catch(() => [])
+    : []
+  const ymvMetaMap = new Map<string, ExerciseMeta>(
+    ymvRows.map(r => [formatYmvId(r.ymoveId), ymvToMeta(r)])
+  )
+  const getEx = (id: string): ExerciseMeta | undefined =>
+    ymvMetaMap.get(id) ?? getExerciseById(id)
+
   // Preferences
   const favs: string[] = []
   const more: string[] = []
@@ -282,7 +302,7 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
 
   // PRs
   const personalRecords = prs.map(pr => {
-    const ex = getExerciseById(pr.exerciseId)
+    const ex = getEx(pr.exerciseId)
     return {
       exerciseName: ex?.name ?? pr.exerciseId,
       exerciseId:   pr.exerciseId,
@@ -297,7 +317,7 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
   const recentTraining = recentWorkouts.map(w => {
     const muscles = [...new Set(
       w.exercises.flatMap(we => {
-        const ex = getExerciseById(we.exerciseId)
+        const ex = getEx(we.exerciseId)
         return ex ? [ex.target] : []
       })
     )]
@@ -306,7 +326,7 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
     const primarySet = new Set(muscles)
     const secondaryMusclesInvolved = [...new Set(
       w.exercises.flatMap(we => {
-        const ex = getExerciseById(we.exerciseId)
+        const ex = getEx(we.exerciseId)
         return ex ? (ex.secondaryMuscles ?? []) : []
       })
     )].filter(m => m && !primarySet.has(m))
@@ -315,7 +335,7 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
     // Top sets per exercise: working sets with weight data, highest weight first
     const topSets = w.exercises
       .map(we => {
-        const ex = getExerciseById(we.exerciseId)
+        const ex = getEx(we.exerciseId)
         const workingSets = we.sets.filter(
           s => s.setType === 'working' && s.actualWeightKg != null && Number(s.actualWeightKg) > 0
         )

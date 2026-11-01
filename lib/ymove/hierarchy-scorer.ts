@@ -247,9 +247,11 @@ export function movementClassFromYmove(category: string | null, name: string): M
   const n = name.toLowerCase()
 
   // High-confidence name overrides run FIRST — these patterns are unambiguous
-  // regardless of how YMove categorizes them (e.g. 'Legs' covers both push + pull).
+  // regardless of how YMove categorizes them (e.g. 'Legs' covers both push + pull,
+  // 'Shoulders' covers both pressing and isolation movements).
   if (n.includes('deadlift') || /\brdl\b/.test(n) || n.includes('romanian') || n.includes('good morning')) return 'lower_pull'
   if (n.includes('leg curl') || n.includes('hamstring curl') || n.includes('nordic curl'))                  return 'lower_pull'
+  if (n.includes('overhead press') || n.includes('military press') || n.includes('shoulder press') || n.includes('push press')) return 'upper_push_v'
 
   if (category) {
     const cls = YMOVE_CATEGORY_TO_CLASS[category]
@@ -259,8 +261,9 @@ export function movementClassFromYmove(category: string | null, name: string): M
   // Remaining name-based detection (used when category is absent or unrecognised)
   if (n.includes('squat'))                                                                   return 'lower_push'
   if (n.includes('glute bridge') || n.includes('hip thrust') || n.includes('hip bridge'))  return 'lower_push'
+  if (n.includes('lunge') || n.includes('split squat') || n.includes('step-up') || n.includes('step up') || n.includes('bulgarian')) return 'lower_push'
   if (n.includes('bench press') || n.includes('chest press') || /\bpush.?up\b/.test(n))   return 'upper_push_h'
-  if (n.includes('overhead press') || n.includes('military press') || n.includes('shoulder press')) return 'upper_push_v'
+  if (/\bdip\b/.test(n))                                                                    return 'upper_push_h'
   if (/\brow\b/.test(n) || n.includes('bent over'))                                        return 'upper_pull_h'
   if (/pull.?up|chin.?up|lat pulldown/.test(n))                                            return 'upper_pull_v'
   if (n.includes(' curl') && !n.includes('leg curl') && !/(hamstring|nordic)/.test(n))    return 'arm_flexion'

@@ -3,6 +3,8 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { isYmvId, parseYmvId, formatYmvId } from '@/lib/exercises/identity'
+import { ymvToMeta } from '@/lib/ymove/resolver'
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
@@ -33,6 +35,17 @@ export async function GET(req: NextRequest) {
       orderBy: { completedAt: 'asc' },
     })
 
+    // Batch-prefetch ymv: IDs to avoid N+1 queries
+    const allIds = workouts.flatMap(w => w.exercises.map(e => e.exerciseId))
+    const ymvBareIds = [...new Set(allIds.filter(isYmvId).map(id => parseYmvId(id)!))]
+    const ymvRows = ymvBareIds.length > 0
+      ? await prisma.ymoveExerciseCatalog.findMany({
+          where: { ymoveId: { in: ymvBareIds } },
+          select: { ymoveId: true, name: true, equipment: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
+        })
+      : []
+    const ymvMetaMap = new Map(ymvRows.map(r => [formatYmvId(r.ymoveId), ymvToMeta(r)]))
+
     // Aggregate by target muscle (primary only — secondary tracked separately below)
     const muscleMap = new Map<string, {
       muscle: string
@@ -54,7 +67,7 @@ export async function GET(req: NextRequest) {
       const dateStr = date.toISOString().slice(0, 10)
 
       for (const we of workout.exercises) {
-        const ex = getExerciseById(we.exerciseId)
+        const ex = ymvMetaMap.get(we.exerciseId) ?? getExerciseById(we.exerciseId)
         if (!ex || we.sets.length === 0) continue
 
         const muscle = ex.target ?? ex.bodyPart ?? 'other'

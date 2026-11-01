@@ -3,6 +3,8 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { isYmvId } from '@/lib/exercises/identity'
+import { verifyYmvIds } from '@/lib/ymove/resolver'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -24,7 +26,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   const body = await req.json() as AddExerciseBody
 
   if (!body.exerciseId) return Response.json({ error: 'exerciseId required' }, { status: 400 })
-  if (!getExerciseById(body.exerciseId)) return Response.json({ error: 'Unknown exercise' }, { status: 400 })
+  if (!isYmvId(body.exerciseId) && !getExerciseById(body.exerciseId)) return Response.json({ error: 'Unknown exercise' }, { status: 400 })
+  if (isYmvId(body.exerciseId) && !(await verifyYmvIds([body.exerciseId], prisma))) {
+    return Response.json({ error: 'YMove exercise not found in catalog' }, { status: 400 })
+  }
 
   try {
     const workout = await prisma.workout.findFirst({

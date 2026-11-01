@@ -1,8 +1,10 @@
 import 'server-only'
 import { NextRequest, NextResponse } from 'next/server'
 import { getExerciseById, getGifUrl } from '@/lib/exercises'
+import { isYmvId, parseYmvId } from '@/lib/exercises/identity'
 import { getYmoveExerciseId } from '@/lib/ymove/mapping'
 import { getYmoveById, isTrustedThumbnailUrl, type YmoveMedia } from '@/lib/ymove/client'
+import { prisma } from '@/lib/prisma'
 
 // Strict UUID v4 format used by YMove for media IDs.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -38,6 +40,58 @@ export async function GET(
 ) {
   const { exerciseId } = await params
   const includeVideo = request.nextUrl.searchParams.get('video') === 'true'
+
+  // ── YMove-native path ─────────────────────────────────────────────────────
+  // ymv:-prefixed IDs resolve directly from the catalog — no ExerciseDB record
+  // or mapping table lookup required.
+  if (isYmvId(exerciseId)) {
+    const ymoveId = parseYmvId(exerciseId)!
+    const row = await prisma.ymoveExerciseCatalog.findUnique({
+      where:  { ymoveId },
+      select: { ymoveId: true, thumbnailMediaId: true, hasVideo: true },
+    })
+    if (!row) {
+      return NextResponse.json({ error: 'YMove exercise not found' }, { status: 404 })
+    }
+
+    if (!includeVideo) {
+      return NextResponse.json({
+        source:          'ymove',
+        ymoveId:         row.ymoveId,
+        thumbnailMediaId: row.thumbnailMediaId ?? null,
+        fallbackGifUrl:  null,
+      })
+    }
+
+    // Video mode — fetch live playable URL (charges quota; only on user play action)
+    if (row.hasVideo) {
+      try {
+        const ymove = await getYmoveById(ymoveId, true)
+        if (ymove?.videoUrl) {
+          return NextResponse.json({
+            source:            'ymove',
+            ymoveId:           ymove.ymoveId,
+            thumbnailMediaId:  row.thumbnailMediaId ?? null,
+            videoUrl:          ymove.videoUrl,
+            videoHlsUrl:       ymove.videoHlsUrl,
+            videoDurationSecs: ymove.videoDurationSecs,
+            fallbackGifUrl:    null,
+          })
+        }
+      } catch (err) {
+        console.error('[ymove] video fetch failed for ymv-native exercise', exerciseId, err)
+      }
+    }
+
+    return NextResponse.json({
+      source:          'ymove',
+      ymoveId:         row.ymoveId,
+      thumbnailMediaId: row.thumbnailMediaId ?? null,
+      fallbackGifUrl:  null,
+    })
+  }
+
+  // ── ExerciseDB path ───────────────────────────────────────────────────────
 
   const exercise = getExerciseById(exerciseId)
   if (!exercise) {

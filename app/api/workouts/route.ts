@@ -3,6 +3,8 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { isYmvId } from '@/lib/exercises/identity'
+import { resolveExerciseMeta, verifyYmvIds } from '@/lib/ymove/resolver'
 
 // ─── GET: list workouts ───────────────────────────────────────────────────────
 
@@ -33,14 +35,18 @@ export async function GET(req: NextRequest) {
       take: limit,
     })
 
-    // Hydrate exercise metadata from static library
-    const hydrated = workouts.map(w => ({
-      ...w,
-      exercises: w.exercises.map(ex => ({
-        ...ex,
-        exercise: getExerciseById(ex.exerciseId) ?? null,
-      })),
-    }))
+    // Hydrate exercise metadata — resolves ymove, custom, and exercisedb IDs
+    const hydrated = await Promise.all(
+      workouts.map(async w => ({
+        ...w,
+        exercises: await Promise.all(
+          w.exercises.map(async ex => ({
+            ...ex,
+            exercise: await resolveExerciseMeta(ex.exerciseId, user.id, prisma),
+          }))
+        ),
+      }))
+    )
 
     return Response.json({ workouts: hydrated })
   } catch {
@@ -81,14 +87,19 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Title is required' }, { status: 400 })
   }
 
-  // Validate exercise IDs
+  // Validate exercise IDs — syntax + ExerciseDB catalog
   for (const ex of body.exercises ?? []) {
-    if (!getExerciseById(ex.exerciseId)) {
+    if (!isYmvId(ex.exerciseId) && !getExerciseById(ex.exerciseId)) {
       return Response.json(
         { error: `Exercise ID "${ex.exerciseId}" not found in library` },
         { status: 400 }
       )
     }
+  }
+  // DB-validate ymv: IDs against catalog (syntax check is not enough)
+  const ymvIds = (body.exercises ?? []).map(e => e.exerciseId).filter(isYmvId)
+  if (ymvIds.length > 0 && !(await verifyYmvIds(ymvIds, prisma))) {
+    return Response.json({ error: 'One or more YMove exercise IDs not found in catalog' }, { status: 400 })
   }
 
   try {
@@ -129,13 +140,13 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    const hydrated = {
-      ...workout,
-      exercises: workout.exercises.map(ex => ({
+    const hydratedExercises = await Promise.all(
+      workout.exercises.map(async ex => ({
         ...ex,
-        exercise: getExerciseById(ex.exerciseId) ?? null,
-      })),
-    }
+        exercise: await resolveExerciseMeta(ex.exerciseId, user.id, prisma),
+      }))
+    )
+    const hydrated = { ...workout, exercises: hydratedExercises }
 
     return Response.json({ workout: hydrated }, { status: 201 })
   } catch {

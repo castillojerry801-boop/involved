@@ -1,6 +1,9 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import type { ExerciseMeta } from '@/lib/exercises'
+import { isYmvId, parseYmvId, formatYmvId } from '@/lib/exercises/identity'
+import { ymvToMeta } from '@/lib/ymove/resolver'
 
 // Context V uses when a trainer asks about a client or their roster.
 // Only data the trainer is authorized to access is included.
@@ -163,6 +166,21 @@ export async function buildVTrainerContext(
       }),
     ])
 
+    // Batch-prefetch ymv: IDs from client workouts to avoid N+1 Prisma calls
+    const clientExIds = recentWorkouts.flatMap(w => w.exercises.map(e => e.exerciseId))
+    const clientYmvBareIds = [...new Set(clientExIds.filter(isYmvId).map(id => parseYmvId(id)!))]
+    const clientYmvRows = clientYmvBareIds.length > 0
+      ? await prisma.ymoveExerciseCatalog.findMany({
+          where: { ymoveId: { in: clientYmvBareIds } },
+          select: { ymoveId: true, name: true, equipment: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
+        }).catch(() => [])
+      : []
+    const clientYmvMap = new Map<string, ExerciseMeta>(
+      clientYmvRows.map(r => [formatYmvId(r.ymoveId), ymvToMeta(r)])
+    )
+    const getClientEx = (id: string): ExerciseMeta | undefined =>
+      clientYmvMap.get(id) ?? getExerciseById(id)
+
     ctx.focusClient = {
       clientId:    focusClientId,
       displayName: profile?.displayName ?? null,
@@ -170,7 +188,7 @@ export async function buildVTrainerContext(
       recentWorkouts: recentWorkouts.map(w => {
         const muscles = [...new Set(
           w.exercises.flatMap(we => {
-            const ex = getExerciseById(we.exerciseId)
+            const ex = getClientEx(we.exerciseId)
             return ex ? [ex.target] : []
           })
         )]

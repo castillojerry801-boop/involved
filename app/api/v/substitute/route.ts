@@ -5,6 +5,8 @@ import { getOpenAI } from '@/lib/ai/client'
 import { workoutModel } from '@/lib/ai/models'
 import { SEARCH_EXERCISES_TOOL, executeExerciseSearch, validateExerciseId } from '@/lib/ai/tools/exercises'
 import { getExerciseById } from '@/lib/exercises'
+import { prisma } from '@/lib/prisma'
+import { resolveExerciseMeta } from '@/lib/ymove/resolver'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage } from '@/lib/v/usage'
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'exerciseId is required' }, { status: 400 })
   }
 
-  const original = getExerciseById(body.exerciseId)
+  const original = await resolveExerciseMeta(body.exerciseId, user.id, prisma)
   if (!original) {
     return Response.json({ error: 'Exercise not found in library' }, { status: 404 })
   }
@@ -159,15 +161,15 @@ USER CONTEXT:\n${contextSnippet}`,
   }
 
   const enriched = substitutes.map(s => {
-    const ex = getExerciseById(s.exercise_id)!
+    const ex = getExerciseById(s.exercise_id)
     return {
       exerciseId: s.exercise_id,
-      name: ex.name,
-      target: ex.target,
-      equipment: ex.equipment,
-      bodyPart: ex.bodyPart,
-      gifId: s.exercise_id,
-      reason: s.reason,
+      name:      ex?.name      ?? s.exercise_id,
+      target:    ex?.target    ?? 'unknown',
+      equipment: ex?.equipment ?? 'unknown',
+      bodyPart:  ex?.bodyPart  ?? 'unknown',
+      gifId:     s.exercise_id,
+      reason:    s.reason,
     }
   })
 

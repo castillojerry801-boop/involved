@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { prefetchYmvMeta } from '@/lib/ymove/resolver'
 
 function weekStart(d: Date): string {
   const day = new Date(d)
@@ -131,20 +132,24 @@ export async function GET(_req: NextRequest) {
     if (!prByExercise.has(key)) prByExercise.set(key, pr)
   }
 
-  const dedupedPRs = Array.from(prByExercise.values())
+  const prCandidates = Array.from(prByExercise.values())
     .sort((a, b) => (METRIC_PRIORITY[b.metric] ?? 0) - (METRIC_PRIORITY[a.metric] ?? 0))
     .slice(0, 12)
-    .map(pr => {
-      const ex = getExerciseById(pr.exerciseId)
-      return {
-        exerciseId:   pr.exerciseId,
-        exerciseName: ex?.name ?? pr.exerciseId,
-        metric:       pr.metric,
-        value:        Number(pr.value),
-        unit:         pr.unit,
-        achievedAt:   pr.achievedAt.toISOString(),
-      }
-    })
+
+  // Batch-prefetch ymv: exercise names for PRs to avoid N+1 catalog queries
+  const ymvMetaMap = await prefetchYmvMeta(prCandidates.map(pr => pr.exerciseId), prisma)
+
+  const dedupedPRs = prCandidates.map(pr => {
+    const ex = ymvMetaMap.get(pr.exerciseId) ?? getExerciseById(pr.exerciseId)
+    return {
+      exerciseId:   pr.exerciseId,
+      exerciseName: ex?.name ?? pr.exerciseId,
+      metric:       pr.metric,
+      value:        Number(pr.value),
+      unit:         pr.unit,
+      achievedAt:   pr.achievedAt.toISOString(),
+    }
+  })
 
   return Response.json({
     workoutsThisMonth,

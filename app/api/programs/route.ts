@@ -3,6 +3,8 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { isYmvId } from '@/lib/exercises/identity'
+import { verifyYmvIds } from '@/lib/ymove/resolver'
 
 // ─── GET: list user's programs ────────────────────────────────────────────────
 
@@ -73,13 +75,19 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as CreateProgramBody
   if (!body.name?.trim()) return Response.json({ error: 'Name is required' }, { status: 400 })
 
-  // Validate all exercise IDs up front
+  // Validate all exercise IDs up front — syntax + ExerciseDB catalog
   for (const day of body.days ?? []) {
     for (const ex of day.exercises ?? []) {
-      if (!getExerciseById(ex.exerciseId)) {
+      if (!isYmvId(ex.exerciseId) && !getExerciseById(ex.exerciseId)) {
         return Response.json({ error: `Exercise "${ex.exerciseId}" not found` }, { status: 400 })
       }
     }
+  }
+  // DB-validate ymv: IDs against catalog
+  const allExIds = (body.days ?? []).flatMap(d => (d.exercises ?? []).map(e => e.exerciseId))
+  const ymvIds = allExIds.filter(isYmvId)
+  if (ymvIds.length > 0 && !(await verifyYmvIds(ymvIds, prisma))) {
+    return Response.json({ error: 'One or more YMove exercise IDs not found in catalog' }, { status: 400 })
   }
 
   try {

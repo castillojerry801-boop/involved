@@ -2,7 +2,9 @@ import 'server-only'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
-import { getExerciseById } from '@/lib/exercises'
+import { getExerciseById, isCustomExerciseId } from '@/lib/exercises'
+import { isYmvId } from '@/lib/exercises/identity'
+import { verifyYmvIds } from '@/lib/ymove/resolver'
 
 type Params = { params: Promise<{ exerciseId: string }> }
 
@@ -37,8 +39,11 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { exerciseId } = await params
-  if (!getExerciseById(exerciseId)) {
+  if (!isYmvId(exerciseId) && !isCustomExerciseId(exerciseId) && !getExerciseById(exerciseId)) {
     return Response.json({ error: 'Exercise not found' }, { status: 404 })
+  }
+  if (isYmvId(exerciseId) && !(await verifyYmvIds([exerciseId], prisma))) {
+    return Response.json({ error: 'YMove exercise not found in catalog' }, { status: 404 })
   }
 
   const { state } = await req.json() as { state: PreferenceState }

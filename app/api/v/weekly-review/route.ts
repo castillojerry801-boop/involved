@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { prefetchYmvMeta } from '@/lib/ymove/resolver'
 import { buildWeeklyReview } from '@/lib/v/weekly-review'
 import type { CompletedWorkoutSummary } from '@/lib/v/weekly-review'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
@@ -87,10 +88,14 @@ export async function GET() {
 
   const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+  // Batch-prefetch ymv: exercise names to avoid N+1 catalog queries
+  const allExerciseIds = workouts.flatMap(w => w.exercises.map(e => e.exerciseId))
+  const ymvMetaMap = await prefetchYmvMeta(allExerciseIds, prisma)
+
   const summaries: CompletedWorkoutSummary[] = workouts.map(w => {
     const scheduledDay = w.scheduledDate ? DAY_ABBR[new Date(w.scheduledDate).getDay()] : 'TBD'
     const sets = w.exercises.flatMap(we => {
-      const ex = getExerciseById(we.exerciseId)
+      const ex = ymvMetaMap.get(we.exerciseId) ?? getExerciseById(we.exerciseId)
       const name = ex?.name ?? we.exerciseId
       return we.sets
         .filter(s => s.setType === 'working')

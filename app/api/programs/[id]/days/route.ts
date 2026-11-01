@@ -3,6 +3,8 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { isYmvId } from '@/lib/exercises/identity'
+import { verifyYmvIds } from '@/lib/ymove/resolver'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -45,9 +47,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     if (!program) return Response.json({ error: 'Program not found' }, { status: 404 })
 
     for (const ex of body.exercises ?? []) {
-      if (!getExerciseById(ex.exerciseId)) {
+      if (!isYmvId(ex.exerciseId) && !getExerciseById(ex.exerciseId)) {
         return Response.json({ error: `Exercise "${ex.exerciseId}" not found` }, { status: 400 })
       }
+    }
+    // DB-validate ymv: IDs against catalog
+    const ymvIds = (body.exercises ?? []).map(e => e.exerciseId).filter(isYmvId)
+    if (ymvIds.length > 0 && !(await verifyYmvIds(ymvIds, prisma))) {
+      return Response.json({ error: 'One or more YMove exercise IDs not found in catalog' }, { status: 400 })
     }
 
     // If sortOrder not specified, append at end

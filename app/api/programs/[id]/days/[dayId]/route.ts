@@ -3,6 +3,8 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { isYmvId } from '@/lib/exercises/identity'
+import { resolveExerciseMeta, verifyYmvIds } from '@/lib/ymove/resolver'
 
 type Params = { params: Promise<{ id: string; dayId: string }> }
 
@@ -26,14 +28,13 @@ export async function GET(_req: NextRequest, { params }: Params) {
     })
     if (!day) return Response.json({ error: 'Not found' }, { status: 404 })
 
-    const hydrated = {
-      ...day,
-      exercises: day.exercises.map(ex => ({
+    const hydratedExercises = await Promise.all(
+      day.exercises.map(async ex => ({
         ...ex,
-        exercise: getExerciseById(ex.exerciseId) ?? null,
-      })),
-    }
-    return Response.json({ day: hydrated })
+        exercise: await resolveExerciseMeta(ex.exerciseId, user.id, prisma),
+      }))
+    )
+    return Response.json({ day: { ...day, exercises: hydratedExercises } })
   } catch {
     return Response.json({ error: 'Failed to load day' }, { status: 500 })
   }
@@ -84,9 +85,16 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (body.exercises !== undefined) {
       // Validate all new exercise IDs
       for (const ex of body.exercises) {
-        if (!ex.id && ex.exerciseId && !getExerciseById(ex.exerciseId)) {
+        if (!ex.id && ex.exerciseId && !isYmvId(ex.exerciseId) && !getExerciseById(ex.exerciseId)) {
           return Response.json({ error: `Exercise "${ex.exerciseId}" not found` }, { status: 400 })
         }
+      }
+      // DB-validate new ymv: IDs against catalog
+      const newYmvIds = body.exercises
+        .filter(ex => !ex.id && ex.exerciseId && isYmvId(ex.exerciseId))
+        .map(ex => ex.exerciseId!)
+      if (newYmvIds.length > 0 && !(await verifyYmvIds(newYmvIds, prisma))) {
+        return Response.json({ error: 'One or more YMove exercise IDs not found in catalog' }, { status: 400 })
       }
 
       // Delete existing exercises and recreate (simplest correct approach for re-ordering)
@@ -117,15 +125,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       },
     })
 
-    return Response.json({
-      day: {
-        ...updated,
-        exercises: updated.exercises.map(ex => ({
-          ...ex,
-          exercise: getExerciseById(ex.exerciseId) ?? null,
-        })),
-      },
-    })
+    const updatedExercises = await Promise.all(
+      updated.exercises.map(async ex => ({
+        ...ex,
+        exercise: await resolveExerciseMeta(ex.exerciseId, user.id, prisma),
+      }))
+    )
+    return Response.json({ day: { ...updated, exercises: updatedExercises } })
   } catch {
     return Response.json({ error: 'Failed to update day' }, { status: 500 })
   }

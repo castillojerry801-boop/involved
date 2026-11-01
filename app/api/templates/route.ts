@@ -3,7 +3,9 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById, isCustomExerciseId } from '@/lib/exercises'
+import { isYmvId } from '@/lib/exercises/identity'
 import { verifyCustomExerciseIds } from '@/lib/training/custom-exercises'
+import { verifyYmvIds } from '@/lib/ymove/resolver'
 
 // ─── GET: list user's templates ───────────────────────────────────────────────
 
@@ -68,12 +70,15 @@ export async function POST(req: NextRequest) {
 
   const exerciseIds = (body.exercises ?? []).map(e => e.exerciseId)
   for (const id of exerciseIds) {
-    if (!isCustomExerciseId(id) && !getExerciseById(id)) {
+    if (!isYmvId(id) && !isCustomExerciseId(id) && !getExerciseById(id)) {
       return Response.json({ error: `Exercise "${id}" not found` }, { status: 400 })
     }
   }
   if (!(await verifyCustomExerciseIds(exerciseIds, user.id))) {
     return Response.json({ error: 'One or more custom exercises not found' }, { status: 400 })
+  }
+  if (!(await verifyYmvIds(exerciseIds, prisma))) {
+    return Response.json({ error: 'One or more YMove exercises not found' }, { status: 400 })
   }
 
   try {

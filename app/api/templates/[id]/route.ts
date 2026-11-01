@@ -3,16 +3,14 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById, isCustomExerciseId } from '@/lib/exercises'
-import { customToMeta, verifyCustomExerciseIds } from '@/lib/training/custom-exercises'
+import { isYmvId } from '@/lib/exercises/identity'
+import { verifyCustomExerciseIds } from '@/lib/training/custom-exercises'
+import { resolveExerciseMeta as resolveExMeta, verifyYmvIds } from '@/lib/ymove/resolver'
 
 type Params = { params: Promise<{ id: string }> }
 
 async function resolveExerciseMeta(exerciseId: string, userId: string) {
-  if (isCustomExerciseId(exerciseId)) {
-    const row = await prisma.customExercise.findFirst({ where: { id: exerciseId, userId } })
-    return row ? customToMeta(row) : null
-  }
-  return getExerciseById(exerciseId) ?? null
+  return resolveExMeta(exerciseId, userId, prisma)
 }
 
 // ─── GET: template detail ─────────────────────────────────────────────────────
@@ -94,12 +92,15 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (body.exercises !== undefined) {
       const exerciseIds = body.exercises.map(e => e.exerciseId)
       for (const eid of exerciseIds) {
-        if (!isCustomExerciseId(eid) && !getExerciseById(eid)) {
+        if (!isYmvId(eid) && !isCustomExerciseId(eid) && !getExerciseById(eid)) {
           return Response.json({ error: `Exercise "${eid}" not found` }, { status: 400 })
         }
       }
       if (!(await verifyCustomExerciseIds(exerciseIds, user.id))) {
         return Response.json({ error: 'One or more custom exercises not found' }, { status: 400 })
+      }
+      if (!(await verifyYmvIds(exerciseIds, prisma))) {
+        return Response.json({ error: 'One or more YMove exercises not found' }, { status: 400 })
       }
 
       // Replace all exercises atomically

@@ -1,15 +1,16 @@
 import { redirect } from 'next/navigation'
 import { getUser } from '@/lib/supabase/server'
 import { isAdmin } from '@/lib/admin/auth'
-import { Shield, Layers, GitMerge, BookOpen, Eye, Settings } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import AdminNavLink from './AdminNavLink'
+import type { AdminNavIcon } from './AdminNavLink'
 
-const ADMIN_NAV = [
-  { href: '/admin',                 label: 'Access',    icon: Shield   },
-  { href: '/admin/ymove-mapping',   label: 'Mapping',   icon: GitMerge },
-  { href: '/admin/ymove-hierarchy', label: 'Hierarchy', icon: Layers   },
-  { href: '/admin/ymove-catalog',   label: 'Catalog',   icon: BookOpen },
-  { href: '/admin/ymove-browse',    label: 'Browse',    icon: Eye      },
+const ADMIN_NAV: Array<{ href: string; label: string; icon: AdminNavIcon }> = [
+  { href: '/admin',                 label: 'Access',    icon: 'shield'     },
+  { href: '/admin/ymove-mapping',   label: 'Mapping',   icon: 'git-merge'  },
+  { href: '/admin/ymove-hierarchy', label: 'Hierarchy', icon: 'layers'     },
+  { href: '/admin/ymove-catalog',   label: 'Catalog',   icon: 'book-open'  },
+  { href: '/admin/ymove-browse',    label: 'Browse',    icon: 'eye'        },
 ]
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -25,7 +26,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             Admin
           </span>
           {ADMIN_NAV.map(({ href, label, icon }) => (
-            <AdminNavLink key={href} href={href} label={label} Icon={icon} />
+            <AdminNavLink key={href} href={href} label={label} icon={icon} />
           ))}
         </div>
       </nav>

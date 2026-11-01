@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { resolveExerciseMeta } from '@/lib/ymove/resolver'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -33,17 +34,19 @@ export async function GET(_req: NextRequest, { params }: Params) {
     return Response.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // Resolve exercise names from the library
-  const enriched = {
-    ...program,
-    days: program.days.map(day => ({
+  // Resolve exercise names — supports exercisedb, ymove, and custom IDs
+  const enrichedDays = await Promise.all(
+    program.days.map(async day => ({
       ...day,
-      exercises: day.exercises.map(ex => ({
-        ...ex,
-        exerciseName: getExerciseById(ex.exerciseId)?.name ?? null,
-      })),
-    })),
-  }
+      exercises: await Promise.all(
+        day.exercises.map(async ex => ({
+          ...ex,
+          exerciseName: (await resolveExerciseMeta(ex.exerciseId, user.id, prisma))?.name ?? null,
+        }))
+      ),
+    }))
+  )
+  const enriched = { ...program, days: enrichedDays }
 
   return Response.json({ program: enriched })
 }

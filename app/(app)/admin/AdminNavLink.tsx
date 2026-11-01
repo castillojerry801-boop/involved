@@ -2,21 +2,25 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { Shield, GitMerge, Layers, BookOpen, Eye } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { LucideIcon } from 'lucide-react'
+
+const ICONS = { shield: Shield, 'git-merge': GitMerge, layers: Layers, 'book-open': BookOpen, eye: Eye } as const
+
+export type AdminNavIcon = keyof typeof ICONS
 
 export default function AdminNavLink({
   href,
   label,
-  Icon,
+  icon,
 }: {
   href: string
   label: string
-  Icon: LucideIcon
+  icon: AdminNavIcon
 }) {
   const pathname = usePathname()
-  // Exact match for /admin root to avoid it being active on all sub-pages
   const active = href === '/admin' ? pathname === '/admin' : pathname.startsWith(href)
+  const Icon = ICONS[icon]
 
   return (
     <Link

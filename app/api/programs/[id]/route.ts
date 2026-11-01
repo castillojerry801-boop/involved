@@ -3,7 +3,9 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById, isCustomExerciseId } from '@/lib/exercises'
-import { customToMeta, verifyCustomExerciseIds } from '@/lib/training/custom-exercises'
+import { isYmvId } from '@/lib/exercises/identity'
+import { verifyCustomExerciseIds } from '@/lib/training/custom-exercises'
+import { resolveExerciseMeta, verifyYmvIds } from '@/lib/ymove/resolver'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -40,16 +42,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
       ...program,
       days: await Promise.all(program.days.map(async day => ({
         ...day,
-        exercises: await Promise.all(day.exercises.map(async ex => {
-          let exercise = null
-          if (isCustomExerciseId(ex.exerciseId)) {
-            const row = await prisma.customExercise.findFirst({ where: { id: ex.exerciseId, userId: user.id } })
-            exercise = row ? customToMeta(row) : null
-          } else {
-            exercise = getExerciseById(ex.exerciseId) ?? null
-          }
-          return { ...ex, exercise }
-        })),
+        exercises: await Promise.all(day.exercises.map(async ex => ({
+          ...ex,
+          exercise: await resolveExerciseMeta(ex.exerciseId, user.id, prisma),
+        }))),
       }))),
     }
     return Response.json({ program: hydrated })
@@ -146,12 +142,15 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
   const allExerciseIds = body.days.flatMap(d => (d.exercises ?? []).map(e => e.exerciseId))
   for (const eid of allExerciseIds) {
-    if (!isCustomExerciseId(eid) && !getExerciseById(eid)) {
+    if (!isYmvId(eid) && !isCustomExerciseId(eid) && !getExerciseById(eid)) {
       return Response.json({ error: `Exercise "${eid}" not found` }, { status: 400 })
     }
   }
   if (!(await verifyCustomExerciseIds(allExerciseIds, user.id))) {
     return Response.json({ error: 'One or more custom exercises not found' }, { status: 400 })
+  }
+  if (!(await verifyYmvIds(allExerciseIds, prisma))) {
+    return Response.json({ error: 'One or more YMove exercises not found' }, { status: 400 })
   }
 
   try {
