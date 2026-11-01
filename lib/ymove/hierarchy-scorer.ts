@@ -490,7 +490,9 @@ export function tokenize(name: string): Set<string> {
 }
 
 const ANGLE_TAGS:    [string, string][] = [['incline','incline'],['decline','decline'],['overhead','overhead'],['floor','floor'],['flat','flat']]
-const GRIP_TAGS:     [string, string][] = [['close grip','close'],['close-grip','close'],['wide grip','wide'],['wide-grip','wide'],['reverse grip','reverse'],['reverse-grip','reverse'],['neutral grip','neutral'],['neutral-grip','neutral'],['hammer','hammer'],['underhand','underhand'],['overhand','overhand']]
+// 'reverse grip' checked first: compound names like "reverse close-grip" should
+// capture the most-distinctive qualifier (reverse) rather than the secondary one (close).
+const GRIP_TAGS:     [string, string][] = [['reverse grip','reverse'],['reverse-grip','reverse'],['close grip','close'],['close-grip','close'],['wide grip','wide'],['wide-grip','wide'],['neutral grip','neutral'],['neutral-grip','neutral'],['hammer','hammer'],['underhand','underhand'],['overhand','overhand']]
 const LATERAL_TAGS:  [string, string][] = [['single arm','unilateral'],['one arm','unilateral'],['single leg','unilateral'],['one leg','unilateral'],['unilateral','unilateral'],['alternating','alternating']]
 const POSITION_TAGS: [string, string][] = [['seated','seated'],['standing','standing'],['lying','lying'],['prone','prone'],['kneeling','kneeling'],['bent over','bent_over'],['bent-over','bent_over'],['preacher','preacher']]
 const MODIFIER_TAGS: [string, string][] = [['sumo','sumo'],['romanian','romanian'],['rdl','romanian'],['stiff leg','stiff_leg'],['straight leg','stiff_leg'],['paused','paused'],['deficit','deficit'],['rack pull','rack_pull'],['split','split'],['bulgarian','bulgarian'],['landmine','landmine'],['zottman','zottman'],['spider','spider'],['concentration','concentration'],['guillotine','guillotine'],['jm press','jm_press'],['jm-press','jm_press']]
@@ -673,10 +675,17 @@ export function scoreCandidate(
     else { varScore -= 5; penaltyReasons.push(`grip conflict: exercise=${ourDims.grip} vs catalog=${candDims.grip}`) }
   } else if (!ourDims.grip && candDims.grip) {
     varScore -= 2
+  } else if (ourDims.grip && !candDims.grip) {
+    // Exercise specifies a grip (often 'reverse') that the catalog entry doesn't mention.
+    // The catalog entry most likely uses the standard grip, so this is a meaningful mismatch.
+    varScore -= 7
+    penaltyReasons.push(`exercise has grip modifier (${ourDims.grip}) absent in catalog`)
   }
 
   if (!ourDims.lateral && candDims.lateral === 'unilateral') {
     varScore -= 5; penaltyReasons.push('unilateral variant for bilateral exercise')
+  } else if (ourDims.lateral === 'unilateral' && !candDims.lateral) {
+    varScore -= 5; penaltyReasons.push('unilateral exercise matched to bilateral catalog entry')
   }
 
   if (ourDims.modifier && candDims.modifier) {
@@ -685,6 +694,9 @@ export function scoreCandidate(
   } else if (ourDims.modifier && !candDims.modifier) {
     varScore -= 3
     penaltyReasons.push(`exercise has technique modifier (${ourDims.modifier}) absent in catalog`)
+  } else if (!ourDims.modifier && candDims.modifier) {
+    varScore -= 3
+    penaltyReasons.push(`catalog has technique modifier (${candDims.modifier}) not in exercise`)
   }
 
   signals.variation = Math.max(-10, Math.min(10, varScore))

@@ -625,6 +625,173 @@ describe('scoreCandidate — variation penalties', () => {
   })
 })
 
+// ── False-positive regressions (variation incompatibilities) ─────────────────
+// These four cases were incorrectly reaching high_priority (≥85) before the
+// bidirectional variation fixes.  Each must stay below SCORE_HIGH_PRIORITY.
+
+describe('scoreCandidate — false-positive regression suite', () => {
+  // Case 1: generic dumbbell squat should NOT match sumo squat at high_priority
+  // Root cause: catalog has modifier 'sumo' but exercise has none → was missing -3 penalty.
+  it('dumbbell squat does NOT reach high_priority against Dumbbell Sumo Squat', () => {
+    const catalog = makeCatalog({
+      name:               'Dumbbell Sumo Squat',
+      equipment:          'dumbbell',
+      category:           'Legs',
+      primaryMuscleGroup: 'glutes',
+    })
+    const meta = makeMeta({
+      name:             'dumbbell squat',
+      equipment:        'dumbbell',
+      equipmentFamily:  'dumbbell',
+      target:           'glutes',
+      bodyPart:         'upper legs',
+      technicalPattern: 'squat',
+      movementClass:    'lower_push',
+      movementSubclass: 'squat',
+    })
+    const result = scoreCandidate(catalog, meta)
+    expect(result.hardBlock).toBeNull()
+    expect(result.score).toBeLessThan(SCORE_HIGH_PRIORITY)
+    expect(result.tier).not.toBe('high_priority')
+    expect(result.penaltyReasons.some(r => r.includes('sumo'))).toBe(true)
+  })
+
+  // Case 2: one-arm incline chest press should NOT match bilateral incline press at high_priority
+  // Root cause: exercise has lateral='unilateral' but catalog doesn't → was missing -5 penalty.
+  it('one-arm incline chest press does NOT reach high_priority against bilateral incline press', () => {
+    const catalog = makeCatalog({
+      name:               'Incline Dumbbell Press',
+      equipment:          'dumbbell',
+      category:           'Chest',
+      primaryMuscleGroup: 'pectorals',
+    })
+    const meta = makeMeta({
+      name:             'dumbbell one arm incline chest press',
+      equipment:        'dumbbell',
+      equipmentFamily:  'dumbbell',
+      target:           'pectorals',
+      bodyPart:         'chest',
+      technicalPattern: 'horizontal_press',
+      movementClass:    'upper_push_h',
+      movementSubclass: null,
+    })
+    const result = scoreCandidate(catalog, meta)
+    expect(result.hardBlock).toBeNull()
+    expect(result.score).toBeLessThan(SCORE_HIGH_PRIORITY)
+    expect(result.tier).not.toBe('high_priority')
+    expect(result.penaltyReasons.some(r => r.includes('unilateral'))).toBe(true)
+  })
+
+  // Case 3: reverse-grip cable triceps extension should NOT match rope extension at high_priority
+  // Root cause: exercise has grip='reverse' but catalog has no grip → was missing -7 penalty.
+  it('reverse-grip cable triceps extension does NOT reach high_priority against rope extension', () => {
+    const catalog = makeCatalog({
+      name:               'Overhead Cable Rope Extension',
+      equipment:          'cable',
+      category:           'Arms - Triceps',
+      primaryMuscleGroup: 'triceps',
+    })
+    const meta = makeMeta({
+      name:             'cable standing reverse grip one arm overhead tricep extension',
+      equipment:        'cable',
+      equipmentFamily:  'cable',
+      target:           'triceps',
+      bodyPart:         'upper arms',
+      technicalPattern: 'arm_isolation',
+      movementClass:    'arm_extension',
+      movementSubclass: null,
+    })
+    const result = scoreCandidate(catalog, meta)
+    expect(result.hardBlock).toBeNull()
+    expect(result.score).toBeLessThan(SCORE_HIGH_PRIORITY)
+    expect(result.tier).not.toBe('high_priority')
+    expect(result.penaltyReasons.some(r => r.includes('reverse'))).toBe(true)
+  })
+
+  // Case 4: reverse-grip incline push-up should NOT match ordinary incline push-up at high_priority
+  // Same root cause as Case 3.
+  it('reverse-grip incline push-up does NOT reach high_priority against ordinary incline push-up', () => {
+    const catalog = makeCatalog({
+      name:               'Inclined push up',
+      equipment:          'bodyweight',
+      category:           'Chest',
+      primaryMuscleGroup: 'pectorals',
+    })
+    const meta = makeMeta({
+      name:             'incline reverse grip push-up',
+      equipment:        'body weight',
+      equipmentFamily:  'bodyweight',
+      target:           'pectorals',
+      bodyPart:         'chest',
+      technicalPattern: 'horizontal_press',
+      movementClass:    'upper_push_h',
+      movementSubclass: null,
+    })
+    const result = scoreCandidate(catalog, meta)
+    expect(result.hardBlock).toBeNull()
+    expect(result.score).toBeLessThan(SCORE_HIGH_PRIORITY)
+    expect(result.tier).not.toBe('high_priority')
+    expect(result.penaltyReasons.some(r => r.includes('reverse'))).toBe(true)
+  })
+
+  // Symmetric check: grip penalty applied in both directions
+  it('exercise with reverse grip scores lower against no-grip catalog than against reverse-grip catalog', () => {
+    const noGripCatalog = makeCatalog({
+      name: 'Barbell Decline Bench Press', equipment: 'barbell', category: 'Chest', primaryMuscleGroup: 'pectorals',
+    })
+    const reverseGripCatalog = makeCatalog({
+      name: 'Barbell Reverse Grip Decline Bench Press', equipment: 'barbell', category: 'Chest', primaryMuscleGroup: 'pectorals',
+    })
+    const meta = makeMeta({
+      name:             'barbell reverse grip decline bench press',
+      equipmentFamily:  'barbell',
+      target:           'pectorals',
+      movementClass:    'upper_push_h',
+    })
+    const noGrip      = scoreCandidate(noGripCatalog, meta)
+    const reverseGrip = scoreCandidate(reverseGripCatalog, meta)
+    expect(reverseGrip.score).toBeGreaterThan(noGrip.score)
+    expect(noGrip.score).toBeLessThan(SCORE_HIGH_PRIORITY)
+  })
+
+  // Modifier incompatibility: catalog has 'sumo', exercise has none
+  it('catalog sumo modifier is penalized when exercise has no modifier', () => {
+    const sumo = makeCatalog({
+      name: 'Dumbbell Sumo Deadlift', equipment: 'dumbbell', category: 'Legs', primaryMuscleGroup: 'hamstrings',
+    })
+    const meta = makeMeta({
+      name:            'dumbbell deadlift',
+      equipmentFamily: 'dumbbell',
+      target:          'hamstrings',
+      movementClass:   'lower_pull',
+      movementSubclass: 'deadlift',
+    })
+    const result = scoreCandidate(sumo, meta)
+    expect(result.penaltyReasons.some(r => r.includes('sumo'))).toBe(true)
+    expect(result.score).toBeLessThan(SCORE_HIGH_PRIORITY)
+  })
+
+  // GRIP_TAGS order: when a catalog name contains BOTH "reverse grip" and "close grip"
+  // as contiguous substrings, "reverse grip" should be detected (it's checked first).
+  it('reverse grip is detected before close grip when both phrases appear contiguously', () => {
+    // A catalog name that has "reverse grip" as a contiguous phrase
+    const reverseGripCatalog = makeCatalog({
+      name: 'Barbell Reverse Grip Bench Press', equipment: 'barbell', category: 'Chest', primaryMuscleGroup: 'triceps',
+    })
+    const reverseGripMeta = makeMeta({
+      name:            'barbell reverse grip bench press',
+      equipmentFamily: 'barbell',
+      target:          'triceps',
+      movementClass:   'upper_push_h',
+    })
+    // Both exercise and catalog have "reverse grip" as contiguous phrase → grip match (+5)
+    const result = scoreCandidate(reverseGripCatalog, reverseGripMeta)
+    expect(result.penaltyReasons.filter(r => r.includes('grip'))).toHaveLength(0)
+    // Should NOT have a grip penalty since both parsed as 'reverse'
+    expect(result.signals.variation).toBeGreaterThan(0)
+  })
+})
+
 // ── Determinism ───────────────────────────────────────────────────────────────
 
 describe('Determinism', () => {
