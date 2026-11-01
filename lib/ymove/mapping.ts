@@ -123,6 +123,15 @@ export interface ConflictOwner {
 /**
  * Returns all current owners of a given ymove UUID.
  * Includes both DB rows and JSON-baseline-only entries that have no DB override.
+ *
+ * NOTE — 14 ymoveId values are verified against more than one ExerciseDB exercise
+ * (different movements share the same YMove body-map UUID). For those 14, a reverse
+ * lookup (ymoveId → exerciseDbId) is AMBIGUOUS — there is no single correct answer.
+ *
+ * DO NOT use a simple `reverseMapping[ymoveId]` pattern in workout or program
+ * generation code. Always use getConflictOwners() to obtain all owners and apply
+ * domain-specific selection logic (e.g. prefer the primary caller's exerciseDbId,
+ * or reject ambiguous cases entirely).
  */
 export async function getConflictOwners(ymoveId: string): Promise<ConflictOwner[]> {
   const json   = loadJsonBaseline()

@@ -463,7 +463,7 @@ describe('post-answer gate decision (what runs after bare "4")', () => {
     const currentCtx = emptyCtx({
       readinessState: 'consistent_intermediate',
       recentTraining: [
-        { date: '2026-09-24', title: 'Upper A', musclesWorked: ['chest'], totalSets: 12, topSets: [] },
+        { date: '2026-09-24', title: 'Upper A', musclesWorked: ['chest'], secondaryMusclesInvolved: [], totalSets: 12, topSets: [] },
       ],
       equipment: { profileName: 'Home Gym', items: ['dumbbell', 'barbell', 'body weight'] },
     })

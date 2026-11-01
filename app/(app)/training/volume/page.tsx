@@ -13,6 +13,8 @@ interface MuscleEntry {
   totalVolumeKg: number
   lastTrainedAt: string
   sessionCount: number
+  /** Count of exercises that recruited this muscle as a secondary mover. NOT training volume. */
+  secondaryInvolvement?: number
 }
 
 const PERIOD_OPTIONS = [
@@ -146,6 +148,11 @@ export default function MusclevolumePage() {
               {m.totalVolumeKg > 0 && (
                 <p className="text-[10px] text-zinc-400 mt-1">
                   {m.totalVolumeKg.toLocaleString()}kg total volume · {m.totalReps} reps
+                  {m.secondaryInvolvement != null && m.secondaryInvolvement > 0 && (
+                    <span className="ml-1 text-zinc-300 dark:text-zinc-600">
+                      · also involved in {m.secondaryInvolvement} exercise{m.secondaryInvolvement !== 1 ? 's' : ''} as secondary
+                    </span>
+                  )}
                 </p>
               )}
             </div>

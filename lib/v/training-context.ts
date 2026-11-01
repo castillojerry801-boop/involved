@@ -55,11 +55,13 @@ export interface VTrainingContext {
     achievedAt:   string
   }>
   recentTraining: Array<{
-    date:          string
-    title:         string
-    musclesWorked: string[]
-    totalSets:     number
-    topSets:       Array<{
+    date:                    string
+    title:                   string
+    musclesWorked:           string[]
+    /** Secondary muscles recruited as non-primary movers. NOT equivalent to primary training volume. */
+    secondaryMusclesInvolved: string[]
+    totalSets:               number
+    topSets:                 Array<{
       exerciseName: string
       exerciseId:   string
       maxWeightKg:  number
@@ -299,6 +301,15 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
         return ex ? [ex.target] : []
       })
     )]
+    // Secondary muscles recruited as non-primary movers — NOT training volume.
+    // Deduplicated and filtered to exclude muscles already listed as primary.
+    const primarySet = new Set(muscles)
+    const secondaryMusclesInvolved = [...new Set(
+      w.exercises.flatMap(we => {
+        const ex = getExerciseById(we.exerciseId)
+        return ex ? (ex.secondaryMuscles ?? []) : []
+      })
+    )].filter(m => m && !primarySet.has(m))
     const totalSets = w.exercises.reduce((n, we) => n + we.sets.length, 0)
 
     // Top sets per exercise: working sets with weight data, highest weight first
@@ -325,9 +336,10 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
       .slice(0, 4)
 
     return {
-      date:          (w.completedAt ?? w.startedAt ?? w.createdAt).toISOString().slice(0, 10),
-      title:         w.title,
-      musclesWorked: muscles,
+      date:                     (w.completedAt ?? w.startedAt ?? w.createdAt).toISOString().slice(0, 10),
+      title:                    w.title,
+      musclesWorked:            muscles,
+      secondaryMusclesInvolved,
       totalSets,
       topSets,
     }
@@ -574,7 +586,10 @@ export function trainingContextToPrompt(ctx: VTrainingContext): string {
     lines.push('RECENT TRAINING (last 10 sessions):')
     ctx.recentTraining.forEach(t => {
       const muscles = t.musclesWorked.join(', ') || 'unknown'
-      lines.push(`  ${t.date} — ${t.title} — ${muscles} — ${t.totalSets} sets`)
+      const secondary = t.secondaryMusclesInvolved.length > 0
+        ? ` | secondary involvement: ${t.secondaryMusclesInvolved.join(', ')}`
+        : ''
+      lines.push(`  ${t.date} — ${t.title} — primary: ${muscles}${secondary} — ${t.totalSets} sets`)
       if (t.topSets.length > 0) {
         t.topSets.forEach(s => {
           const repsStr = s.topReps != null ? ` × ${s.topReps} reps` : ''

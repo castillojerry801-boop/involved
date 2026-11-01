@@ -7,7 +7,7 @@ import {
   ArrowLeft, CheckCircle2, Circle, Loader2, Trophy, ChevronDown, ChevronUp,
   Plus, Dumbbell, MessageSquare, Trash2, Timer, X, Scissors, Shuffle,
 } from 'lucide-react'
-import { isCustomExerciseId } from '@/lib/exercises'
+import { isCustomExerciseId, getExerciseById } from '@/lib/exercises'
 import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { cn } from '@/lib/utils'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
@@ -766,6 +766,21 @@ function CompletedCard({ workout }: { workout: WorkoutData }) {
     return `${m}:${String(sec).padStart(2, '0')}`
   }
 
+  // Compute muscles from the completed exercises
+  const primaryMuscles = [...new Set(
+    workout.exercises.flatMap(we => {
+      const ex = getExerciseById(we.exerciseId)
+      return ex ? [ex.target] : (we.exercise?.target ? [we.exercise.target] : [])
+    })
+  )]
+  const primarySet = new Set(primaryMuscles)
+  const secondaryMuscles = [...new Set(
+    workout.exercises.flatMap(we => {
+      const ex = getExerciseById(we.exerciseId)
+      return ex ? (ex.secondaryMuscles ?? []) : []
+    })
+  )].filter(m => m && !primarySet.has(m))
+
   const handleSaveAsTemplate = async () => {
     setSaving(true)
     try {
@@ -786,6 +801,28 @@ function CompletedCard({ workout }: { workout: WorkoutData }) {
       <p className="font-black text-zinc-900 dark:text-white text-lg mb-1">Workout complete!</p>
       {workout.durationSeconds && (
         <p className="text-sm text-zinc-500">Duration: {formatElapsedLocal(workout.durationSeconds)}</p>
+      )}
+      {primaryMuscles.length > 0 && (
+        <div className="mt-3 text-left rounded-xl bg-white/60 dark:bg-zinc-900/50 border border-emerald-100 dark:border-emerald-900/30 px-3 py-2.5">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Muscles trained</p>
+          <div className="flex flex-wrap gap-1">
+            {primaryMuscles.map(m => (
+              <span key={m} className="rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200 px-2 py-0.5 text-[11px] font-medium capitalize">
+                {m.replace(/-/g, ' ')}
+              </span>
+            ))}
+          </div>
+          {secondaryMuscles.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 mt-1">
+              <span className="text-[9px] text-zinc-400 uppercase tracking-wide">also:</span>
+              {secondaryMuscles.slice(0, 5).map(m => (
+                <span key={m} className="rounded-full bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 px-2 py-0.5 text-[11px] font-medium capitalize">
+                  {m.replace(/-/g, ' ')}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       <div className="flex gap-2 mt-4">
         <Link href="/training" className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 py-2.5 text-sm font-semibold text-zinc-700 dark:text-zinc-300 text-center hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">

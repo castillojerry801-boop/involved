@@ -59,7 +59,7 @@ function makeActivity(overrides: Partial<HealthActivityForV> = {}): HealthActivi
 }
 
 function makeInvolvedSession(daysBack: number): VTrainingContext['recentTraining'][0] {
-  return { date: daysAgo(daysBack), title: 'Upper Body', musclesWorked: ['chest'], totalSets: 12, topSets: [] }
+  return { date: daysAgo(daysBack), title: 'Upper Body', musclesWorked: ['chest'], secondaryMusclesInvolved: [], totalSets: 12, topSets: [] }
 }
 
 function makePr(): VTrainingContext['personalRecords'][0] {
@@ -343,7 +343,7 @@ describe('deriveReadinessState — combined Involved + health activities', () =>
   it('combines Involved sessions and resistance health activities for consistency', () => {
     // 1 Involved session + 2 resistance health activities = 3 → consistent
     const involvedSessions: VTrainingContext['recentTraining'] = [
-      { date: daysAgo(7), title: 'Upper', musclesWorked: ['chest'], totalSets: 10, topSets: [] },
+      { date: daysAgo(7), title: 'Upper', musclesWorked: ['chest'], secondaryMusclesInvolved: [], totalSets: 10, topSets: [] },
     ]
     const healthActivities: ActivityForReadiness[] = [
       { activityType: 'strength_training', date: daysAgo(14) },
@@ -355,9 +355,9 @@ describe('deriveReadinessState — combined Involved + health activities', () =>
 
   it('Involved sessions alone still produce consistent_intermediate (no regression)', () => {
     const sessions: VTrainingContext['recentTraining'] = [
-      { date: daysAgo(5),  title: 'Push', musclesWorked: ['chest'], totalSets: 12, topSets: [] },
-      { date: daysAgo(10), title: 'Pull', musclesWorked: ['back'],  totalSets: 10, topSets: [] },
-      { date: daysAgo(18), title: 'Legs', musclesWorked: ['quads'], totalSets: 14, topSets: [] },
+      { date: daysAgo(5),  title: 'Push', musclesWorked: ['chest'], secondaryMusclesInvolved: [], totalSets: 12, topSets: [] },
+      { date: daysAgo(10), title: 'Pull', musclesWorked: ['back'],  secondaryMusclesInvolved: [], totalSets: 10, topSets: [] },
+      { date: daysAgo(18), title: 'Legs', musclesWorked: ['quads'], secondaryMusclesInvolved: [], totalSets: 14, topSets: [] },
     ]
     const result = deriveReadinessState('intermediate', sessions, [])
     expect(result).toBe('consistent_intermediate')

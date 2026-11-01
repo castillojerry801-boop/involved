@@ -27,6 +27,8 @@ export interface ViewExercise {
   exerciseId: string
   displayName: string
   bodyPart: string | null
+  target: string | null
+  secondaryMuscles: string[]
   restSeconds: number | null
   startingLoad: number | null
   weekProgressions: PersistedWeekProgression[] | null
@@ -143,10 +145,17 @@ export function MultiWeekProgramView({ data }: { data: MultiWeekProgramData }) {
         </div>
       )}
 
-      {resolvedDays.map(day => (
+      {resolvedDays.map(day => {
+        const dayPrimary = [...new Set(day.exercises.flatMap(({ ex }) => ex.target ? [ex.target] : []))]
+        const dayPrimarySet = new Set(dayPrimary)
+        const daySecondary = [...new Set(
+          day.exercises.flatMap(({ ex }) => (ex.secondaryMuscles ?? []).filter(m => m && !dayPrimarySet.has(m)))
+        )].slice(0, 4)
+
+        return (
         <div key={day.id} className="overflow-hidden rounded-2xl border border-zinc-100 bg-white dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex items-center justify-between gap-3 border-b border-zinc-50 px-4 py-3 dark:border-zinc-800">
-            <div>
+            <div className="min-w-0 flex-1">
               {day.weekday != null && (
                 <p className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-zinc-400">{WEEKDAYS[day.weekday]}</p>
               )}
@@ -154,6 +163,20 @@ export function MultiWeekProgramView({ data }: { data: MultiWeekProgramData }) {
               <p className="text-xs text-zinc-400">
                 {day.exercises.length} exercise{day.exercises.length !== 1 ? 's' : ''}
               </p>
+              {dayPrimary.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {dayPrimary.map(m => (
+                    <span key={m} className="rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200 px-2 py-0.5 text-[10px] font-medium capitalize">
+                      {m.replace(/-/g, ' ')}
+                    </span>
+                  ))}
+                  {daySecondary.map(m => (
+                    <span key={m} className="rounded-full bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 px-2 py-0.5 text-[10px] font-medium capitalize">
+                      {m.replace(/-/g, ' ')}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <Button
               size="sm"
@@ -192,7 +215,8 @@ export function MultiWeekProgramView({ data }: { data: MultiWeekProgramData }) {
             </div>
           )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

@@ -66,6 +66,8 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
           exerciseId: ex.exerciseId,
           displayName: getInvolvedDisplayName(ex.exerciseId, meta?.name ?? ex.exerciseId),
           bodyPart: meta?.bodyPart ?? null,
+          target: meta?.target ?? null,
+          secondaryMuscles: meta?.secondaryMuscles ?? [],
           restSeconds: ex.restSeconds ?? null,
           startingLoad: e.startingLoad ?? null,
           weekProgressions: e.weekProgressions ?? null,

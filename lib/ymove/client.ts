@@ -100,6 +100,23 @@ export async function getYmoveById(
   return media
 }
 
+/**
+ * Fetch the body-map SVG for a YMove exercise.
+ *
+ * Returns the raw SVG string or null if the exercise has no body-map.
+ * Does NOT charge the monthly exercise video cap (browse-mode endpoint).
+ * The caller must sanitize before injecting into the DOM — use sanitizeSvg().
+ */
+export async function getBodyMap(ymoveId: string): Promise<string | null> {
+  const res = await fetch(
+    `${YMOVE_BASE}/exercises/${encodeURIComponent(ymoveId)}/body-map`,
+    { headers: { 'X-API-Key': apiKey() }, cache: 'no-store' },
+  )
+  if (!res.ok) return null
+  const text = await res.text()
+  return text.trim() || null
+}
+
 // ─── DEV-ONLY HELPERS ────────────────────────────────────────────────────────
 // These functions exist to assist human admins in building the verified mapping.
 // They MUST NOT be called in production code paths.

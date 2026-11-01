@@ -8,6 +8,17 @@ import { getExerciseById } from '@/lib/exercises'
 import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { getWeightUnit, kgToUnit } from '@/lib/weight-unit.server'
 
+function MuscleChip({ label, variant }: { label: string; variant: 'primary' | 'secondary' }) {
+  const cls = variant === 'primary'
+    ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200'
+    : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${cls}`}>
+      {label.replace(/-/g, ' ')}
+    </span>
+  )
+}
+
 export const metadata: Metadata = { title: 'Workout' }
 
 function formatDuration(seconds: number) {
@@ -49,6 +60,22 @@ export default async function WorkoutHistoryPage({ params }: { params: Promise<{
   if (!workout) redirect('/training')
 
   const totalSets = workout.exercises.reduce((n, ex) => n + ex.sets.length, 0)
+
+  // Compute muscles from completed exercises (server-side — no extra fetch)
+  const primaryMuscles = [...new Set(
+    workout.exercises.flatMap(we => {
+      const ex = getExerciseById(we.exerciseId)
+      return ex ? [ex.target] : []
+    })
+  )]
+  const primarySet = new Set(primaryMuscles)
+  const secondaryMuscles = [...new Set(
+    workout.exercises.flatMap(we => {
+      const ex = getExerciseById(we.exerciseId)
+      return ex ? (ex.secondaryMuscles ?? []) : []
+    })
+  )].filter(m => m && !primarySet.has(m))
+
   const date = workout.completedAt
     ? new Date(workout.completedAt).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
     : workout.startedAt
@@ -85,6 +112,22 @@ export default async function WorkoutHistoryPage({ params }: { params: Promise<{
           </div>
         ))}
       </div>
+
+      {/* Muscles Worked */}
+      {primaryMuscles.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Muscles Worked</p>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {primaryMuscles.map(m => <MuscleChip key={m} label={m} variant="primary" />)}
+          </div>
+          {secondaryMuscles.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              <span className="text-[10px] text-zinc-400 uppercase tracking-wide font-medium">also involved:</span>
+              {secondaryMuscles.slice(0, 6).map(m => <MuscleChip key={m} label={m} variant="secondary" />)}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Exercises */}
       <div className="space-y-4">

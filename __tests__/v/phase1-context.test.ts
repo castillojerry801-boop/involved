@@ -289,6 +289,7 @@ describe('trainingContextToPrompt — set data quality notes', () => {
         date: '2026-10-05',
         title: 'Full Body',
         musclesWorked: ['chest', 'back'],
+        secondaryMusclesInvolved: [],
         totalSets: 12,
         topSets: [],  // no weight data
       }],
@@ -304,6 +305,7 @@ describe('trainingContextToPrompt — set data quality notes', () => {
         date: '2026-10-05',
         title: 'Push Day',
         musclesWorked: ['chest'],
+        secondaryMusclesInvolved: [],
         totalSets: 6,
         topSets: [{ exerciseName: 'Bench Press', exerciseId: '0026', maxWeightKg: 80, topReps: 8, setCount: 3 }],
       }],
@@ -319,6 +321,7 @@ describe('trainingContextToPrompt — set data quality notes', () => {
         date: '2026-10-05',
         title: 'Push Day',
         musclesWorked: ['chest'],
+        secondaryMusclesInvolved: [],
         totalSets: 0,
         topSets: [],
       }],
@@ -334,6 +337,7 @@ describe('trainingContextToPrompt — set data quality notes', () => {
         date: '2026-10-05',
         title: 'Day 4 — Push',
         musclesWorked: ['chest', 'triceps'],
+        secondaryMusclesInvolved: [],
         totalSets: 0,
         topSets: [],
       }],
@@ -346,7 +350,7 @@ describe('trainingContextToPrompt — set data quality notes', () => {
   it('does NOT add per-set-tracking note when totalSets > 0 even with no weight data', () => {
     const ctx = makeCtx({
       recentTraining: [{
-        date: '2026-10-05', title: 'Cardio', musclesWorked: [],
+        date: '2026-10-05', title: 'Cardio', musclesWorked: [], secondaryMusclesInvolved: [],
         totalSets: 8, topSets: [],
       }],
     })

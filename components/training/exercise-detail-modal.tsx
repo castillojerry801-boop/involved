@@ -6,6 +6,7 @@ import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { type PreferenceState } from './exercise-browser'
 import { cn } from '@/lib/utils'
 import { ExerciseMedia } from './ExerciseMedia'
+import { MuscleBodyMap } from './MuscleBodyMap'
 
 interface Props {
   exercise: Exercise
@@ -126,15 +127,15 @@ export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleF
             </div>
           )}
 
-          {/* Secondary muscles */}
-          {exercise.secondaryMuscles.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Secondary muscles</p>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400 capitalize">
-                {exercise.secondaryMuscles.join(', ')}
-              </p>
-            </div>
-          )}
+          {/* Muscle body map — SVG if YMove mapping exists, text tags otherwise */}
+          <div className="mb-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">Muscles</p>
+            <MuscleBodyMap
+              exerciseId={exercise.id}
+              primaryMuscles={[exercise.target]}
+              secondaryMuscles={exercise.secondaryMuscles}
+            />
+          </div>
 
           {/* Instructions */}
           <div>

@@ -31,7 +31,7 @@ const noRecentTraining: VTrainingContext['recentTraining'] = []
 const noRecords: VTrainingContext['personalRecords'] = []
 
 function recentSession(daysBack: number): VTrainingContext['recentTraining'][0] {
-  return { date: daysAgo(daysBack), title: 'Test', musclesWorked: ['chest'], totalSets: 12, topSets: [] }
+  return { date: daysAgo(daysBack), title: 'Test', musclesWorked: ['chest'], secondaryMusclesInvolved: [], totalSets: 12, topSets: [] }
 }
 
 function makePr(name = 'Barbell Squat'): VTrainingContext['personalRecords'][0] {

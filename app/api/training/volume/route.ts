@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
       orderBy: { completedAt: 'asc' },
     })
 
-    // Aggregate by target muscle
+    // Aggregate by target muscle (primary only — secondary tracked separately below)
     const muscleMap = new Map<string, {
       muscle: string
       bodyPart: string
@@ -43,6 +43,11 @@ export async function GET(req: NextRequest) {
       lastTrainedAt: Date
       sessionDates: Set<string>
     }>()
+
+    // Secondary involvement: count distinct exercises that involve each secondary muscle.
+    // This is NOT equivalent training volume — it reflects how many exercises recruit the
+    // muscle as a secondary mover. Kept separate to avoid inflating working-set counts.
+    const secondaryMap = new Map<string, Set<string>>()  // muscle → set of exerciseIds
 
     for (const workout of workouts) {
       const date = workout.completedAt!
@@ -68,6 +73,14 @@ export async function GET(req: NextRequest) {
           entry.sessionDates.add(dateStr)
           if (date > entry.lastTrainedAt) entry.lastTrainedAt = date
         }
+
+        // Track secondary involvement — only exercises with completed working sets
+        for (const sec of (ex.secondaryMuscles ?? [])) {
+          if (!sec) continue
+          let secSet = secondaryMap.get(sec)
+          if (!secSet) { secSet = new Set(); secondaryMap.set(sec, secSet) }
+          secSet.add(we.exerciseId)
+        }
       }
     }
 
@@ -80,6 +93,9 @@ export async function GET(req: NextRequest) {
         totalVolumeKg: Math.round(e.totalVolumeKg),
         lastTrainedAt: e.lastTrainedAt.toISOString(),
         sessionCount: e.sessionDates.size,
+        // Muscles that involved this muscle as a secondary mover.
+        // NOT training volume — secondary involvement only.
+        secondaryInvolvement: secondaryMap.get(e.muscle)?.size ?? 0,
       }))
       .sort((a, b) => b.workingSets - a.workingSets)
 
