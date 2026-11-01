@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Image from 'next/image'
 import { Search, X, Plus, Loader2, Dumbbell, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ExerciseMeta } from '@/lib/exercises'
+import { normalizeExdbEquipment } from '@/lib/ymove/hierarchy-scorer'
 
 // ── ExerciseDB mode ───────────────────────────────────────────────────────────
 
@@ -55,6 +56,14 @@ const YMOVE_EQUIPMENT: { id: string; label: string }[] = [
   { id: 'trap_bar',   label: 'Trap Bar' },
 ]
 
+// Re-export normalizeExdbEquipment under the picker's public name so callers
+// (including tests) have a stable import point.  The canonical implementation
+// lives in lib/ymove/hierarchy-scorer which has zero server-only dependencies
+// and is safe to import from client components.
+export { normalizeExdbEquipment as exdbToEqFamily }
+
+const YMOVE_PAGE_SIZE = 20
+
 interface YmoveItem extends ExerciseMeta {
   source: 'ymove'
   ymoveId: string
@@ -69,8 +78,17 @@ interface Props {
   onClose: () => void
   selectedIds?: Set<string>
   title?: string
-  /** Pre-restrict to exercises available in the given equipment profile (ExerciseDB mode only) */
-  equipmentProfileIds?: Set<string>
+  /**
+   * Raw ExerciseDB equipment strings from the user's active equipment profile
+   * (e.g. ['barbell', 'dumbbell', 'cable']).  When provided the picker starts in
+   * "Your gym" filtered mode — only exercises whose eqFamily maps to a profile
+   * equipment are shown.  A "Browse all" toggle lets the user see everything.
+   * YMove mode only; ignored in ExerciseDB mode.
+   *
+   * Unknown equipment strings that do not map to a known EqFamily are silently
+   * excluded from the allowed set — they are never treated as "allow all".
+   */
+  activeEquipmentStrings?: string[]
 }
 
 export default function ExercisePicker({
@@ -78,7 +96,7 @@ export default function ExercisePicker({
   onClose,
   selectedIds,
   title = 'Add exercise',
-  equipmentProfileIds,
+  activeEquipmentStrings,
 }: Props) {
   const [ymoveMode, setYmoveMode] = useState<boolean | null>(null)
   const [q, setQ] = useState('')
@@ -93,6 +111,31 @@ export default function ExercisePicker({
   const [eqFamily, setEqFamily] = useState<string | null>(null)
   const [showEqFamily, setShowEqFamily] = useState(false)
 
+  // Pagination state (YMove mode only)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [loadingMore, setLoadingMore] = useState(false)
+
+  // Equipment profile filter (YMove mode only).
+  // Defaults to active when a profile is provided so the user sees their gym first.
+  const [profileFilterActive, setProfileFilterActive] = useState(
+    () => (activeEquipmentStrings?.length ?? 0) > 0,
+  )
+
+  // Derive the set of allowed EqFamily values from the profile strings.
+  // Bodyweight is always included as a baseline.
+  // Strings that don't map to a known EqFamily are dropped — not treated as
+  // "compatible with everything".
+  const allowedFamilies = useMemo<Set<string>>(() => {
+    if (!activeEquipmentStrings || activeEquipmentStrings.length === 0) return new Set()
+    const result = new Set<string>(['bodyweight'])
+    for (const eq of activeEquipmentStrings) {
+      const fam = normalizeExdbEquipment(eq.toLowerCase())
+      if (fam) result.add(fam)
+    }
+    return result
+  }, [activeEquipmentStrings])
+
   const [exercises, setExercises] = useState<ExerciseMeta[]>([])
   const [loading, setLoading] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -106,33 +149,72 @@ export default function ExercisePicker({
       .catch(() => setYmoveMode(false))
   }, [])
 
-  const searchYmove = useCallback(async (query: string, mov: string, eq: string | null) => {
-    setLoading(true)
+  /**
+   * Fetch YMove exercises for the given filters/page.
+   *
+   * - pg=1: replaces the results list (+ custom exercises fetched in parallel)
+   * - pg>1: appends to the existing list (Load More)
+   * - profileActive: when true and allowedFamilies is non-empty, sends
+   *   ?eqFamilies= to the API so every page has good density for the profile.
+   *   The explicit ?eqFamily= pill overrides the multi-family filter when set.
+   */
+  const searchYmove = useCallback(async (
+    query: string,
+    mov: string,
+    eq: string | null,
+    pg: number,
+    profileActive: boolean,
+  ) => {
+    const isFirstPage = pg === 1
+    if (isFirstPage) {
+      setLoading(true)
+      setPage(1)
+    } else {
+      setLoadingMore(true)
+    }
+
     try {
-      const params = new URLSearchParams({ q: query, limit: '60' })
+      const params = new URLSearchParams({ q: query, limit: String(YMOVE_PAGE_SIZE), page: String(pg) })
       if (mov !== 'all') params.set('movement', mov)
-      if (eq) params.set('eqFamily', eq)
+      if (eq) {
+        // Explicit pill selection — single-family filter takes precedence
+        params.set('eqFamily', eq)
+      } else if (profileActive && allowedFamilies.size > 0) {
+        // Multi-family profile filter — server-side for consistent page density
+        params.set('eqFamilies', [...allowedFamilies].join(','))
+      }
 
-      // Fetch ymove catalog and custom exercises in parallel
-      const [ymoveRes, customRes] = await Promise.all([
-        fetch(`/api/training/exercises/ymove?${params}`),
-        fetch(`/api/training/exercises?includeCustom=true&q=${encodeURIComponent(query)}&limit=20`),
-      ])
+      if (isFirstPage) {
+        // On first page: fetch catalog + custom exercises in parallel
+        const [ymoveRes, customRes] = await Promise.all([
+          fetch(`/api/training/exercises/ymove?${params}`),
+          fetch(`/api/training/exercises?includeCustom=true&q=${encodeURIComponent(query)}&limit=20`),
+        ])
 
-      const ymoveData = await ymoveRes.json() as { items: YmoveItem[] }
-      const customData = await customRes.json() as { exercises: ExerciseMeta[] }
+        const ymoveData = await ymoveRes.json() as { items: YmoveItem[]; total: number; pages: number }
+        const customData = await customRes.json() as { exercises: ExerciseMeta[] }
 
-      const ymoveItems = ymoveData.items ?? []
-      const customItems = (customData.exercises ?? []).filter(e => e.isCustom)
+        const ymoveItems = ymoveData.items ?? []
+        const customItems = (customData.exercises ?? []).filter(e => e.isCustom)
 
-      // Custom exercises first so they're always reachable without scrolling
-      setExercises([...customItems, ...ymoveItems])
+        setTotalPages(ymoveData.pages ?? 1)
+        setExercises([...customItems, ...ymoveItems])
+      } else {
+        // Load More: only fetch the next catalog page, append to existing list
+        const ymoveRes = await fetch(`/api/training/exercises/ymove?${params}`)
+        const ymoveData = await ymoveRes.json() as { items: YmoveItem[]; total: number; pages: number }
+
+        setTotalPages(ymoveData.pages ?? 1)
+        setPage(pg)
+        setExercises(prev => [...prev, ...(ymoveData.items ?? [])])
+      }
     } catch {
-      setExercises([])
+      if (isFirstPage) setExercises([])
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
-  }, [])
+  }, [allowedFamilies])
 
   const searchExdb = useCallback(async (query: string, bp: string, eq: string | null) => {
     setLoading(true)
@@ -142,34 +224,33 @@ export default function ExercisePicker({
       if (eq) params.set('equipment', eq)
       const res = await fetch(`/api/training/exercises?${params}`)
       const data = await res.json() as { exercises: ExerciseMeta[] }
-      let results = data.exercises ?? []
-      if (equipmentProfileIds) {
-        results = results.filter(e => equipmentProfileIds.has(e.id) || e.isCustom)
-      }
-      setExercises(results)
+      setExercises(data.exercises ?? [])
     } catch {
       setExercises([])
     } finally {
       setLoading(false)
     }
-  }, [equipmentProfileIds])
+  }, [])
 
   // Kick off initial search once the mode is known
   useEffect(() => {
     if (ymoveMode === null) return
     inputRef.current?.focus()
     if (ymoveMode) {
-      searchYmove('', 'all', null)
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      searchYmove('', 'all', null, 1, profileFilterActive)
     } else {
       searchExdb('', 'all', null)
     }
+    // profileFilterActive intentionally excluded — only the initial value matters here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ymoveMode, searchYmove, searchExdb])
 
   const handleQueryChange = (val: string) => {
     setQ(val)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (ymoveMode) {
-      debounceRef.current = setTimeout(() => searchYmove(val, movement, eqFamily), 250)
+      debounceRef.current = setTimeout(() => searchYmove(val, movement, eqFamily, 1, profileFilterActive), 250)
     } else {
       debounceRef.current = setTimeout(() => searchExdb(val, bodyPart, equipment), 250)
     }
@@ -190,12 +271,23 @@ export default function ExercisePicker({
   const handleMovement = (mov: string) => {
     setMovement(mov)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    searchYmove(q, mov, eqFamily)
+    searchYmove(q, mov, eqFamily, 1, profileFilterActive)
   }
   const handleEqFamily = (eq: string | null) => {
     setEqFamily(eq)
-    searchYmove(q, movement, eq)
+    searchYmove(q, movement, eq, 1, profileFilterActive)
   }
+  // Profile filter toggle — re-fetches page 1 with the new filter state
+  const handleProfileToggle = (active: boolean) => {
+    setProfileFilterActive(active)
+    searchYmove(q, movement, eqFamily, 1, active)
+  }
+  // Load More — appends the next catalog page
+  const handleLoadMore = () => {
+    searchYmove(q, movement, eqFamily, page + 1, profileFilterActive)
+  }
+
+  const hasMore = ymoveMode === true && page < totalPages && !loading
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-zinc-950 md:inset-auto md:left-1/2 md:top-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-[560px] md:max-h-[80vh] md:rounded-2xl md:border md:border-zinc-200 md:dark:border-zinc-800 md:shadow-2xl">
@@ -309,6 +401,35 @@ export default function ExercisePicker({
 
       {ymoveMode === true && (
         <>
+          {/* Equipment profile toggle — only shown when a profile is provided */}
+          {allowedFamilies.size > 0 && (
+            <div className="px-4 pb-1 shrink-0 flex items-center gap-2">
+              <span className="text-xs text-zinc-400 shrink-0">Show:</span>
+              <button
+                onClick={() => handleProfileToggle(true)}
+                className={cn(
+                  'px-4 min-h-[44px] rounded-full text-xs font-semibold transition-colors',
+                  profileFilterActive
+                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                )}
+              >
+                Your gym
+              </button>
+              <button
+                onClick={() => handleProfileToggle(false)}
+                className={cn(
+                  'px-4 min-h-[44px] rounded-full text-xs font-semibold transition-colors',
+                  !profileFilterActive
+                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                )}
+              >
+                Browse all
+              </button>
+            </div>
+          )}
+
           {/* Movement family pills */}
           <div className="px-4 pb-1 shrink-0 overflow-x-auto scrollbar-none">
             <div className="flex gap-1.5 w-max">
@@ -399,77 +520,99 @@ export default function ExercisePicker({
             <div className="size-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
               <Dumbbell className="size-5 text-zinc-400" />
             </div>
-            <p className="text-sm text-zinc-400">No exercises found</p>
+            <p className="text-sm text-zinc-400">
+              {ymoveMode && profileFilterActive && allowedFamilies.size > 0
+                ? 'No exercises found for your gym equipment. Try Browse all.'
+                : 'No exercises found'}
+            </p>
           </div>
         ) : (
-          <ul className="divide-y divide-zinc-50 dark:divide-zinc-900">
-            {exercises.map(ex => {
-              const already = selectedIds?.has(ex.id)
-              const ymvItem = ymoveMode && 'thumbnailMediaId' in ex ? ex as YmoveItem : null
-              return (
-                <li key={ex.id}>
-                  <button
-                    onClick={() => !already && onSelect(ex)}
-                    disabled={already}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
-                      already
-                        ? 'opacity-40 cursor-default'
-                        : 'hover:bg-zinc-50 dark:hover:bg-zinc-900/50 active:bg-zinc-100 dark:active:bg-zinc-900',
-                    )}
-                  >
-                    {/* Thumbnail — YMove exercises only */}
-                    {ymvItem ? (
-                      ymvItem.thumbnailMediaId ? (
-                        <Image
-                          src={`/api/ymove/thumbnail/${ymvItem.thumbnailMediaId}?crop=square`}
-                          alt=""
-                          width={40}
-                          height={40}
-                          unoptimized
-                          className="size-10 rounded-lg object-cover shrink-0 bg-zinc-100 dark:bg-zinc-800"
-                        />
-                      ) : (
-                        <div className="size-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
-                          <Dumbbell className="size-4 text-zinc-400" />
+          <>
+            <ul className="divide-y divide-zinc-50 dark:divide-zinc-900">
+              {exercises.map(ex => {
+                const already = selectedIds?.has(ex.id)
+                const ymvItem = ymoveMode && 'thumbnailMediaId' in ex ? ex as YmoveItem : null
+                return (
+                  <li key={ex.id}>
+                    <button
+                      onClick={() => !already && onSelect(ex)}
+                      disabled={already}
+                      className={cn(
+                        'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
+                        already
+                          ? 'opacity-40 cursor-default'
+                          : 'hover:bg-zinc-50 dark:hover:bg-zinc-900/50 active:bg-zinc-100 dark:active:bg-zinc-900',
+                      )}
+                    >
+                      {/* Thumbnail — YMove exercises only */}
+                      {ymvItem ? (
+                        ymvItem.thumbnailMediaId ? (
+                          <Image
+                            src={`/api/ymove/thumbnail/${ymvItem.thumbnailMediaId}?crop=square`}
+                            alt=""
+                            width={40}
+                            height={40}
+                            unoptimized
+                            loading="lazy"
+                            className="size-10 rounded-lg object-cover shrink-0 bg-zinc-100 dark:bg-zinc-800"
+                          />
+                        ) : (
+                          <div className="size-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                            <Dumbbell className="size-4 text-zinc-400" />
+                          </div>
+                        )
+                      ) : null}
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
+                            {ex.name}
+                          </span>
+                          {ex.isCustom && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-wide shrink-0">
+                              Mine
+                            </span>
+                          )}
+                          {ymvItem?.hasVideo && !ex.isCustom && (
+                            <span className="px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[10px] font-medium shrink-0">
+                              Video
+                            </span>
+                          )}
                         </div>
-                      )
-                    ) : null}
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
-                          {ex.name}
-                        </span>
-                        {ex.isCustom && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-wide shrink-0">
-                            Mine
-                          </span>
-                        )}
-                        {ymvItem?.hasVideo && !ex.isCustom && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[10px] font-medium shrink-0">
-                            Video
-                          </span>
-                        )}
+                        <p className="text-xs text-zinc-400 capitalize mt-0.5">
+                          {ex.bodyPart}
+                          {ex.equipment && ex.equipment !== 'bodyweight' && ex.equipment !== 'unknown'
+                            ? ` · ${ex.equipment}`
+                            : ''}
+                        </p>
                       </div>
-                      <p className="text-xs text-zinc-400 capitalize mt-0.5">
-                        {ex.bodyPart}
-                        {ex.equipment && ex.equipment !== 'bodyweight' && ex.equipment !== 'unknown'
-                          ? ` · ${ex.equipment}`
-                          : ''}
-                      </p>
-                    </div>
 
-                    {already ? (
-                      <span className="text-xs text-zinc-400 shrink-0">Added</span>
-                    ) : (
-                      <Plus className="size-4 text-zinc-400 shrink-0" />
-                    )}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+                      {already ? (
+                        <span className="text-xs text-zinc-400 shrink-0">Added</span>
+                      ) : (
+                        <Plus className="size-4 text-zinc-400 shrink-0" />
+                      )}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+
+            {/* Load More — YMove pagination */}
+            {hasMore && (
+              <div className="py-4 flex justify-center">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="flex items-center gap-2 px-5 min-h-[44px] rounded-full text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50"
+                >
+                  {loadingMore
+                    ? <><Loader2 className="size-3 animate-spin" /> Loading…</>
+                    : 'Load more'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 

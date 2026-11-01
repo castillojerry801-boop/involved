@@ -859,7 +859,21 @@ export default function WorkoutPage() {
   const [restTimer, setRestTimer] = useState<{ seconds: number } | null>(null)
   const [showAddExercise, setShowAddExercise] = useState(false)
   const [addingExercise, setAddingExercise] = useState(false)
+  const [activeEquipmentStrings, setActiveEquipmentStrings] = useState<string[]>([])
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Load the user's active equipment profile once so the exercise picker can
+  // pre-filter to compatible exercises.  Non-critical: failure leaves the
+  // picker in "Browse all" mode with no equipment pre-filtering.
+  useEffect(() => {
+    fetch('/api/equipment-profiles')
+      .then(r => r.ok ? r.json() as Promise<{ profiles: Array<{ isActive: boolean; items: Array<{ equipment: string }> }> }> : null)
+      .then(d => {
+        const active = d?.profiles?.find(p => p.isActive)
+        if (active) setActiveEquipmentStrings(active.items.map(i => i.equipment))
+      })
+      .catch(() => null)
+  }, [])
 
   const fetchWorkout = useCallback(() => {
     fetch(`/api/workouts/${id}`)
@@ -1109,6 +1123,7 @@ export default function WorkoutPage() {
             onSelect={handleAddExercise}
             onClose={() => setShowAddExercise(false)}
             selectedIds={new Set(workout.exercises.map(e => e.exerciseId))}
+            activeEquipmentStrings={activeEquipmentStrings.length > 0 ? activeEquipmentStrings : undefined}
           />
         </>
       )}

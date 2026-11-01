@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 import { useRouter } from 'next/navigation'
@@ -11,11 +12,12 @@ import { cn } from '@/lib/utils'
 // ─── Local types ──────────────────────────────────────────────────────────────
 
 interface ExerciseResult {
-  id:   string
-  name: string
-  bodyPart: string
+  id:        string
+  name:      string
+  bodyPart:  string
   equipment: string
-  target: string
+  target:    string
+  thumbnailMediaId?: string | null  // populated for YMove exercises
 }
 
 interface SetDraft {
@@ -427,27 +429,53 @@ function ExerciseCard({
 }
 
 // ─── ExercisePicker ───────────────────────────────────────────────────────────
+// Inline typeahead with YMove-first search when YMOVE_CATALOG_ENABLED=true.
+// Probes /api/training/exercises/config once to determine mode without
+// requiring a NEXT_PUBLIC_ env var.
 
 function ExercisePicker({ onSelect }: { onSelect: (ex: ExerciseResult) => void }) {
-  const [query, setQuery]           = useState('')
-  const [results, setResults]       = useState<ExerciseResult[]>([])
-  const [searching, setSearching]   = useState(false)
-  const [open, setOpen]             = useState(false)
-  const debounceRef                 = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [query, setQuery]         = useState('')
+  const [results, setResults]     = useState<ExerciseResult[]>([])
+  const [searching, setSearching] = useState(false)
+  const [open, setOpen]           = useState(false)
+  const [ymoveMode, setYmoveMode] = useState<boolean | null>(null)
+  const debounceRef               = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Probe once on mount; falls back to ExDB on failure
+  useEffect(() => {
+    fetch('/api/training/exercises/config')
+      .then(r => r.json())
+      .then((d: { ymove: boolean }) => setYmoveMode(d.ymove === true))
+      .catch(() => setYmoveMode(false))
+  }, [])
 
   function handleQuery(val: string) {
     setQuery(val)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (!val.trim()) { setResults([]); setOpen(false); return }
+
     debounceRef.current = setTimeout(async () => {
       setSearching(true)
-      const r = await fetch(`/api/training/exercises?q=${encodeURIComponent(val)}&limit=20`)
-      if (r.ok) {
-        const d = await r.json() as { exercises: ExerciseResult[] }
-        setResults(d.exercises ?? [])
-        setOpen(true)
+      try {
+        // ymoveMode=null means config probe hasn't resolved yet — use ExDB
+        if (ymoveMode === true) {
+          const r = await fetch(`/api/training/exercises/ymove?q=${encodeURIComponent(val)}&limit=20`)
+          if (r.ok) {
+            const d = await r.json() as { items: ExerciseResult[] }
+            setResults(d.items ?? [])
+            setOpen(true)
+          }
+        } else {
+          const r = await fetch(`/api/training/exercises?q=${encodeURIComponent(val)}&limit=20`)
+          if (r.ok) {
+            const d = await r.json() as { exercises: ExerciseResult[] }
+            setResults(d.exercises ?? [])
+            setOpen(true)
+          }
+        }
+      } finally {
+        setSearching(false)
       }
-      setSearching(false)
     }, 300)
   }
 
@@ -477,8 +505,20 @@ function ExercisePicker({ onSelect }: { onSelect: (ex: ExerciseResult) => void }
             <button
               key={ex.id}
               onClick={() => select(ex)}
-              className="flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-50 dark:border-zinc-800 last:border-0"
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-50 dark:border-zinc-800 last:border-0"
             >
+              {/* Thumbnail for YMove results */}
+              {ymoveMode && ex.thumbnailMediaId ? (
+                <Image
+                  src={`/api/ymove/thumbnail/${ex.thumbnailMediaId}?crop=square`}
+                  alt=""
+                  width={32}
+                  height={32}
+                  unoptimized
+                  loading="lazy"
+                  className="size-8 rounded-md object-cover shrink-0 bg-zinc-100 dark:bg-zinc-800"
+                />
+              ) : null}
               <div>
                 <p className="text-sm font-medium text-zinc-900 dark:text-white">{ex.name}</p>
                 <p className="text-xs text-zinc-400 capitalize">{ex.bodyPart} · {ex.equipment}</p>

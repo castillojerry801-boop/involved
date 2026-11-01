@@ -30,6 +30,8 @@ interface TemplateExercise {
 interface EquipmentProfile {
   id: string
   name: string
+  isActive: boolean
+  items: { equipment: string }[]
 }
 
 function defaultSet(n: number): TemplateSet {
@@ -102,6 +104,7 @@ export default function EditTemplatePage({ params }: { params: Promise<{ id: str
   const [equipmentProfileId, setEquipmentProfileId] = useState<string>('')
   const [exercises, setExercises] = useState<TemplateExercise[]>([])
   const [profiles, setProfiles] = useState<EquipmentProfile[]>([])
+  const [activeEquipmentStrings, setActiveEquipmentStrings] = useState<string[]>([])
   const [showPicker, setShowPicker] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -110,7 +113,7 @@ export default function EditTemplatePage({ params }: { params: Promise<{ id: str
   useEffect(() => {
     Promise.all([
       fetch(`/api/templates/${id}`).then(r => r.json() as Promise<{ template: { name: string; description: string | null; equipmentProfileId: string | null; exercises: Array<{ id: string; exerciseId: string; trackingType: string; restSeconds: number | null; exercise: ExerciseMeta | null; sets: Array<{ setNumber: number; setType: string; targetRepsMin: number | null; targetRepsMax: number | null; targetWeightKg: number | null; restSeconds: number | null }> }> } }>),
-      fetch('/api/training/equipment').then(r => r.json() as Promise<{ profiles: EquipmentProfile[] }>),
+      fetch('/api/equipment-profiles').then(r => r.ok ? r.json() as Promise<{ profiles: EquipmentProfile[] }> : { profiles: [] as EquipmentProfile[] }),
     ]).then(([td, ed]) => {
       const t = td.template
       setName(t.name)
@@ -126,7 +129,10 @@ export default function EditTemplatePage({ params }: { params: Promise<{ id: str
           ? ex.sets.map(s => ({ ...s, setType: s.setType as 'warmup' | 'working' | 'amrap' }))
           : [defaultSet(1), defaultSet(2), defaultSet(3)],
       })))
-      setProfiles(ed.profiles ?? [])
+      const list = ed.profiles ?? []
+      setProfiles(list)
+      const active = list.find(p => p.isActive)
+      if (active) setActiveEquipmentStrings(active.items.map(i => i.equipment))
     }).catch(() => setError('Failed to load template')).finally(() => setLoading(false))
   }, [id])
 
@@ -195,7 +201,11 @@ export default function EditTemplatePage({ params }: { params: Promise<{ id: str
       {showPicker && (
         <>
           <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setShowPicker(false)} />
-          <ExercisePicker onSelect={addExercise} onClose={() => setShowPicker(false)} />
+          <ExercisePicker
+            onSelect={addExercise}
+            onClose={() => setShowPicker(false)}
+            activeEquipmentStrings={activeEquipmentStrings.length > 0 ? activeEquipmentStrings : undefined}
+          />
         </>
       )}
 

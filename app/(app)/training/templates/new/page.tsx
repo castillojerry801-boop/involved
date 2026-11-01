@@ -30,6 +30,8 @@ interface TemplateExercise {
 interface EquipmentProfile {
   id: string
   name: string
+  isActive: boolean
+  items: { equipment: string }[]
 }
 
 function defaultSet(n: number): TemplateSet {
@@ -100,14 +102,20 @@ export default function NewTemplatePage() {
   const [equipmentProfileId, setEquipmentProfileId] = useState<string>('')
   const [exercises, setExercises] = useState<TemplateExercise[]>([])
   const [profiles, setProfiles] = useState<EquipmentProfile[]>([])
+  const [activeEquipmentStrings, setActiveEquipmentStrings] = useState<string[]>([])
   const [showPicker, setShowPicker] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch('/api/training/equipment')
-      .then(r => r.json() as Promise<{ profiles: EquipmentProfile[] }>)
-      .then(d => setProfiles(d.profiles ?? []))
+    fetch('/api/equipment-profiles')
+      .then(r => r.ok ? r.json() as Promise<{ profiles: EquipmentProfile[] }> : null)
+      .then(d => {
+        const list = d?.profiles ?? []
+        setProfiles(list)
+        const active = list.find(p => p.isActive)
+        if (active) setActiveEquipmentStrings(active.items.map(i => i.equipment))
+      })
       .catch(() => null)
   }, [])
 
@@ -175,7 +183,11 @@ export default function NewTemplatePage() {
       {showPicker && (
         <>
           <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setShowPicker(false)} />
-          <ExercisePicker onSelect={addExercise} onClose={() => setShowPicker(false)} />
+          <ExercisePicker
+            onSelect={addExercise}
+            onClose={() => setShowPicker(false)}
+            activeEquipmentStrings={activeEquipmentStrings.length > 0 ? activeEquipmentStrings : undefined}
+          />
         </>
       )}
 
