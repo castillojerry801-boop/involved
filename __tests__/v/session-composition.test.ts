@@ -93,17 +93,17 @@ describe('Scenario 1 — Intermediate push day with 2 exercises → SPARSE_SESSI
     ],
   }
 
-  it('fires SPARSE_SESSION for intermediate push day with 2 exercises', () => {
+  it('fires SPARSE_SESSION for intermediate push day with 2 exercises', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'intermediate', weeks: 12 })
     expect(issues.map(i => i.code)).toContain('SPARSE_SESSION')
   })
 
-  it('does not fire SPARSE_SESSION for a beginner', () => {
+  it('does not fire SPARSE_SESSION for a beginner', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'beginner', weeks: 12 })
     expect(issues.map(i => i.code)).not.toContain('SPARSE_SESSION')
   })
 
-  it('does not fire SPARSE_SESSION for a push day with 4+ exercises', () => {
+  it('does not fire SPARSE_SESSION for a push day with 4+ exercises', async () => {
     const draftFull: ProgramDraft = {
       ...draft,
       days: [
@@ -141,17 +141,17 @@ describe('Scenario 2 — Advanced push day with 3 exercises → ADVANCED_SHALLOW
     ],
   }
 
-  it('fires ADVANCED_SHALLOW_SESSION for advanced push day with 3 exercises', () => {
+  it('fires ADVANCED_SHALLOW_SESSION for advanced push day with 3 exercises', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'advanced', weeks: 8 })
     expect(issues.map(i => i.code)).toContain('ADVANCED_SHALLOW_SESSION')
   })
 
-  it('does not fire ADVANCED_SHALLOW_SESSION for intermediate', () => {
+  it('does not fire ADVANCED_SHALLOW_SESSION for intermediate', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'intermediate', weeks: 8 })
     expect(issues.map(i => i.code)).not.toContain('ADVANCED_SHALLOW_SESSION')
   })
 
-  it('does not fire for advanced push day with 5 exercises', () => {
+  it('does not fire for advanced push day with 5 exercises', async () => {
     const draftFull: ProgramDraft = {
       ...draft,
       days: [
@@ -191,12 +191,12 @@ describe('Scenario 3 — Upper full body day with only push → UNIPOLAR_UPPER_S
     ],
   }
 
-  it('fires UNIPOLAR_UPPER_SESSION when upper day has only push, no pull', () => {
+  it('fires UNIPOLAR_UPPER_SESSION when upper day has only push, no pull', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'intermediate', weeks: 8 })
     expect(issues.map(i => i.code)).toContain('UNIPOLAR_UPPER_SESSION')
   })
 
-  it('does not fire UNIPOLAR_UPPER_SESSION when upper day has both push and pull', () => {
+  it('does not fire UNIPOLAR_UPPER_SESSION when upper day has both push and pull', async () => {
     const balanced: ProgramDraft = {
       ...draft,
       days: [
@@ -212,7 +212,7 @@ describe('Scenario 3 — Upper full body day with only push → UNIPOLAR_UPPER_S
     expect(issues.map(i => i.code)).not.toContain('UNIPOLAR_UPPER_SESSION')
   })
 
-  it('does not fire for a dedicated push day (PPL — push-only is intentional)', () => {
+  it('does not fire for a dedicated push day (PPL — push-only is intentional)', async () => {
     const pushOnly: ProgramDraft = {
       ...draft,
       days: [
@@ -250,7 +250,7 @@ describe('Scenario 4 — Upper full body day with only pull → UNIPOLAR_UPPER_S
     ],
   }
 
-  it('fires UNIPOLAR_UPPER_SESSION when upper day has only pull, no push', () => {
+  it('fires UNIPOLAR_UPPER_SESSION when upper day has only pull, no push', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'intermediate', weeks: 8 })
     expect(issues.map(i => i.code)).toContain('UNIPOLAR_UPPER_SESSION')
   })
@@ -274,19 +274,19 @@ describe('Scenario 5 — Beginner with failure_allowed=true → BEGINNER_FAILURE
     ],
   }
 
-  it('fires BEGINNER_FAILURE_OVERUSE as error for beginner with failure_allowed', () => {
+  it('fires BEGINNER_FAILURE_OVERUSE as error for beginner with failure_allowed', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'beginner', weeks: 4 })
     const failure = issues.find(i => i.code === 'BEGINNER_FAILURE_OVERUSE')
     expect(failure).toBeDefined()
     expect(failure?.severity).toBe('error')
   })
 
-  it('does not fire BEGINNER_FAILURE_OVERUSE for intermediate with failure_allowed on one exercise', () => {
+  it('does not fire BEGINNER_FAILURE_OVERUSE for intermediate with failure_allowed on one exercise', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'intermediate', weeks: 4 })
     expect(issues.map(i => i.code)).not.toContain('BEGINNER_FAILURE_OVERUSE')
   })
 
-  it('does not fire when no exercises have failure_allowed', () => {
+  it('does not fire when no exercises have failure_allowed', async () => {
     const clean: ProgramDraft = {
       ...draft,
       days: [
@@ -325,12 +325,12 @@ describe('Scenario 6 — All exercises same progression_model → UNIFORM_PROGRE
     ],
   }
 
-  it('fires UNIFORM_PROGRESSION_MODEL when all exercises use "linear"', () => {
+  it('fires UNIFORM_PROGRESSION_MODEL when all exercises use "linear"', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'intermediate', weeks: 8 })
     expect(issues.map(i => i.code)).toContain('UNIFORM_PROGRESSION_MODEL')
   })
 
-  it('does not fire when exercises use mixed progression models', () => {
+  it('does not fire when exercises use mixed progression models', async () => {
     const mixed: ProgramDraft = {
       ...draft,
       days: [
@@ -346,7 +346,7 @@ describe('Scenario 6 — All exercises same progression_model → UNIFORM_PROGRE
     expect(issues.map(i => i.code)).not.toContain('UNIFORM_PROGRESSION_MODEL')
   })
 
-  it('does not fire when fewer than 4 exercises have a model set', () => {
+  it('does not fire when fewer than 4 exercises have a model set', async () => {
     const sparse: ProgramDraft = {
       ...draft,
       days: [
@@ -385,12 +385,12 @@ describe('Scenario 7 — Intermediate with >50% failure_allowed → EXCESSIVE_FA
     ],
   }
 
-  it('fires EXCESSIVE_FAILURE when >50% of exercises have failure_allowed', () => {
+  it('fires EXCESSIVE_FAILURE when >50% of exercises have failure_allowed', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'intermediate', weeks: 8 })
     expect(issues.map(i => i.code)).toContain('EXCESSIVE_FAILURE')
   })
 
-  it('does not fire when failure is only on isolations (≤50%)', () => {
+  it('does not fire when failure is only on isolations (≤50%)', async () => {
     const reasonable: ProgramDraft = {
       ...draft,
       days: [
@@ -407,7 +407,7 @@ describe('Scenario 7 — Intermediate with >50% failure_allowed → EXCESSIVE_FA
     expect(issues.map(i => i.code)).not.toContain('EXCESSIVE_FAILURE')
   })
 
-  it('does not fire EXCESSIVE_FAILURE for beginners (they get BEGINNER_FAILURE_OVERUSE instead)', () => {
+  it('does not fire EXCESSIVE_FAILURE for beginners (they get BEGINNER_FAILURE_OVERUSE instead)', async () => {
     // Beginner check already covers this — EXCESSIVE_FAILURE should not double-fire for beginners
     const issues = validateProgramQuality(draft, { fitnessLevel: 'beginner', weeks: 8 })
     expect(issues.map(i => i.code)).not.toContain('EXCESSIVE_FAILURE')
@@ -435,12 +435,12 @@ describe('Scenario 8 — Superset without sequencing_group → SUPERSET_MISSING_
     ],
   }
 
-  it('fires SUPERSET_MISSING_GROUP when superset mode is set without sequencing_group', () => {
+  it('fires SUPERSET_MISSING_GROUP when superset mode is set without sequencing_group', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'intermediate', weeks: 6 })
     expect(issues.map(i => i.code)).toContain('SUPERSET_MISSING_GROUP')
   })
 
-  it('does not fire when superset exercises have sequencing_group set', () => {
+  it('does not fire when superset exercises have sequencing_group set', async () => {
     const withGroup: ProgramDraft = {
       ...draft,
       days: [
@@ -455,7 +455,7 @@ describe('Scenario 8 — Superset without sequencing_group → SUPERSET_MISSING_
     expect(issues.map(i => i.code)).not.toContain('SUPERSET_MISSING_GROUP')
   })
 
-  it('does not fire for "straight" or "alternating" mode without sequencing_group', () => {
+  it('does not fire for "straight" or "alternating" mode without sequencing_group', async () => {
     const alternating: ProgramDraft = {
       ...draft,
       days: [
@@ -486,13 +486,13 @@ describe('Scenario 9 — target_rir out of range → validateProgramDraft error'
     ],
   }
 
-  it('rejects target_rir = 6 (must be 0–5)', () => {
-    const result = validateProgramDraft(draftWithBadRIR)
+  it('rejects target_rir = 6 (must be 0–5)', async () => {
+    const result = await validateProgramDraft(draftWithBadRIR)
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.includes('target_rir'))).toBe(true)
   })
 
-  it('accepts target_rir = 0 (failure)', () => {
+  it('accepts target_rir = 0 (failure)', async () => {
     const draft: ProgramDraft = {
       program_name: 'Valid RIR Program',
       days: [
@@ -505,11 +505,11 @@ describe('Scenario 9 — target_rir out of range → validateProgramDraft error'
         },
       ],
     }
-    const result = validateProgramDraft(draft)
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(true)
   })
 
-  it('accepts target_rir = 3', () => {
+  it('accepts target_rir = 3', async () => {
     const draft: ProgramDraft = {
       program_name: 'Valid RIR Program',
       days: [
@@ -522,7 +522,7 @@ describe('Scenario 9 — target_rir out of range → validateProgramDraft error'
         },
       ],
     }
-    const result = validateProgramDraft(draft)
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(true)
   })
 })
@@ -530,7 +530,7 @@ describe('Scenario 9 — target_rir out of range → validateProgramDraft error'
 // ─── Scenario 10 — invalid progression_model → validation error ───────────────
 
 describe('Scenario 10 — invalid progression_model → validateProgramDraft error', () => {
-  it('rejects progression_model = "invalid_value"', () => {
+  it('rejects progression_model = "invalid_value"', async () => {
     const draft: ProgramDraft = {
       program_name: 'Bad Progression Model',
       days: [
@@ -545,12 +545,12 @@ describe('Scenario 10 — invalid progression_model → validateProgramDraft err
         },
       ],
     }
-    const result = validateProgramDraft(draft)
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.includes('progression_model'))).toBe(true)
   })
 
-  it('accepts all valid progression_model values', () => {
+  it('accepts all valid progression_model values', async () => {
     const validModels = ['linear', 'double_progression', 'rep_progression', 'set_progression', 'percentage_rpe', 'duration_distance', 'auto']
     for (const model of validModels) {
       const draft: ProgramDraft = {
@@ -565,7 +565,7 @@ describe('Scenario 10 — invalid progression_model → validateProgramDraft err
           },
         ],
       }
-      const result = validateProgramDraft(draft)
+      const result = await validateProgramDraft(draft)
       expect(result.valid, `Expected valid for progression_model=${model}`).toBe(true)
     }
   })
@@ -574,7 +574,7 @@ describe('Scenario 10 — invalid progression_model → validateProgramDraft err
 // ─── Scenario 11 — sequencing_group = 0 → validation error ───────────────────
 
 describe('Scenario 11 — sequencing_group = 0 → validateProgramDraft error', () => {
-  it('rejects sequencing_group = 0 (must be a positive integer)', () => {
+  it('rejects sequencing_group = 0 (must be a positive integer)', async () => {
     const draft: ProgramDraft = {
       program_name: 'Bad Sequencing Group',
       days: [
@@ -587,12 +587,12 @@ describe('Scenario 11 — sequencing_group = 0 → validateProgramDraft error', 
         },
       ],
     }
-    const result = validateProgramDraft(draft)
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.includes('sequencing_group'))).toBe(true)
   })
 
-  it('accepts sequencing_group = 1', () => {
+  it('accepts sequencing_group = 1', async () => {
     const draft: ProgramDraft = {
       program_name: 'Valid Superset',
       days: [
@@ -606,7 +606,7 @@ describe('Scenario 11 — sequencing_group = 0 → validateProgramDraft error', 
         },
       ],
     }
-    const result = validateProgramDraft(draft)
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(true)
   })
 })
@@ -688,19 +688,19 @@ describe('Scenario 12 — Clean advanced push day → no new quality checks fire
     'SUPERSET_MISSING_GROUP',
   ]
 
-  it('does not fire any new session composition checks for a well-formed advanced push day', () => {
+  it('does not fire any new session composition checks for a well-formed advanced push day', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'advanced', weeks: 8 })
     const newIssues = issues.filter(i => NEW_CHECKS.includes(i.code))
     expect(newIssues).toHaveLength(0)
   })
 
-  it('passes validateProgramDraft without errors', () => {
-    const result = validateProgramDraft(draft)
+  it('passes validateProgramDraft without errors', async () => {
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
   })
 
-  it('includes SUPERSET_MISSING_GROUP warning in warnings when superset group is provided', () => {
+  it('includes SUPERSET_MISSING_GROUP warning in warnings when superset group is provided', async () => {
     // Verify it does NOT fire when all superset exercises have sequencing_group
     const issues = validateProgramQuality(draft, { fitnessLevel: 'advanced', weeks: 8 })
     expect(issues.map(i => i.code)).not.toContain('SUPERSET_MISSING_GROUP')

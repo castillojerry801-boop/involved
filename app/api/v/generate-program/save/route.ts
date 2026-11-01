@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     ? { ...body.draft, program_name: body.name }
     : body.draft
 
-  const validation = validateProgramDraft(draftToSave)
+  const validation = await validateProgramDraft(draftToSave, user.id, prisma)
   if (!validation.valid || !validation.program) {
     return Response.json({ error: 'Invalid program data', details: validation.errors }, { status: 400 })
   }

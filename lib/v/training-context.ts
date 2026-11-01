@@ -279,7 +279,7 @@ export async function buildVTrainingContext(userId: string): Promise<VTrainingCo
   const ymvRows = ymvBareIds.length > 0
     ? await prisma.ymoveExerciseCatalog.findMany({
         where: { ymoveId: { in: ymvBareIds } },
-        select: { ymoveId: true, name: true, equipment: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
+        select: { ymoveId: true, name: true, equipment: true, category: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
       }).catch(() => [])
     : []
   const ymvMetaMap = new Map<string, ExerciseMeta>(

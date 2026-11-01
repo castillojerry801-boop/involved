@@ -22,10 +22,11 @@ const MAX_LIMIT = 100
  * shape with ymv:-prefixed IDs.
  *
  * Query params:
- *   ?q=bench         — full-text name search (case-insensitive contains)
- *   ?equipment=barbell — exact equipment string match (YMove API value)
+ *   ?q=bench              — full-text name search (case-insensitive contains)
+ *   ?equipment=barbell    — exact equipment string match (YMove API value)
  *   ?movement=fam_chest_press — movement family filter (derived at query time)
- *   ?page=1&limit=50 — pagination (max 100 per page)
+ *   ?eqFamily=barbell     — normalised equipment family filter (derived at query time)
+ *   ?page=1&limit=50      — pagination (max 100 per page)
  *
  * Response shape (per item):
  *   id            — "ymv:<ymoveId>"
@@ -53,6 +54,7 @@ export async function GET(req: NextRequest) {
   const q         = (sp.get('q') ?? '').trim()
   const equipment = (sp.get('equipment') ?? '').trim()
   const movement  = (sp.get('movement') ?? '').trim()
+  const eqFamily  = (sp.get('eqFamily') ?? '').trim()
   const page      = Math.max(1, parseInt(sp.get('page') ?? '1', 10))
   const limit     = Math.min(Math.max(1, parseInt(sp.get('limit') ?? '50', 10)), MAX_LIMIT)
   const offset    = (page - 1) * limit
@@ -98,9 +100,10 @@ export async function GET(req: NextRequest) {
         category:  row.category,
       })
 
-      // Apply movement family filter after classification (can't filter in SQL
-      // because movementFamilyId is computed, not stored)
+      // Post-classification filters (movementFamilyId and eqFamily are computed,
+      // not stored, so they can't be applied in the SQL WHERE clause)
       if (movement && cls.movementFamilyId !== movement) return null
+      if (eqFamily && cls.eqFamily !== eqFamily) return null
 
       return {
         id:               formatYmvId(row.ymoveId),
@@ -108,8 +111,12 @@ export async function GET(req: NextRequest) {
         bodyPart:         muscleGroupToBodyPart(row.primaryMuscleGroup),
         equipment:        row.equipment ?? 'unknown',
         target:           row.primaryMuscleGroup ?? 'unknown',
+        secondaryMuscles: [] as string[],
+        instructions:     [] as string[],
+        description:      '',
         source:           'ymove' as const,
         ymoveId:          row.ymoveId,
+        ymoveCategory:    row.category ?? null,
         thumbnailMediaId: row.thumbnailMediaId ?? null,
         hasVideo:         row.hasVideo,
         movementFamilyId: cls.movementFamilyId,

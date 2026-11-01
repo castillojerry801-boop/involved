@@ -7,11 +7,12 @@ import { coachModel, V_CHAT_MODEL, V_PROGRAM_MODEL, V_ESCALATION_MODEL, validate
 import { getAiLimit } from '@/lib/subscription/config'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { buildCoachContext, contextToSystemSnippet } from '@/lib/ai/context'
-import { SEARCH_EXERCISES_TOOL, executeExerciseSearch } from '@/lib/ai/tools/exercises'
+import { SEARCH_EXERCISES_TOOL, executeExerciseSearchAsync } from '@/lib/ai/tools/exercises'
+import type { ExerciseSearchParams } from '@/lib/ai/tools/exercises'
 import { PROPOSE_WORKOUT_TOOL, validateWorkoutDraft } from '@/lib/ai/tools/workout'
-import type { WorkoutDraft } from '@/lib/ai/tools/workout'
+import type { WorkoutDraft, WorkoutValidationResult } from '@/lib/ai/tools/workout'
 import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/program'
-import type { ProgramDraft } from '@/lib/ai/tools/program'
+import type { ProgramDraft, ProgramValidationResult } from '@/lib/ai/tools/program'
 import { validateProgramQuality } from '@/lib/v/program-quality'
 import { extractEquipmentFromConversation, buildEquipmentCapabilitySummary } from '@/lib/v/equipment-normalize'
 import { parseProgramIntake, missingProgramContext, buildMissingContextPrompt } from '@/lib/v/program-intake'
@@ -314,8 +315,8 @@ export async function POST(req: NextRequest) {
       ...trimMessageHistory(body.messages).map(m => ({ role: m.role, content: m.content } as ChatMessage)),
     ]
 
-    let pendingWorkout: ReturnType<typeof validateWorkoutDraft> | null = null
-    let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
+    let pendingWorkout: WorkoutValidationResult | null = null
+    let pendingProgram: ProgramValidationResult | null = null
     const MAX_ROUNDS = 12
     let qualityRetries = 0
     // Freeform guard state — tracks whether the model attempted program generation
@@ -527,7 +528,7 @@ export async function POST(req: NextRequest) {
       let searchTurn = 0
       for (const step of plan) {
         searchTurn++
-        const raw = executeExerciseSearch({ movementPattern: step.pattern, limit: RAW_LIMIT })
+        const raw = await executeExerciseSearchAsync({ movementPattern: step.pattern, limit: RAW_LIMIT }, prisma)
         const filtered = filterCandidatesByEquipment(raw, allowedEquipment).slice(0, step.core ? 8 : 5)
         const added = addCandidates(candidatePool, filtered)
         console.log('[V-search-turn]', {
@@ -719,14 +720,14 @@ export async function POST(req: NextRequest) {
             // its searching deterministically before the loop. tool_choice forces
             // propose_program in the program draft phase, so this never fires there.
             hadSearchCalls = true
-            const params = JSON.parse(fn.arguments) as Parameters<typeof executeExerciseSearch>[0]
+            const params = JSON.parse(fn.arguments) as ExerciseSearchParams
             const normalizedParams = { ...params, limit: Math.min(params.limit ?? 15, 20) }
             const cacheKey = JSON.stringify(normalizedParams)
             if (searchCache.has(cacheKey)) {
               result = searchCache.get(cacheKey)!
             } else {
               emitRaw({ type: 'status', message: 'Searching exercises...' })
-              const found = executeExerciseSearch(normalizedParams)
+              const found = await executeExerciseSearchAsync(normalizedParams, prisma)
               result = found.length > 0
                 ? JSON.stringify(found)
                 : JSON.stringify({ message: EMPTY_SEARCH_RESULT })
@@ -735,7 +736,7 @@ export async function POST(req: NextRequest) {
 
           } else if (fn.name === 'propose_workout') {
             const draft = JSON.parse(fn.arguments) as WorkoutDraft
-            const validation = validateWorkoutDraft(draft)
+            const validation = await validateWorkoutDraft(draft, user.id, prisma)
             if (validation.valid) {
               pendingWorkout = validation
               result = JSON.stringify({ status: 'valid', message: 'Workout validated. Present it to the user.' })
@@ -782,9 +783,9 @@ export async function POST(req: NextRequest) {
               draftDays: draft.days?.length,
             })
 
-            let validation: ReturnType<typeof validateProgramDraft>
+            let validation: ProgramValidationResult
             try {
-              validation = validateProgramDraft(draft, { allowedEquipment })
+              validation = await validateProgramDraft(draft, user.id, prisma, { allowedEquipment })
             } catch (valErr) {
               console.error('[V-propose-program-validate-error]', valErr)
               result = JSON.stringify({ status: 'invalid', errors: ['Internal validation error — please revise the draft and try again.'] })

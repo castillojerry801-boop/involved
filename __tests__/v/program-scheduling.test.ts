@@ -69,14 +69,14 @@ describe('Scenario 1 — Explicit weekday schedule Mon/Tue/Thu/Sat', () => {
     ],
   }
 
-  it('validates successfully', () => {
-    const result = validateProgramDraft(draft)
+  it('validates successfully', async () => {
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
   })
 
-  it('preserves weekday values through validation', () => {
-    const result = validateProgramDraft(draft)
+  it('preserves weekday values through validation', async () => {
+    const result = await validateProgramDraft(draft)
     const days = result.program!.days
     expect(days[0].weekday).toBe(0)  // Monday
     expect(days[1].weekday).toBe(1)  // Tuesday
@@ -84,8 +84,8 @@ describe('Scenario 1 — Explicit weekday schedule Mon/Tue/Thu/Sat', () => {
     expect(days[3].weekday).toBe(5)  // Saturday
   })
 
-  it('has no Wednesday assignment (rest day gap)', () => {
-    const result = validateProgramDraft(draft)
+  it('has no Wednesday assignment (rest day gap)', async () => {
+    const result = await validateProgramDraft(draft)
     const weekdays = result.program!.days.map(d => d.weekday)
     expect(weekdays).not.toContain(2)
   })
@@ -104,18 +104,18 @@ describe('Scenario 2 — Rest day (Wednesday=2 is absent)', () => {
     ],
   }
 
-  it('validates successfully', () => {
-    const result = validateProgramDraft(draft)
+  it('validates successfully', async () => {
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(true)
   })
 
-  it('no day has weekday=2 (Wednesday)', () => {
-    const result = validateProgramDraft(draft)
+  it('no day has weekday=2 (Wednesday)', async () => {
+    const result = await validateProgramDraft(draft)
     const weekdays = result.program!.days.map(d => d.weekday)
     expect(weekdays.includes(2)).toBe(false)
   })
 
-  it('resolveScheduledDay returns null for Wednesday', () => {
+  it('resolveScheduledDay returns null for Wednesday', async () => {
     const schedulableDays: SchedulableProgramDay[] = [
       { id: '1', name: 'Upper',     weekday: 0, exerciseCount: 4 },
       { id: '2', name: 'Lower',     weekday: 1, exerciseCount: 4 },
@@ -128,7 +128,7 @@ describe('Scenario 2 — Rest day (Wednesday=2 is absent)', () => {
 // ─── Scenario 3 — Duplicate weekday is rejected ──────────────────────────────
 
 describe('Scenario 3 — Duplicate weekday assignment is rejected', () => {
-  it('rejects two days both scheduled on Tuesday (weekday=1)', () => {
+  it('rejects two days both scheduled on Tuesday (weekday=1)', async () => {
     const draft: ProgramDraft = {
       program_name: 'Bad Schedule',
       days: [
@@ -136,27 +136,27 @@ describe('Scenario 3 — Duplicate weekday assignment is rejected', () => {
         makeDay('Day B', 1),  // Tuesday — duplicate!
       ],
     }
-    const result = validateProgramDraft(draft)
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.toLowerCase().includes('duplicate') || e.toLowerCase().includes('tuesday'))).toBe(true)
   })
 
-  it('rejects out-of-range weekday (7)', () => {
+  it('rejects out-of-range weekday (7)', async () => {
     const draft: ProgramDraft = {
       program_name: 'Bad Weekday',
       days: [makeDay('Day A', 7)],
     }
-    const result = validateProgramDraft(draft)
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.includes('weekday'))).toBe(true)
   })
 
-  it('rejects negative weekday (-1)', () => {
+  it('rejects negative weekday (-1)', async () => {
     const draft: ProgramDraft = {
       program_name: 'Bad Weekday Neg',
       days: [makeDay('Day A', -1)],
     }
-    const result = validateProgramDraft(draft)
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(false)
   })
 })
@@ -182,14 +182,14 @@ describe('Scenario 4 — Move Legs from Friday(4) to Thursday(3)', () => {
     ],
   }
 
-  it('original program has Legs on Friday (4)', () => {
-    const result = validateProgramDraft(original)
+  it('original program has Legs on Friday (4)', async () => {
+    const result = await validateProgramDraft(original)
     expect(result.valid).toBe(true)
     expect(result.program!.days[2].weekday).toBe(4)
   })
 
-  it('modified program has Legs on Thursday (3) and Push/Pull unchanged', () => {
-    const result = validateProgramDraft(modified)
+  it('modified program has Legs on Thursday (3) and Push/Pull unchanged', async () => {
+    const result = await validateProgramDraft(modified)
     expect(result.valid).toBe(true)
     const days = result.program!.days
     expect(days[0].weekday).toBe(0)  // Push unchanged
@@ -197,8 +197,8 @@ describe('Scenario 4 — Move Legs from Friday(4) to Thursday(3)', () => {
     expect(days[2].weekday).toBe(3)  // Legs moved to Thursday
   })
 
-  it('modified program has no Friday assignment', () => {
-    const result = validateProgramDraft(modified)
+  it('modified program has no Friday assignment', async () => {
+    const result = await validateProgramDraft(modified)
     const weekdays = result.program!.days.map(d => d.weekday)
     expect(weekdays).not.toContain(4)
   })
@@ -216,19 +216,19 @@ describe('Scenario 5 — Unscheduled program (no weekday preference)', () => {
     ],
   }
 
-  it('validates successfully with no weekday fields', () => {
-    const result = validateProgramDraft(draft)
+  it('validates successfully with no weekday fields', async () => {
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(true)
   })
 
-  it('weekday is absent on all validated days', () => {
-    const result = validateProgramDraft(draft)
+  it('weekday is absent on all validated days', async () => {
+    const result = await validateProgramDraft(draft)
     for (const day of result.program!.days) {
       expect(day.weekday).toBeUndefined()
     }
   })
 
-  it('resolveScheduledDay returns null for every weekday', () => {
+  it('resolveScheduledDay returns null for every weekday', async () => {
     const schedulableDays: SchedulableProgramDay[] = [
       { id: '1', name: 'Push', weekday: null, exerciseCount: 5 },
       { id: '2', name: 'Pull', weekday: null, exerciseCount: 5 },
@@ -252,15 +252,15 @@ describe('Scenario 6 — Save compatibility: generated weekday resolves correctl
     ],
   }
 
-  it('validates and produces correct weekday values', () => {
-    const result = validateProgramDraft(draft)
+  it('validates and produces correct weekday values', async () => {
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(true)
     expect(result.program!.days[0].weekday).toBe(0)
     expect(result.program!.days[1].weekday).toBe(2)
     expect(result.program!.days[2].weekday).toBe(4)
   })
 
-  it('resolveScheduledDay finds Wednesday workout', () => {
+  it('resolveScheduledDay finds Wednesday workout', async () => {
     const schedulableDays: SchedulableProgramDay[] = [
       { id: 'a', name: 'Full Body A', weekday: 0, exerciseCount: 5 },
       { id: 'b', name: 'Full Body B', weekday: 2, exerciseCount: 5 },
@@ -272,7 +272,7 @@ describe('Scenario 6 — Save compatibility: generated weekday resolves correctl
     expect(result!.id).toBe('b')
   })
 
-  it('resolveScheduledDay returns null for Tuesday (no training day)', () => {
+  it('resolveScheduledDay returns null for Tuesday (no training day)', async () => {
     const schedulableDays: SchedulableProgramDay[] = [
       { id: 'a', name: 'Full Body A', weekday: 0, exerciseCount: 5 },
       { id: 'b', name: 'Full Body B', weekday: 2, exerciseCount: 5 },
@@ -342,21 +342,21 @@ describe('Scenario 7 — Spartan/hybrid 4-day program Mon/Tue/Thu/Sat', () => {
     ],
   }
 
-  it('validates the 4-day hybrid program', () => {
-    const result = validateProgramDraft(hybridDraft)
+  it('validates the 4-day hybrid program', async () => {
+    const result = await validateProgramDraft(hybridDraft)
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
     expect(result.program!.days).toHaveLength(4)
   })
 
-  it('weekdays are Mon(0)/Tue(1)/Thu(3)/Sat(5)', () => {
-    const result = validateProgramDraft(hybridDraft)
+  it('weekdays are Mon(0)/Tue(1)/Thu(3)/Sat(5)', async () => {
+    const result = await validateProgramDraft(hybridDraft)
     const weekdays = result.program!.days.map(d => d.weekday)
     expect(weekdays).toEqual([0, 1, 3, 5])
   })
 
-  it('has no consecutive heavy lower-body days (Mon=lower, Tue=upper push/pull)', () => {
-    const result = validateProgramDraft(hybridDraft)
+  it('has no consecutive heavy lower-body days (Mon=lower, Tue=upper push/pull)', async () => {
+    const result = await validateProgramDraft(hybridDraft)
     const days = result.program!.days
     // Monday = lower body compound; Tuesday = upper push/pull
     const mon = days.find(d => d.weekday === 0)!
@@ -367,15 +367,15 @@ describe('Scenario 7 — Spartan/hybrid 4-day program Mon/Tue/Thu/Sat', () => {
     expect(tue.focus?.toLowerCase()).toMatch(/push|pull|horizontal/)
   })
 
-  it('no weekday duplicates', () => {
-    const result = validateProgramDraft(hybridDraft)
+  it('no weekday duplicates', async () => {
+    const result = await validateProgramDraft(hybridDraft)
     const weekdays = result.program!.days.map(d => d.weekday)
     const unique = new Set(weekdays)
     expect(unique.size).toBe(weekdays.length)
   })
 
-  it('resolveScheduledDay finds Saturday conditioning day', () => {
-    const result = validateProgramDraft(hybridDraft)
+  it('resolveScheduledDay finds Saturday conditioning day', async () => {
+    const result = await validateProgramDraft(hybridDraft)
     const schedulableDays: SchedulableProgramDay[] = result.program!.days.map((d, i) => ({
       id: String(i),
       name: d.name,
@@ -387,8 +387,8 @@ describe('Scenario 7 — Spartan/hybrid 4-day program Mon/Tue/Thu/Sat', () => {
     expect(satDay!.name).toBe('Conditioning')
   })
 
-  it('resolveScheduledDay returns null for Friday (rest day)', () => {
-    const result = validateProgramDraft(hybridDraft)
+  it('resolveScheduledDay returns null for Friday (rest day)', async () => {
+    const result = await validateProgramDraft(hybridDraft)
     const schedulableDays: SchedulableProgramDay[] = result.program!.days.map((d, i) => ({
       id: String(i),
       name: d.name,

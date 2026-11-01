@@ -9,6 +9,7 @@ interface YmoveCatalogRow {
   ymoveId:            string
   name:               string
   equipment:          string | null
+  category?:          string | null
   primaryMuscleGroup: string | null
   thumbnailMediaId:   string | null
   hasVideo:           boolean
@@ -40,6 +41,7 @@ export function ymvToMeta(row: YmoveCatalogRow): ExerciseMeta {
     secondaryMuscles: [],
     instructions:     [],
     description:      '',
+    ymoveCategory:    row.category,
   }
 }
 
@@ -74,7 +76,7 @@ export async function resolveExerciseMeta(
     const bareId = parseYmvId(id)!
     const row = await db.ymoveExerciseCatalog.findUnique({
       where:  { ymoveId: bareId },
-      select: { ymoveId: true, name: true, equipment: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
+      select: { ymoveId: true, name: true, equipment: true, category: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
     })
     return row ? ymvToMeta(row) : null
   }
@@ -103,7 +105,7 @@ export async function prefetchYmvMeta(
   const bareIds = ymvIds.map(id => parseYmvId(id)!)
   const rows = await db.ymoveExerciseCatalog.findMany({
     where:  { ymoveId: { in: bareIds } },
-    select: { ymoveId: true, name: true, equipment: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
+    select: { ymoveId: true, name: true, equipment: true, category: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
   })
   return new Map(rows.map(r => [formatYmvId(r.ymoveId), ymvToMeta(r)]))
 }

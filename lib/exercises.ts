@@ -618,6 +618,10 @@ export function isCustomExerciseId(id: string): boolean {
 export interface ExerciseMeta extends Exercise {
   isCustom?: boolean
   trackingType?: string
+  // YMove catalog category string (e.g. 'cardio', 'Back', 'Legs'). Present only for
+  // ymv: exercises — used by classifyAnyExercise so cardio detection works without
+  // requiring callers to re-query the catalog.
+  ymoveCategory?: string | null
 }
 
 // Returns compatible exercise IDs for a given list of equipment values.

@@ -72,13 +72,13 @@ describe('Scenario 1 — Spartan missing carries → OCR_MISSING_CARRIES warning
     ],
   }
 
-  it('reports OCR_MISSING_CARRIES as warning', () => {
+  it('reports OCR_MISSING_CARRIES as warning', async () => {
     const issues = validateProgramQuality(draft, { sport: 'OCR', weeks: 8 })
     const codes = issues.map(i => i.code)
     expect(codes).toContain('OCR_MISSING_CARRIES')
   })
 
-  it('is a warning, not an error', () => {
+  it('is a warning, not an error', async () => {
     const issues = validateProgramQuality(draft, { sport: 'spartan race', weeks: 8 })
     const carry = issues.find(i => i.code === 'OCR_MISSING_CARRIES')
     expect(carry?.severity).toBe('warning')
@@ -106,7 +106,7 @@ describe('Scenario 2 — Spartan missing pulls → OCR_MISSING_PULLS warning', (
     ],
   }
 
-  it('reports OCR_MISSING_PULLS when no vertical_pull or horizontal_pull', () => {
+  it('reports OCR_MISSING_PULLS when no vertical_pull or horizontal_pull', async () => {
     const issues = validateProgramQuality(draft, { sport: 'ocr', weeks: 8 })
     const codes = issues.map(i => i.code)
     expect(codes).toContain('OCR_MISSING_PULLS')
@@ -128,7 +128,7 @@ describe('Scenario 3 — Spartan bike-only cardio → OCR_CARDIO_ONLY_BIKE warni
     ],
   }
 
-  it('reports OCR_CARDIO_ONLY_BIKE when all cardio exercises mention bike/stationary', () => {
+  it('reports OCR_CARDIO_ONLY_BIKE when all cardio exercises mention bike/stationary', async () => {
     const issues = validateProgramQuality(draft, { sport: 'Spartan Race', weeks: 8 })
     const codes = issues.map(i => i.code)
     expect(codes).toContain('OCR_CARDIO_ONLY_BIKE')
@@ -150,19 +150,19 @@ describe('Scenario 4 — Powerlifting 12-week with no progression → errors', (
     ],
   }
 
-  it('reports NO_PROGRESSION as error for 12-week program with no progression data', () => {
+  it('reports NO_PROGRESSION as error for 12-week program with no progression data', async () => {
     const issues = validateProgramQuality(draft, { sport: 'powerlifting', weeks: 12 })
     const noProgression = issues.find(i => i.code === 'NO_PROGRESSION')
     expect(noProgression?.severity).toBe('error')
   })
 
-  it('reports POWERLIFTING_NO_PHASES as error for 10+ week powerlifting with no phases', () => {
+  it('reports POWERLIFTING_NO_PHASES as error for 10+ week powerlifting with no phases', async () => {
     const issues = validateProgramQuality(draft, { sport: 'powerlifting', weeks: 12 })
     const noPhases = issues.find(i => i.code === 'POWERLIFTING_NO_PHASES')
     expect(noPhases?.severity).toBe('error')
   })
 
-  it('errors come before warnings in sorted output', () => {
+  it('errors come before warnings in sorted output', async () => {
     const issues = validateProgramQuality(draft, { sport: 'powerlifting', weeks: 12 })
     const firstWarningIdx = issues.findIndex(i => i.severity === 'warning')
     const lastErrorIdx = issues.reduce((acc, i, idx) => i.severity === 'error' ? idx : acc, -1)
@@ -194,7 +194,7 @@ describe('Scenario 5 — Powerlifting peak/deload conflict → POWERLIFTING_PEAK
     ],
   }
 
-  it('reports POWERLIFTING_PEAK_DELOAD_CONFLICT as error', () => {
+  it('reports POWERLIFTING_PEAK_DELOAD_CONFLICT as error', async () => {
     const issues = validateProgramQuality(draft, { sport: 'powerlifting', weeks: 12 })
     const conflict = issues.find(i => i.code === 'POWERLIFTING_PEAK_DELOAD_CONFLICT')
     expect(conflict?.severity).toBe('error')
@@ -217,7 +217,7 @@ describe('Scenario 6 — Beginner runner >3 run days in short program → error'
     ],
   }
 
-  it('reports BEGINNER_RUNNING_OVERLOAD as error', () => {
+  it('reports BEGINNER_RUNNING_OVERLOAD as error', async () => {
     const issues = validateProgramQuality(draft, {
       sport: 'running',
       fitnessLevel: 'beginner',
@@ -227,7 +227,7 @@ describe('Scenario 6 — Beginner runner >3 run days in short program → error'
     expect(overload?.severity).toBe('error')
   })
 
-  it('does NOT flag an experienced runner with 4 run days', () => {
+  it('does NOT flag an experienced runner with 4 run days', async () => {
     const issues = validateProgramQuality(draft, {
       sport: 'running',
       fitnessLevel: 'intermediate',
@@ -259,7 +259,7 @@ describe('Scenario 7 — Beginner runner with early intervals in notes → warni
     ],
   }
 
-  it('reports BEGINNER_INTERVALS_TOO_SOON as warning', () => {
+  it('reports BEGINNER_INTERVALS_TOO_SOON as warning', async () => {
     const issues = validateProgramQuality(draft, {
       sport: 'running',
       fitnessLevel: 'beginner',
@@ -318,7 +318,7 @@ describe('Scenario 8 — Well-formed intermediate strength program → no issues
     ],
   }
 
-  it('produces zero quality issues', () => {
+  it('produces zero quality issues', async () => {
     const issues = validateProgramQuality(draft, { sport: 'general_fitness', weeks: 8 })
     expect(issues).toHaveLength(0)
   })
@@ -329,20 +329,20 @@ describe('Scenario 8 — Well-formed intermediate strength program → no issues
 describe('Scenario 9 — Load anchor computation from 1RM', () => {
   const SQUAT_1RM_KG = 183.7  // ~405 lb
 
-  it('isPowerliftingMovement identifies squat correctly', () => {
+  it('isPowerliftingMovement identifies squat correctly', async () => {
     expect(isPowerliftingMovement('Barbell Back Squat')).toBe(true)
     expect(isPowerliftingMovement('Barbell Bench Press')).toBe(true)
     expect(isPowerliftingMovement('Deadlift')).toBe(true)
     expect(isPowerliftingMovement('Romanian Deadlift')).toBe(true)
   })
 
-  it('isPowerliftingMovement does NOT flag accessory movements', () => {
+  it('isPowerliftingMovement does NOT flag accessory movements', async () => {
     expect(isPowerliftingMovement('Bicep Curl')).toBe(false)
     expect(isPowerliftingMovement('Lateral Raise')).toBe(false)
     expect(isPowerliftingMovement('Leg Press')).toBe(false)
   })
 
-  it('computes 70% anchor within 0.5 kg of expected', () => {
+  it('computes 70% anchor within 0.5 kg of expected', async () => {
     const prs = [{ exerciseName: 'Barbell Back Squat', metric: 'estimated_1rm', value: SQUAT_1RM_KG, unit: 'kg' }]
     const anchors = buildLoadAnchors(prs)
     expect(anchors.length).toBeGreaterThan(0)
@@ -357,7 +357,7 @@ describe('Scenario 9 — Load anchor computation from 1RM', () => {
     expect(Math.abs(computed - 128.6)).toBeLessThan(0.5)
   })
 
-  it('computes 90% anchor correctly', () => {
+  it('computes 90% anchor correctly', async () => {
     const prs = [{ exerciseName: 'Barbell Back Squat', metric: 'estimated_1rm', value: SQUAT_1RM_KG, unit: 'kg' }]
     const anchors = buildLoadAnchors(prs)
     const allText = anchors.join('\n')
@@ -368,13 +368,13 @@ describe('Scenario 9 — Load anchor computation from 1RM', () => {
     expect(Math.abs(computed - 165.3)).toBeLessThan(0.5)
   })
 
-  it('does NOT generate anchors for weight (non-1RM) metric', () => {
+  it('does NOT generate anchors for weight (non-1RM) metric', async () => {
     const prs = [{ exerciseName: 'Barbell Back Squat', metric: 'weight', value: SQUAT_1RM_KG, unit: 'kg' }]
     const anchors = buildLoadAnchors(prs)
     expect(anchors).toHaveLength(0)
   })
 
-  it('converts lb 1RM correctly — squat 405 lb', () => {
+  it('converts lb 1RM correctly — squat 405 lb', async () => {
     const prs = [{ exerciseName: 'Barbell Back Squat', metric: 'estimated_1rm', value: 405, unit: 'lb' }]
     const anchors = buildLoadAnchors(prs)
     const allText = anchors.join('\n')
@@ -404,7 +404,7 @@ describe('Scenario 10 — Powerlifting 12-week program, no phases → POWERLIFTI
     ],
   }
 
-  it('reports POWERLIFTING_NO_PHASES as error', () => {
+  it('reports POWERLIFTING_NO_PHASES as error', async () => {
     const issues = validateProgramQuality(draft, { sport: 'powerlifting', weeks: 12 })
     const noPhases = issues.find(i => i.code === 'POWERLIFTING_NO_PHASES')
     expect(noPhases?.severity).toBe('error')
@@ -428,8 +428,8 @@ describe('Scenario 11 — week_progressions week > program weeks → validation 
     ],
   }
 
-  it('validateProgramDraft rejects week_progressions week > program weeks', () => {
-    const result = validateProgramDraft(draft)
+  it('validateProgramDraft rejects week_progressions week > program weeks', async () => {
+    const result = await validateProgramDraft(draft)
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.includes('week 5') && e.includes('4 weeks'))).toBe(true)
   })
@@ -466,13 +466,13 @@ describe('Scenario 12 — Same note text on nearly all exercises → IDENTICAL_W
     ],
   }
 
-  it('reports IDENTICAL_WEEK_NOTES when >75% of non-empty notes are identical', () => {
+  it('reports IDENTICAL_WEEK_NOTES when >75% of non-empty notes are identical', async () => {
     const issues = validateProgramQuality(draft, { weeks: 8 })
     const codes = issues.map(i => i.code)
     expect(codes).toContain('IDENTICAL_WEEK_NOTES')
   })
 
-  it('is a warning, not an error', () => {
+  it('is a warning, not an error', async () => {
     const issues = validateProgramQuality(draft, { weeks: 8 })
     const issue = issues.find(i => i.code === 'IDENTICAL_WEEK_NOTES')
     expect(issue?.severity).toBe('warning')
@@ -511,18 +511,18 @@ describe('Scenario 13 — deload:true on week_progressions satisfies NO_STRUCTUR
     ],
   }
 
-  it('does NOT fire NO_STRUCTURED_DELOAD when deload:true is present', () => {
+  it('does NOT fire NO_STRUCTURED_DELOAD when deload:true is present', async () => {
     const issues = validateProgramQuality(draft, { weeks: 8 })
     expect(issues.find(i => i.code === 'NO_STRUCTURED_DELOAD')).toBeUndefined()
   })
 
-  it('does NOT fire WEEK_PROGRESSIONS_UNIFORM when deload:true distinguishes a week', () => {
+  it('does NOT fire WEEK_PROGRESSIONS_UNIFORM when deload:true distinguishes a week', async () => {
     // Same sets/reps but week 4 has deload:true — should count as a structural change
     const issues = validateProgramQuality(draft, { weeks: 8 })
     expect(issues.find(i => i.code === 'WEEK_PROGRESSIONS_UNIFORM')).toBeUndefined()
   })
 
-  it('DOES fire NO_STRUCTURED_DELOAD on 8-week program with no deload flag or volume drop', () => {
+  it('DOES fire NO_STRUCTURED_DELOAD on 8-week program with no deload flag or volume drop', async () => {
     const noDeloadDraft: ProgramDraft = {
       program_name: 'No Deload 8 Week',
       weeks: 8,
@@ -578,12 +578,12 @@ describe('Scenario 14 — taper:true on final week_progressions entry satisfies 
     ],
   }
 
-  it('does NOT fire NO_FINAL_TAPER when taper:true is on a final week entry', () => {
+  it('does NOT fire NO_FINAL_TAPER when taper:true is on a final week entry', async () => {
     const issues = validateProgramQuality(draft, { weeks: 12 })
     expect(issues.find(i => i.code === 'NO_FINAL_TAPER')).toBeUndefined()
   })
 
-  it('does NOT fire NO_STRUCTURED_DELOAD when deload:true entries are present', () => {
+  it('does NOT fire NO_STRUCTURED_DELOAD when deload:true entries are present', async () => {
     const issues = validateProgramQuality(draft, { weeks: 12 })
     expect(issues.find(i => i.code === 'NO_STRUCTURED_DELOAD')).toBeUndefined()
   })
@@ -599,7 +599,7 @@ describe('Scenario 15 — conditioning day with no cardio pattern → CONDITIONI
       makeExercise('3470', 'lunge'),
     ])
 
-  it('fires CONDITIONING_NO_AEROBIC_MODALITY when session_type=conditioning has no cardio exercise', () => {
+  it('fires CONDITIONING_NO_AEROBIC_MODALITY when session_type=conditioning has no cardio exercise', async () => {
     const draft: ProgramDraft = {
       program_name: 'Conditioning Mislabeled',
       weeks: 6,
@@ -621,7 +621,7 @@ describe('Scenario 15 — conditioning day with no cardio pattern → CONDITIONI
     expect(issues.find(i => i.code === 'CONDITIONING_NO_AEROBIC_MODALITY')?.severity).toBe('warning')
   })
 
-  it('does NOT fire when conditioning day has a cardio exercise', () => {
+  it('does NOT fire when conditioning day has a cardio exercise', async () => {
     const draft: ProgramDraft = {
       program_name: 'Proper Conditioning',
       weeks: 6,
@@ -644,7 +644,7 @@ describe('Scenario 15 — conditioning day with no cardio pattern → CONDITIONI
     expect(issues.find(i => i.code === 'CONDITIONING_NO_AEROBIC_MODALITY')).toBeUndefined()
   })
 
-  it('fires when day name contains "conditioning" even without session_type set', () => {
+  it('fires when day name contains "conditioning" even without session_type set', async () => {
     const draft: ProgramDraft = {
       program_name: 'Mixed Program',
       weeks: 4,
@@ -676,7 +676,7 @@ describe('MISSING_REQUIRED_ROLE carries structured meta (exact day + roles)', ()
     ],
   }
 
-  it('reports the exact day name, session_type, missing roles, and selected exercises', () => {
+  it('reports the exact day name, session_type, missing roles, and selected exercises', async () => {
     const issues = validateProgramQuality(draft, { fitnessLevel: 'beginner', weeks: 4 })
     const issue = issues.find(i => i.code === 'MISSING_REQUIRED_ROLE')
     expect(issue).toBeDefined()
@@ -710,7 +710,7 @@ describe('NO_STRUCTURED_DELOAD carries meta and actionable feedback', () => {
     ],
   }
 
-  it('fires with meta showing no deload phase / flag / set drop', () => {
+  it('fires with meta showing no deload phase / flag / set drop', async () => {
     const issues = validateProgramQuality(draft, { weeks: 12 })
     const issue = issues.find(i => i.code === 'NO_STRUCTURED_DELOAD')
     expect(issue).toBeDefined()
@@ -722,7 +722,7 @@ describe('NO_STRUCTURED_DELOAD carries meta and actionable feedback', () => {
     expect(issue!.message).toMatch(/deload/i)
   })
 
-  it('does NOT fire once a deload:true flag is added (targeted correction clears it)', () => {
+  it('does NOT fire once a deload:true flag is added (targeted correction clears it)', async () => {
     const fixed: ProgramDraft = {
       ...draft,
       days: [

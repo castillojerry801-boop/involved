@@ -1,52 +1,148 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import Image from 'next/image'
 import { Search, X, Plus, Loader2, Dumbbell, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ExerciseMeta } from '@/lib/exercises'
 
+// ── ExerciseDB mode ───────────────────────────────────────────────────────────
+
 const BODY_PARTS = ['all', 'back', 'chest', 'shoulders', 'upper arms', 'lower arms', 'upper legs', 'lower legs', 'waist', 'neck', 'cardio']
 
-// Equipment options with >= 5 exercises shown as individual pills
 const PRIMARY_EQUIPMENT = [
   'body weight', 'dumbbell', 'cable', 'barbell', 'leverage machine',
   'band', 'smith machine', 'weighted', 'kettlebell', 'stability ball',
   'ez barbell', 'medicine ball', 'sled machine', 'resistance band',
 ]
 
+// ── YMove mode ────────────────────────────────────────────────────────────────
+
+const MOVEMENT_FAMILIES: { id: string; label: string }[] = [
+  { id: 'all',                 label: 'All' },
+  { id: 'fam_squat',           label: 'Squat' },
+  { id: 'fam_lunge',           label: 'Lunge' },
+  { id: 'fam_hip_hinge',       label: 'Hip Hinge' },
+  { id: 'fam_chest_press',     label: 'Chest Press' },
+  { id: 'fam_chest',           label: 'Chest' },
+  { id: 'fam_overhead_press',  label: 'Overhead' },
+  { id: 'fam_row',             label: 'Row' },
+  { id: 'fam_pulldown_pullup', label: 'Pull-up' },
+  { id: 'fam_back',            label: 'Back' },
+  { id: 'fam_shoulders',       label: 'Shoulders' },
+  { id: 'fam_arms',            label: 'Arms' },
+  { id: 'fam_core',            label: 'Core' },
+  { id: 'fam_legs',            label: 'Legs' },
+  { id: 'fam_leg_accessories', label: 'Leg Accessories' },
+  { id: 'fam_cardio',          label: 'Cardio' },
+  { id: 'fam_mobility',        label: 'Mobility' },
+  { id: 'fam_power',           label: 'Power' },
+  { id: 'fam_plyometrics',     label: 'Plyometrics' },
+  { id: 'fam_carries',         label: 'Carries' },
+  { id: 'fam_neck',            label: 'Neck' },
+]
+
+const YMOVE_EQUIPMENT: { id: string; label: string }[] = [
+  { id: 'barbell',    label: 'Barbell' },
+  { id: 'dumbbell',   label: 'Dumbbell' },
+  { id: 'cable',      label: 'Cable' },
+  { id: 'machine',    label: 'Machine' },
+  { id: 'kettlebell', label: 'Kettlebell' },
+  { id: 'bodyweight', label: 'Bodyweight' },
+  { id: 'band',       label: 'Band' },
+  { id: 'smith',      label: 'Smith' },
+  { id: 'weighted',   label: 'Weighted' },
+  { id: 'trap_bar',   label: 'Trap Bar' },
+]
+
+interface YmoveItem extends ExerciseMeta {
+  source: 'ymove'
+  ymoveId: string
+  thumbnailMediaId: string | null
+  hasVideo: boolean
+  movementFamilyId: string | null
+  eqFamily: string | null
+}
+
 interface Props {
   onSelect: (exercise: ExerciseMeta) => void
   onClose: () => void
   selectedIds?: Set<string>
   title?: string
-  /** Pre-restrict to exercises available in the given equipment profile */
+  /** Pre-restrict to exercises available in the given equipment profile (ExerciseDB mode only) */
   equipmentProfileIds?: Set<string>
 }
 
-export default function ExercisePicker({ onSelect, onClose, selectedIds, title = 'Add exercise', equipmentProfileIds }: Props) {
+export default function ExercisePicker({
+  onSelect,
+  onClose,
+  selectedIds,
+  title = 'Add exercise',
+  equipmentProfileIds,
+}: Props) {
+  const [ymoveMode, setYmoveMode] = useState<boolean | null>(null)
   const [q, setQ] = useState('')
+
+  // ExerciseDB mode filters
   const [bodyPart, setBodyPart] = useState('all')
   const [equipment, setEquipment] = useState<string | null>(null)
   const [showEquipment, setShowEquipment] = useState(false)
+
+  // YMove mode filters
+  const [movement, setMovement] = useState('all')
+  const [eqFamily, setEqFamily] = useState<string | null>(null)
+  const [showEqFamily, setShowEqFamily] = useState(false)
+
   const [exercises, setExercises] = useState<ExerciseMeta[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const search = useCallback(async (query: string, bp: string, eq: string | null) => {
+  // Probe the feature flag once — server reads the env var, client never needs NEXT_PUBLIC_
+  useEffect(() => {
+    fetch('/api/training/exercises/config')
+      .then(r => r.json())
+      .then((d: { ymove: boolean }) => setYmoveMode(d.ymove === true))
+      .catch(() => setYmoveMode(false))
+  }, [])
+
+  const searchYmove = useCallback(async (query: string, mov: string, eq: string | null) => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({
-        q: query,
-        includeCustom: 'true',
-        limit: '60',
-        ...(bp !== 'all' && { bodyPart: bp }),
-        ...(eq && { equipment: eq }),
-      })
+      const params = new URLSearchParams({ q: query, limit: '60' })
+      if (mov !== 'all') params.set('movement', mov)
+      if (eq) params.set('eqFamily', eq)
+
+      // Fetch ymove catalog and custom exercises in parallel
+      const [ymoveRes, customRes] = await Promise.all([
+        fetch(`/api/training/exercises/ymove?${params}`),
+        fetch(`/api/training/exercises?includeCustom=true&q=${encodeURIComponent(query)}&limit=20`),
+      ])
+
+      const ymoveData = await ymoveRes.json() as { items: YmoveItem[] }
+      const customData = await customRes.json() as { exercises: ExerciseMeta[] }
+
+      const ymoveItems = ymoveData.items ?? []
+      const customItems = (customData.exercises ?? []).filter(e => e.isCustom)
+
+      // Custom exercises first so they're always reachable without scrolling
+      setExercises([...customItems, ...ymoveItems])
+    } catch {
+      setExercises([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const searchExdb = useCallback(async (query: string, bp: string, eq: string | null) => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ q: query, includeCustom: 'true', limit: '60' })
+      if (bp !== 'all') params.set('bodyPart', bp)
+      if (eq) params.set('equipment', eq)
       const res = await fetch(`/api/training/exercises?${params}`)
       const data = await res.json() as { exercises: ExerciseMeta[] }
       let results = data.exercises ?? []
-      // Client-side restrict to profile equipment if provided
       if (equipmentProfileIds) {
         results = results.filter(e => equipmentProfileIds.has(e.id) || e.isCustom)
       }
@@ -58,26 +154,47 @@ export default function ExercisePicker({ onSelect, onClose, selectedIds, title =
     }
   }, [equipmentProfileIds])
 
+  // Kick off initial search once the mode is known
   useEffect(() => {
+    if (ymoveMode === null) return
     inputRef.current?.focus()
-    search('', 'all', null)
-  }, [search])
+    if (ymoveMode) {
+      searchYmove('', 'all', null)
+    } else {
+      searchExdb('', 'all', null)
+    }
+  }, [ymoveMode, searchYmove, searchExdb])
 
   const handleQueryChange = (val: string) => {
     setQ(val)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => search(val, bodyPart, equipment), 250)
+    if (ymoveMode) {
+      debounceRef.current = setTimeout(() => searchYmove(val, movement, eqFamily), 250)
+    } else {
+      debounceRef.current = setTimeout(() => searchExdb(val, bodyPart, equipment), 250)
+    }
   }
 
+  // ExerciseDB handlers
   const handleBodyPart = (bp: string) => {
     setBodyPart(bp)
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    search(q, bp, equipment)
+    searchExdb(q, bp, equipment)
   }
-
   const handleEquipment = (eq: string | null) => {
     setEquipment(eq)
-    search(q, bodyPart, eq)
+    searchExdb(q, bodyPart, eq)
+  }
+
+  // YMove handlers
+  const handleMovement = (mov: string) => {
+    setMovement(mov)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    searchYmove(q, mov, eqFamily)
+  }
+  const handleEqFamily = (eq: string | null) => {
+    setEqFamily(eq)
+    searchYmove(q, movement, eq)
   }
 
   return (
@@ -110,84 +227,170 @@ export default function ExercisePicker({ onSelect, onClose, selectedIds, title =
         </div>
       </div>
 
-      {/* Body part pills */}
-      <div className="px-4 pb-1 shrink-0 overflow-x-auto scrollbar-none">
-        <div className="flex gap-1.5 w-max">
-          {BODY_PARTS.map(bp => (
-            <button
-              key={bp}
-              onClick={() => handleBodyPart(bp)}
-              className={cn(
-                'px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors capitalize',
-                bodyPart === bp
-                  ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-              )}
-            >
-              {bp}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Equipment filter toggle + pills */}
-      <div className="px-4 pb-2 shrink-0">
-        <button
-          onClick={() => setShowEquipment(v => !v)}
-          className={cn(
-            'flex items-center gap-1 text-xs font-medium transition-colors mb-1',
-            equipment
-              ? 'text-emerald-600 dark:text-emerald-400'
-              : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
-          )}
-        >
-          <ChevronDown className={cn('size-3 transition-transform', showEquipment && 'rotate-180')} />
-          {equipment ? `Equipment: ${equipment}` : 'Filter by equipment'}
-          {equipment && (
-            <button
-              onClick={e => { e.stopPropagation(); handleEquipment(null) }}
-              className="ml-1 text-zinc-400 hover:text-zinc-600"
-            >
-              <X className="size-3" />
-            </button>
-          )}
-        </button>
-        {showEquipment && (
-          <div className="overflow-x-auto scrollbar-none">
+      {/* Filters — rendered once mode is known */}
+      {ymoveMode === false && (
+        <>
+          {/* Body part pills */}
+          <div className="px-4 pb-1 shrink-0 overflow-x-auto scrollbar-none">
             <div className="flex gap-1.5 w-max">
-              <button
-                onClick={() => { handleEquipment(null); setShowEquipment(false) }}
-                className={cn(
-                  'px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors',
-                  !equipment
-                    ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                )}
-              >
-                All
-              </button>
-              {PRIMARY_EQUIPMENT.map(eq => (
+              {BODY_PARTS.map(bp => (
                 <button
-                  key={eq}
-                  onClick={() => { handleEquipment(equipment === eq ? null : eq); setShowEquipment(false) }}
+                  key={bp}
+                  onClick={() => handleBodyPart(bp)}
                   className={cn(
                     'px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors capitalize',
-                    equipment === eq
+                    bodyPart === bp
                       ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700',
                   )}
                 >
-                  {eq}
+                  {bp}
                 </button>
               ))}
             </div>
           </div>
-        )}
-      </div>
+
+          {/* Equipment filter */}
+          <div className="px-4 pb-2 shrink-0">
+            <button
+              onClick={() => setShowEquipment(v => !v)}
+              className={cn(
+                'flex items-center gap-1 text-xs font-medium transition-colors mb-1',
+                equipment
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300',
+              )}
+            >
+              <ChevronDown className={cn('size-3 transition-transform', showEquipment && 'rotate-180')} />
+              {equipment ? `Equipment: ${equipment}` : 'Filter by equipment'}
+              {equipment && (
+                <button
+                  onClick={e => { e.stopPropagation(); handleEquipment(null) }}
+                  className="ml-1 text-zinc-400 hover:text-zinc-600"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </button>
+            {showEquipment && (
+              <div className="overflow-x-auto scrollbar-none">
+                <div className="flex gap-1.5 w-max">
+                  <button
+                    onClick={() => { handleEquipment(null); setShowEquipment(false) }}
+                    className={cn(
+                      'px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors',
+                      !equipment
+                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                    )}
+                  >
+                    All
+                  </button>
+                  {PRIMARY_EQUIPMENT.map(eq => (
+                    <button
+                      key={eq}
+                      onClick={() => { handleEquipment(equipment === eq ? null : eq); setShowEquipment(false) }}
+                      className={cn(
+                        'px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors capitalize',
+                        equipment === eq
+                          ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                      )}
+                    >
+                      {eq}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {ymoveMode === true && (
+        <>
+          {/* Movement family pills */}
+          <div className="px-4 pb-1 shrink-0 overflow-x-auto scrollbar-none">
+            <div className="flex gap-1.5 w-max">
+              {MOVEMENT_FAMILIES.map(fam => (
+                <button
+                  key={fam.id}
+                  onClick={() => handleMovement(fam.id)}
+                  className={cn(
+                    'px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors',
+                    movement === fam.id
+                      ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                  )}
+                >
+                  {fam.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Equipment family filter */}
+          <div className="px-4 pb-2 shrink-0">
+            <button
+              onClick={() => setShowEqFamily(v => !v)}
+              className={cn(
+                'flex items-center gap-1 text-xs font-medium transition-colors mb-1',
+                eqFamily
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300',
+              )}
+            >
+              <ChevronDown className={cn('size-3 transition-transform', showEqFamily && 'rotate-180')} />
+              {eqFamily
+                ? `Equipment: ${YMOVE_EQUIPMENT.find(e => e.id === eqFamily)?.label ?? eqFamily}`
+                : 'Filter by equipment'}
+              {eqFamily && (
+                <button
+                  onClick={e => { e.stopPropagation(); handleEqFamily(null) }}
+                  className="ml-1 text-zinc-400 hover:text-zinc-600"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </button>
+            {showEqFamily && (
+              <div className="overflow-x-auto scrollbar-none">
+                <div className="flex gap-1.5 w-max">
+                  <button
+                    onClick={() => { handleEqFamily(null); setShowEqFamily(false) }}
+                    className={cn(
+                      'px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors',
+                      !eqFamily
+                        ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                    )}
+                  >
+                    All
+                  </button>
+                  {YMOVE_EQUIPMENT.map(eq => (
+                    <button
+                      key={eq.id}
+                      onClick={() => { handleEqFamily(eqFamily === eq.id ? null : eq.id); setShowEqFamily(false) }}
+                      className={cn(
+                        'px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors',
+                        eqFamily === eq.id
+                          ? 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900'
+                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700',
+                      )}
+                    >
+                      {eq.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Results */}
       <div className="flex-1 overflow-y-auto">
-        {loading ? (
+        {loading || ymoveMode === null ? (
           <div className="flex justify-center py-12">
             <Loader2 className="size-5 animate-spin text-zinc-400" />
           </div>
@@ -202,6 +405,7 @@ export default function ExercisePicker({ onSelect, onClose, selectedIds, title =
           <ul className="divide-y divide-zinc-50 dark:divide-zinc-900">
             {exercises.map(ex => {
               const already = selectedIds?.has(ex.id)
+              const ymvItem = ymoveMode && 'thumbnailMediaId' in ex ? ex as YmoveItem : null
               return (
                 <li key={ex.id}>
                   <button
@@ -211,22 +415,51 @@ export default function ExercisePicker({ onSelect, onClose, selectedIds, title =
                       'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
                       already
                         ? 'opacity-40 cursor-default'
-                        : 'hover:bg-zinc-50 dark:hover:bg-zinc-900/50 active:bg-zinc-100 dark:active:bg-zinc-900'
+                        : 'hover:bg-zinc-50 dark:hover:bg-zinc-900/50 active:bg-zinc-100 dark:active:bg-zinc-900',
                     )}
                   >
+                    {/* Thumbnail — YMove exercises only */}
+                    {ymvItem ? (
+                      ymvItem.thumbnailMediaId ? (
+                        <Image
+                          src={`/api/ymove/thumbnail/${ymvItem.thumbnailMediaId}?crop=square`}
+                          alt=""
+                          width={40}
+                          height={40}
+                          unoptimized
+                          className="size-10 rounded-lg object-cover shrink-0 bg-zinc-100 dark:bg-zinc-800"
+                        />
+                      ) : (
+                        <div className="size-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                          <Dumbbell className="size-4 text-zinc-400" />
+                        </div>
+                      )
+                    ) : null}
+
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-sm font-semibold text-zinc-900 dark:text-white truncate">{ex.name}</span>
+                        <span className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
+                          {ex.name}
+                        </span>
                         {ex.isCustom && (
                           <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-wide shrink-0">
                             Mine
                           </span>
                         )}
+                        {ymvItem?.hasVideo && !ex.isCustom && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[10px] font-medium shrink-0">
+                            Video
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-zinc-400 capitalize mt-0.5">
-                        {ex.bodyPart}{ex.equipment && ex.equipment !== 'bodyweight' ? ` · ${ex.equipment}` : ''}
+                        {ex.bodyPart}
+                        {ex.equipment && ex.equipment !== 'bodyweight' && ex.equipment !== 'unknown'
+                          ? ` · ${ex.equipment}`
+                          : ''}
                       </p>
                     </div>
+
                     {already ? (
                       <span className="text-xs text-zinc-400 shrink-0">Added</span>
                     ) : (

@@ -120,8 +120,8 @@ const scenarioA: ProgramDraft = {
 }
 
 describe('Scenario A — Beginner home gym', () => {
-  it('validates a well-formed body weight program', () => {
-    const result = validateProgramDraft(scenarioA)
+  it('validates a well-formed body weight program', async () => {
+    const result = await validateProgramDraft(scenarioA)
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
     expect(result.program).toBeDefined()
@@ -129,14 +129,14 @@ describe('Scenario A — Beginner home gym', () => {
     expect(result.program!.days[0].exercises).toHaveLength(4)
   })
 
-  it('preserves program metadata through validation', () => {
-    const result = validateProgramDraft(scenarioA)
+  it('preserves program metadata through validation', async () => {
+    const result = await validateProgramDraft(scenarioA)
     expect(result.program!.program_name).toBe('Beginner Home Gym — 3 Days')
     expect(result.program!.description).toBeDefined()
   })
 
-  it('attaches exercise records from the library', () => {
-    const result = validateProgramDraft(scenarioA)
+  it('attaches exercise records from the library', async () => {
+    const result = await validateProgramDraft(scenarioA)
     const firstEx = result.program!.days[0].exercises[0]
     expect(firstEx.exercise).toBeDefined()
     expect(firstEx.exercise.name.toLowerCase()).toContain('push')
@@ -280,23 +280,23 @@ const scenarioB: ProgramDraft = {
 }
 
 describe('Scenario B — Intermediate hypertrophy', () => {
-  it('validates a 4-day upper/lower program', () => {
-    const result = validateProgramDraft(scenarioB)
+  it('validates a 4-day upper/lower program', async () => {
+    const result = await validateProgramDraft(scenarioB)
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
     expect(result.program!.days).toHaveLength(4)
   })
 
-  it('accepts RPE values on exercises', () => {
-    const result = validateProgramDraft(scenarioB)
+  it('accepts RPE values on exercises', async () => {
+    const result = await validateProgramDraft(scenarioB)
     expect(result.valid).toBe(true)
     // RPE passes through on the validated draft
     const benchEx = result.program!.days[0].exercises[0]
     expect(benchEx.rpe).toBe(8)
   })
 
-  it('accepts weeks and progression_strategy in the draft', () => {
-    const result = validateProgramDraft(scenarioB)
+  it('accepts weeks and progression_strategy in the draft', async () => {
+    const result = await validateProgramDraft(scenarioB)
     expect(result.valid).toBe(true)
     // These live on the ProgramDraft (not ValidatedProgram), but the program was produced from the draft
     expect(scenarioB.weeks).toBe(8)
@@ -423,15 +423,15 @@ const scenarioC: ProgramDraft = {
 }
 
 describe('Scenario C — Hybrid athletic / Spartan', () => {
-  it('validates a mixed-equipment hybrid athletic program', () => {
-    const result = validateProgramDraft(scenarioC)
+  it('validates a mixed-equipment hybrid athletic program', async () => {
+    const result = await validateProgramDraft(scenarioC)
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
     expect(result.program!.days).toHaveLength(3)
   })
 
-  it('handles multiple equipment types across days', () => {
-    const result = validateProgramDraft(scenarioC)
+  it('handles multiple equipment types across days', async () => {
+    const result = await validateProgramDraft(scenarioC)
     expect(result.valid).toBe(true)
     const day1 = result.program!.days[0]
     const day2 = result.program!.days[1]
@@ -449,7 +449,7 @@ describe('Scenario C — Hybrid athletic / Spartan', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Scenario D — Modification produces a valid revised program', () => {
-  it('a modified version of Scenario B still validates', () => {
+  it('a modified version of Scenario B still validates', async () => {
     // Simulate "replace the cable lat pulldown with pull-ups on Upper B"
     const modified: ProgramDraft = {
       ...scenarioB,
@@ -466,7 +466,7 @@ describe('Scenario D — Modification produces a valid revised program', () => {
       }),
     }
 
-    const result = validateProgramDraft(modified)
+    const result = await validateProgramDraft(modified)
     expect(result.valid).toBe(true)
     expect(result.errors).toHaveLength(0)
     // Verify the modification took effect
@@ -475,7 +475,7 @@ describe('Scenario D — Modification produces a valid revised program', () => {
     expect(upperBExercises[0].intended_pattern).toBe('vertical_pull')
   })
 
-  it('preserves unchanged days from the original program', () => {
+  it('preserves unchanged days from the original program', async () => {
     const modified: ProgramDraft = {
       ...scenarioB,
       days: scenarioB.days.map((day, i) => {
@@ -483,7 +483,7 @@ describe('Scenario D — Modification produces a valid revised program', () => {
         return { ...day, name: 'Upper A — Modified' }
       }),
     }
-    const result = validateProgramDraft(modified)
+    const result = await validateProgramDraft(modified)
     expect(result.valid).toBe(true)
     expect(result.program!.days[0].name).toBe('Upper A — Modified')
     // Other days unchanged
@@ -494,7 +494,7 @@ describe('Scenario D — Modification produces a valid revised program', () => {
 // ─── Scenario E — Invalid exercise ID is rejected ─────────────────────────────
 
 describe('Scenario E — Invalid exercise IDs are rejected', () => {
-  it('rejects a program with an invented exercise ID', () => {
+  it('rejects a program with an invented exercise ID', async () => {
     const withBadId: ProgramDraft = {
       program_name: 'Bad Program',
       days: [
@@ -515,13 +515,13 @@ describe('Scenario E — Invalid exercise IDs are rejected', () => {
       ],
     }
 
-    const result = validateProgramDraft(withBadId)
+    const result = await validateProgramDraft(withBadId)
     expect(result.valid).toBe(false)
     expect(result.errors.length).toBeGreaterThan(0)
     expect(result.errors.some(e => e.includes('inv_made_up_exercise_999'))).toBe(true)
   })
 
-  it('rejects a program with a wrong intended_pattern', () => {
+  it('rejects a program with a wrong intended_pattern', async () => {
     const withBadPattern: ProgramDraft = {
       program_name: 'Wrong Pattern',
       days: [
@@ -542,23 +542,23 @@ describe('Scenario E — Invalid exercise IDs are rejected', () => {
       ],
     }
 
-    const result = validateProgramDraft(withBadPattern)
+    const result = await validateProgramDraft(withBadPattern)
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.includes('intended_pattern'))).toBe(true)
   })
 
-  it('rejects a program with no days', () => {
+  it('rejects a program with no days', async () => {
     const noDays: ProgramDraft = {
       program_name: 'Empty Program',
       days: [],
     }
 
-    const result = validateProgramDraft(noDays)
+    const result = await validateProgramDraft(noDays)
     expect(result.valid).toBe(false)
     expect(result.errors.length).toBeGreaterThan(0)
   })
 
-  it('rejects duplicate exercise IDs within a day', () => {
+  it('rejects duplicate exercise IDs within a day', async () => {
     const withDupes: ProgramDraft = {
       program_name: 'Dupes',
       days: [
@@ -587,12 +587,12 @@ describe('Scenario E — Invalid exercise IDs are rejected', () => {
       ],
     }
 
-    const result = validateProgramDraft(withDupes)
+    const result = await validateProgramDraft(withDupes)
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.includes('duplicate') || e.includes('appears more than once'))).toBe(true)
   })
 
-  it('rejects set counts outside 1–20 range', () => {
+  it('rejects set counts outside 1–20 range', async () => {
     const badSets: ProgramDraft = {
       program_name: 'Too Many Sets',
       days: [
@@ -613,11 +613,11 @@ describe('Scenario E — Invalid exercise IDs are rejected', () => {
       ],
     }
 
-    const result = validateProgramDraft(badSets)
+    const result = await validateProgramDraft(badSets)
     expect(result.valid).toBe(false)
   })
 
-  it('rejects an inv_* exercise ID (canonical library IDs are not in exercises.json)', () => {
+  it('rejects an inv_* exercise ID (canonical library IDs are not in exercises.json)', async () => {
     const withInvId: ProgramDraft = {
       program_name: 'Inv ID Test',
       days: [
@@ -638,12 +638,12 @@ describe('Scenario E — Invalid exercise IDs are rejected', () => {
       ],
     }
 
-    const result = validateProgramDraft(withInvId)
+    const result = await validateProgramDraft(withInvId)
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.includes('inv_barbell_squat'))).toBe(true)
   })
 
-  it('rejects RPE = 0 (below valid 1–10 range)', () => {
+  it('rejects RPE = 0 (below valid 1–10 range)', async () => {
     const draft: ProgramDraft = {
       program_name: 'Bad RPE',
       days: [
@@ -664,10 +664,10 @@ describe('Scenario E — Invalid exercise IDs are rejected', () => {
         },
       ],
     }
-    expect(validateProgramDraft(draft).valid).toBe(false)
+    expect((await validateProgramDraft(draft)).valid).toBe(false)
   })
 
-  it('rejects RPE = 11 (above valid 1–10 range)', () => {
+  it('rejects RPE = 11 (above valid 1–10 range)', async () => {
     const draft: ProgramDraft = {
       program_name: 'Bad RPE High',
       days: [
@@ -688,10 +688,10 @@ describe('Scenario E — Invalid exercise IDs are rejected', () => {
         },
       ],
     }
-    expect(validateProgramDraft(draft).valid).toBe(false)
+    expect((await validateProgramDraft(draft)).valid).toBe(false)
   })
 
-  it('accepts RPE = 10 (max valid value)', () => {
+  it('accepts RPE = 10 (max valid value)', async () => {
     const draft: ProgramDraft = {
       program_name: 'Max RPE',
       days: [
@@ -712,10 +712,10 @@ describe('Scenario E — Invalid exercise IDs are rejected', () => {
         },
       ],
     }
-    expect(validateProgramDraft(draft).valid).toBe(true)
+    expect((await validateProgramDraft(draft)).valid).toBe(true)
   })
 
-  it('rejects estimated_duration_minutes = 0', () => {
+  it('rejects estimated_duration_minutes = 0', async () => {
     const draft: ProgramDraft = {
       program_name: 'Zero Duration',
       days: [
@@ -735,10 +735,10 @@ describe('Scenario E — Invalid exercise IDs are rejected', () => {
         },
       ],
     }
-    expect(validateProgramDraft(draft).valid).toBe(false)
+    expect((await validateProgramDraft(draft)).valid).toBe(false)
   })
 
-  it('rejects a day with more than 15 exercises', () => {
+  it('rejects a day with more than 15 exercises', async () => {
     const exercises = Array.from({ length: 16 }, () => ({
       exercise_id: '0025',
       intended_pattern: 'horizontal_push',
@@ -752,14 +752,14 @@ describe('Scenario E — Invalid exercise IDs are rejected', () => {
       program_name: 'Too Many Exercises',
       days: [{ name: 'Day 1', estimated_duration_minutes: 90, exercises }],
     }
-    expect(validateProgramDraft(draft).valid).toBe(false)
+    expect((await validateProgramDraft(draft)).valid).toBe(false)
   })
 })
 
 // ─── Equipment profile enforcement ────────────────────────────────────────────
 
 describe('Equipment validation via ValidationOptions', () => {
-  it('rejects a barbell exercise when allowedEquipment = ["dumbbell"]', () => {
+  it('rejects a barbell exercise when allowedEquipment = ["dumbbell"]', async () => {
     const draft: ProgramDraft = {
       program_name: 'Barbell in Dumbbell Profile',
       days: [
@@ -780,12 +780,12 @@ describe('Equipment validation via ValidationOptions', () => {
       ],
     }
 
-    const result = validateProgramDraft(draft, { allowedEquipment: ['dumbbell'] })
+    const result = await validateProgramDraft(draft, undefined, undefined, { allowedEquipment: ['dumbbell'] })
     expect(result.valid).toBe(false)
     expect(result.errors.some(e => e.toLowerCase().includes('equipment'))).toBe(true)
   })
 
-  it('allows body weight exercises regardless of allowedEquipment', () => {
+  it('allows body weight exercises regardless of allowedEquipment', async () => {
     const draft: ProgramDraft = {
       program_name: 'Bodyweight in Barbell Profile',
       days: [
@@ -806,12 +806,12 @@ describe('Equipment validation via ValidationOptions', () => {
       ],
     }
 
-    const result = validateProgramDraft(draft, { allowedEquipment: ['barbell'] })
+    const result = await validateProgramDraft(draft, undefined, undefined, { allowedEquipment: ['barbell'] })
     expect(result.valid).toBe(true)
   })
 
-  it('allows exercises when allowedEquipment is not provided', () => {
-    const result = validateProgramDraft({
+  it('allows exercises when allowedEquipment is not provided', async () => {
+    const result = await validateProgramDraft({
       program_name: 'No Equipment Filter',
       days: [
         {
@@ -834,10 +834,55 @@ describe('Equipment validation via ValidationOptions', () => {
   })
 })
 
+// ─── Equipment bridge — YMove/ExDB cross-catalog compatibility ────────────────
+// EqFamily normalisation lets YMove equipment strings satisfy ExDB profile strings
+// ("machine" satisfies "leverage machine", "bodyweight" satisfies "body weight").
+
+describe('Equipment validation — YMove/ExDB EqFamily bridge', () => {
+  // Re-use the same ExDB exercise (barbell bench) that the existing tests use so
+  // we're not coupling to unverified ymv: IDs. The bridge applies to ExDB exercises too
+  // since normaliseExdbEquipment runs on both sides.
+
+  it('ExDB "barbell" still accepted by a barbell profile after the bridge', async () => {
+    const result = await validateProgramDraft({
+      program_name: 'Barbell in Barbell Profile',
+      days: [{
+        name: 'Push', estimated_duration_minutes: 45,
+        exercises: [{ exercise_id: '0025', intended_pattern: 'horizontal_push', sets: 3, reps_min: 6, reps_max: 8, rest_seconds: 120 }],
+      }],
+    }, undefined, undefined, { allowedEquipment: ['barbell'] })
+    expect(result.valid).toBe(true)
+  })
+
+  it('ExDB "leverage machine" exercise is accepted when profile includes "leverage machine"', async () => {
+    // 0576 = lever chest press — equipment: "leverage machine", pattern: horizontal_push
+    const result = await validateProgramDraft({
+      program_name: 'Machine Profile',
+      days: [{
+        name: 'Push', estimated_duration_minutes: 40,
+        exercises: [{ exercise_id: '0576', intended_pattern: 'horizontal_push', sets: 3, reps_min: 10, reps_max: 12, rest_seconds: 90 }],
+      }],
+    }, undefined, undefined, { allowedEquipment: ['leverage machine'] })
+    expect(result.valid).toBe(true)
+  })
+
+  it('ExDB "leverage machine" exercise is rejected when profile only has barbell', async () => {
+    const result = await validateProgramDraft({
+      program_name: 'Machine Rejected',
+      days: [{
+        name: 'Push', estimated_duration_minutes: 40,
+        exercises: [{ exercise_id: '0576', intended_pattern: 'horizontal_push', sets: 3, reps_min: 10, reps_max: 12, rest_seconds: 90 }],
+      }],
+    }, undefined, undefined, { allowedEquipment: ['barbell'] })
+    expect(result.valid).toBe(false)
+    expect(result.errors.some(e => e.toLowerCase().includes('equipment'))).toBe(true)
+  })
+})
+
 // ─── Alias search ─────────────────────────────────────────────────────────────
 
 describe('Exercise search — alias expansion', () => {
-  it('finds pull-up exercises when searching for "pullup" (alias expansion)', () => {
+  it('finds pull-up exercises when searching for "pullup" (alias expansion)', async () => {
     // "pullup" is an alias — the alias expander maps it to pull-up/chin-up names.
     // We verify that results come back with the vertical_pull movement pattern,
     // not that the name literally contains "pull" (chin-ups qualify too).
@@ -846,7 +891,7 @@ describe('Exercise search — alias expansion', () => {
     expect(results.some(r => r.movementPattern === 'vertical_pull')).toBe(true)
   })
 
-  it('returns numeric IDs (not inv_* IDs) from search results', () => {
+  it('returns numeric IDs (not inv_* IDs) from search results', async () => {
     const results = executeExerciseSearch({ query: 'squat', limit: 5 })
     expect(results.length).toBeGreaterThan(0)
     for (const r of results) {
@@ -854,7 +899,7 @@ describe('Exercise search — alias expansion', () => {
     }
   })
 
-  it('returns an empty array when no exercises match', () => {
+  it('returns an empty array when no exercises match', async () => {
     const results = executeExerciseSearch({ query: 'xyzzy_nonexistent_exercise_12345', limit: 5 })
     expect(results).toHaveLength(0)
   })

@@ -3,8 +3,9 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getOpenAI } from '@/lib/ai/client'
 import { workoutModel } from '@/lib/ai/models'
-import { SEARCH_EXERCISES_TOOL, executeExerciseSearch, validateExerciseId } from '@/lib/ai/tools/exercises'
-import { getExerciseById } from '@/lib/exercises'
+import { SEARCH_EXERCISES_TOOL, executeExerciseSearchAsync, validateExerciseIdAsync } from '@/lib/ai/tools/exercises'
+import type { ExerciseSearchParams } from '@/lib/ai/tools/exercises'
+import { isYmvId } from '@/lib/exercises/identity'
 import { prisma } from '@/lib/prisma'
 import { resolveExerciseMeta } from '@/lib/ymove/resolver'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
@@ -29,7 +30,7 @@ const PROPOSE_SUBSTITUTION_TOOL = {
           items: {
             type: 'object',
             properties: {
-              exercise_id: { type: 'string', description: 'ExerciseDB ID from search results' },
+              exercise_id: { type: 'string', description: 'Exercise ID from search_exercises results (ymv: or numeric ExerciseDB ID)' },
               reason:      { type: 'string', description: 'Why this is a good substitute (1 sentence)' },
             },
             required: ['exercise_id', 'reason'],
@@ -130,14 +131,17 @@ USER CONTEXT:\n${contextSnippet}`,
       let result: string
 
       if (fn.name === 'search_exercises') {
-        const params = JSON.parse(fn.arguments) as Parameters<typeof executeExerciseSearch>[0]
-        const exercises = executeExerciseSearch({ ...params, limit: Math.min(params.limit ?? 15, 20) })
+        const params = JSON.parse(fn.arguments) as ExerciseSearchParams
+        const exercises = await executeExerciseSearchAsync({ ...params, limit: Math.min(params.limit ?? 15, 20) }, prisma)
         result = exercises.length > 0
           ? JSON.stringify(exercises)
           : JSON.stringify({ message: 'No exercises found. Try different filters.' })
       } else if (fn.name === 'propose_substitution') {
         const proposal = JSON.parse(fn.arguments) as { substitutes: Array<{ exercise_id: string; reason: string }> }
-        const validated = proposal.substitutes.filter(s => validateExerciseId(s.exercise_id))
+        const validated: Array<{ exercise_id: string; reason: string }> = []
+        for (const s of proposal.substitutes) {
+          if (await validateExerciseIdAsync(s.exercise_id, user.id, prisma)) validated.push(s)
+        }
         if (validated.length > 0) {
           substitutes = validated
           result = JSON.stringify({ status: 'valid', count: validated.length })
@@ -160,18 +164,20 @@ USER CONTEXT:\n${contextSnippet}`,
     return Response.json({ error: 'V could not find valid substitutes. Please try again.' }, { status: 422 })
   }
 
-  const enriched = substitutes.map(s => {
-    const ex = getExerciseById(s.exercise_id)
+  const enriched = await Promise.all(substitutes.map(async s => {
+    const meta = await resolveExerciseMeta(s.exercise_id, user.id, prisma)
     return {
       exerciseId: s.exercise_id,
-      name:      ex?.name      ?? s.exercise_id,
-      target:    ex?.target    ?? 'unknown',
-      equipment: ex?.equipment ?? 'unknown',
-      bodyPart:  ex?.bodyPart  ?? 'unknown',
-      gifId:     s.exercise_id,
+      name:      meta?.name      ?? s.exercise_id,
+      target:    meta?.target    ?? 'unknown',
+      equipment: meta?.equipment ?? 'unknown',
+      bodyPart:  meta?.bodyPart  ?? 'unknown',
+      // gifId is only meaningful for ExerciseDB (4-digit numeric) IDs.
+      // ymv: exercises are served through the YMove media API, not the GIF endpoint.
+      ...(!isYmvId(s.exercise_id) ? { gifId: s.exercise_id } : {}),
       reason:    s.reason,
     }
-  })
+  }))
 
   return Response.json({ substitutes: enriched })
 }

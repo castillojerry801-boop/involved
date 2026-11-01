@@ -1,6 +1,6 @@
-import { validateExerciseId } from './exercises'
-import { classifyExercise } from '@/lib/exercises'
+import { validateExerciseIdAsync, classifyAnyExercise } from './exercises'
 import type { Exercise } from '@/lib/exercises'
+import type { PrismaClient } from '@prisma/client'
 
 export interface WorkoutExercise {
   exercise_id: string
@@ -33,10 +33,10 @@ export interface WorkoutValidationResult {
 }
 
 // Validate a workout draft from AI:
-// - All exercise_ids must exist in our library
+// - All exercise_ids must exist in our library (DB-validated for ymv: IDs)
 // - Sets/reps/rest must be within reasonable bounds
 // - No AI-fabricated data makes it through
-export function validateWorkoutDraft(draft: WorkoutDraft): WorkoutValidationResult {
+export async function validateWorkoutDraft(draft: WorkoutDraft, userId?: string, db?: PrismaClient): Promise<WorkoutValidationResult> {
   const errors: string[] = []
 
   if (!draft.workout_name?.trim()) errors.push('Workout name is required')
@@ -50,7 +50,7 @@ export function validateWorkoutDraft(draft: WorkoutDraft): WorkoutValidationResu
   const validatedExercises: Array<WorkoutExercise & { exercise: Exercise }> = []
 
   for (const ex of draft.exercises ?? []) {
-    const record = validateExerciseId(ex.exercise_id)
+    const record = await validateExerciseIdAsync(ex.exercise_id, userId, db)
     if (!record) {
       errors.push(`Exercise ID "${ex.exercise_id}" does not exist in the Involved library`)
       continue
@@ -60,7 +60,7 @@ export function validateWorkoutDraft(draft: WorkoutDraft): WorkoutValidationResu
     if (!ex.intended_pattern?.trim()) {
       errors.push(`${record.name}: intended_pattern is required — declare the movementPattern role this exercise fills`)
     } else {
-      const classification = classifyExercise(record)
+      const classification = classifyAnyExercise(record)
 
       if (classification.exerciseRole === 'mobility') {
         // Mobility/stretch exercises cannot fill strength or conditioning roles.

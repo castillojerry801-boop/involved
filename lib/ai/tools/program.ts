@@ -1,6 +1,9 @@
-import { validateExerciseId } from './exercises'
-import { classifyExercise } from '@/lib/exercises'
+import { validateExerciseIdAsync, classifyAnyExercise } from './exercises'
 import type { Exercise } from '@/lib/exercises'
+import type { PrismaClient } from '@prisma/client'
+import { normalizeExdbEquipment, normalizeYmoveEquipment } from '@/lib/ymove/hierarchy-scorer'
+import type { EqFamily } from '@/lib/ymove/hierarchy-scorer'
+import { isYmvId } from '@/lib/exercises/identity'
 
 export interface WeekProgression {
   week: number        // 1-based
@@ -141,7 +144,7 @@ export interface ValidationOptions {
   allowedEquipment?: string[]
 }
 
-export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOptions): ProgramValidationResult {
+export async function validateProgramDraft(draft: ProgramDraft, userId?: string, db?: PrismaClient, options?: ValidationOptions): Promise<ProgramValidationResult> {
   const errors: string[] = []
   const warnings: string[] = []
 
@@ -185,6 +188,14 @@ export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOp
     ? new Set([...options.allowedEquipment.map(e => e.toLowerCase()), 'body weight'])
     : null
 
+  // EqFamily bridge: maps ExDB profile strings to normalised families for cross-catalog
+  // matching — lets YMove "machine" satisfy a profile that lists "leverage machine".
+  const allowedEquipmentFamilies = options?.allowedEquipment?.length
+    ? new Set<string>(['bodyweight', ...options.allowedEquipment
+        .map(e => normalizeExdbEquipment(e.toLowerCase()))
+        .filter((f): f is EqFamily => f !== null)])
+    : null
+
   const validatedDays: ValidatedProgramDay[] = []
 
   for (const [di, day] of (draft.days ?? []).entries()) {
@@ -213,18 +224,19 @@ export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOp
       }
       seenIdsInDay.add(ex.exercise_id)
 
-      const record = validateExerciseId(ex.exercise_id)
+      const record = await validateExerciseIdAsync(ex.exercise_id, userId, db)
       if (!record) {
         errors.push(`Day "${day.name}": exercise ID "${ex.exercise_id}" does not exist — only use IDs from search_exercises`)
         continue
       }
 
+      // Classification is used for both pattern validation and equipment check below.
+      const classification = classifyAnyExercise(record)
+
       // Validate intended_pattern against the Involved classification layer
       if (!ex.intended_pattern?.trim()) {
         errors.push(`Day "${day.name}", ${record.name}: intended_pattern is required — declare the movementPattern role this exercise fills`)
       } else {
-        const classification = classifyExercise(record)
-
         if (classification.exerciseRole === 'mobility') {
           // Mobility/stretch exercises cannot fill strength or conditioning roles.
           // V may include them intentionally (warmup, cooldown) by setting intended_pattern to "other".
@@ -315,13 +327,26 @@ export function validateProgramDraft(draft: ProgramDraft, options?: ValidationOp
         }
       }
 
-      if (allowedEquipment) {
-        const eq = record.equipment.toLowerCase()
-        if (!allowedEquipment.has(eq)) {
-          errors.push(
-            `Day "${day.name}", ${record.name}: uses "${record.equipment}" which is not in the active equipment profile. ` +
-            `Search with equipment filter to find an alternative.`
-          )
+      if (allowedEquipment && allowedEquipmentFamilies) {
+        // Conditioning exercises use cardio equipment (treadmill, bike) that is never
+        // in a strength equipment profile — skip the check for them.
+        if (classification.exerciseRole !== 'conditioning') {
+          const fam = isYmvId(record.id)
+            ? normalizeYmoveEquipment(record.equipment)
+            : normalizeExdbEquipment(record.equipment)
+
+          // Bridge: normalised families let YMove "machine" match ExDB "leverage machine".
+          // Fall back to raw string match for equipment that can't be normalised.
+          const allowed = fam !== null
+            ? allowedEquipmentFamilies.has(fam)
+            : allowedEquipment.has(record.equipment.toLowerCase())
+
+          if (!allowed) {
+            errors.push(
+              `Day "${day.name}", ${record.name}: uses "${record.equipment}" which is not in the active equipment profile. ` +
+              `Search with equipment filter to find an alternative.`
+            )
+          }
         }
       }
 

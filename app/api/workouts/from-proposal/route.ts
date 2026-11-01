@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json() as WorkoutDraft
 
-  const validation = validateWorkoutDraft(body)
+  const validation = await validateWorkoutDraft(body, user.id, prisma)
   if (!validation.valid || !validation.workout) {
     return Response.json({ error: 'Invalid workout data', details: validation.errors }, { status: 400 })
   }

@@ -100,13 +100,13 @@ describe('Scenario A — Returning beginner, 6-week 3-day full-body', () => {
     ],
   }
 
-  it('passes structural validateProgramDraft', () => {
-    const result = validateProgramDraft(goodProgram, { allowedEquipment: ['body weight'] })
+  it('passes structural validateProgramDraft', async () => {
+    const result = await validateProgramDraft(goodProgram, undefined, undefined, { allowedEquipment: ['body weight'] })
     if (!result.valid) console.error('Structural errors:', result.errors)
     expect(result.valid).toBe(true)
   })
 
-  it('passes quality validator with no hard errors', () => {
+  it('passes quality validator with no hard errors', async () => {
     const issues = validateProgramQuality(goodProgram, {
       fitnessLevel: 'beginner',
       weeks: 6,
@@ -116,7 +116,7 @@ describe('Scenario A — Returning beginner, 6-week 3-day full-body', () => {
     expect(hardErrors).toHaveLength(0)
   })
 
-  it('has no failure_allowed exercises (beginner rule)', () => {
+  it('has no failure_allowed exercises (beginner rule)', async () => {
     const allEx = goodProgram.days.flatMap(d => d.exercises)
     const withFailure = allEx.filter(e => e.failure_allowed === true)
     expect(withFailure).toHaveLength(0)
@@ -140,7 +140,7 @@ describe('Scenario A — Returning beginner, 6-week 3-day full-body', () => {
       ],
     }
 
-    it('does NOT trigger SPARSE_SESSION for beginner (only fires for intermediate+)', () => {
+    it('does NOT trigger SPARSE_SESSION for beginner (only fires for intermediate+)', async () => {
       const issues = validateProgramQuality(sparseProgram, { fitnessLevel: 'beginner', weeks: 6 })
       const sparse = issues.find(i => i.code === 'SPARSE_SESSION')
       expect(sparse).toBeUndefined()
@@ -270,13 +270,13 @@ describe('Scenario B — Advanced 15-year lifter, 12-week 4-day full-body progra
     ],
   }
 
-  it('passes structural validateProgramDraft', () => {
-    const result = validateProgramDraft(advancedProgram, { allowedEquipment: ['body weight'] })
+  it('passes structural validateProgramDraft', async () => {
+    const result = await validateProgramDraft(advancedProgram, undefined, undefined, { allowedEquipment: ['body weight'] })
     if (!result.valid) console.error('Structural errors:', result.errors)
     expect(result.valid).toBe(true)
   })
 
-  it('passes quality validator with no hard errors for advanced user', () => {
+  it('passes quality validator with no hard errors for advanced user', async () => {
     const issues = validateProgramQuality(advancedProgram, {
       fitnessLevel: 'advanced',
       weeks: 12,
@@ -286,11 +286,11 @@ describe('Scenario B — Advanced 15-year lifter, 12-week 4-day full-body progra
     expect(hardErrors).toHaveLength(0)
   })
 
-  it('has phases defined for 12-week program', () => {
+  it('has phases defined for 12-week program', async () => {
     expect(advancedProgram.phases?.length).toBeGreaterThan(0)
   })
 
-  it('has week_progressions on at least one compound', () => {
+  it('has week_progressions on at least one compound', async () => {
     const allEx = advancedProgram.days.flatMap(d => d.exercises)
     const withWP = allEx.filter(e => e.week_progressions && e.week_progressions.length > 0)
     expect(withWP.length).toBeGreaterThan(0)
@@ -319,7 +319,7 @@ describe('Scenario B — Advanced 15-year lifter, 12-week 4-day full-body progra
       ],
     }
 
-    it('triggers ADVANCED_SHALLOW_SESSION error for <5 exercises on push/pull day', () => {
+    it('triggers ADVANCED_SHALLOW_SESSION error for <5 exercises on push/pull day', async () => {
       const issues = validateProgramQuality(shallowAdvanced, { fitnessLevel: 'advanced', weeks: 12 })
       const err = issues.find(i => i.code === 'ADVANCED_SHALLOW_SESSION')
       expect(err).toBeDefined()
@@ -331,7 +331,7 @@ describe('Scenario B — Advanced 15-year lifter, 12-week 4-day full-body progra
 // ─── Scenario C — Hard error regression fixtures ──────────────────────────────
 
 describe('Scenario C — Regression: hard errors always fire', () => {
-  it('C1 — ALTERNATING_ORDER_VIOLATED: grouped alternating exercises trigger error', () => {
+  it('C1 — ALTERNATING_ORDER_VIOLATED: grouped alternating exercises trigger error', async () => {
     const draft: ProgramDraft = {
       program_name: 'Grouped Alternating',
       days: [{
@@ -350,7 +350,7 @@ describe('Scenario C — Regression: hard errors always fire', () => {
     expect(issues.some(i => i.code === 'ALTERNATING_ORDER_VIOLATED' && i.severity === 'error')).toBe(true)
   })
 
-  it('C2 — PROGRESSION_NOT_MEANINGFUL: all auto with no details on 8-week program', () => {
+  it('C2 — PROGRESSION_NOT_MEANINGFUL: all auto with no details on 8-week program', async () => {
     const draft: ProgramDraft = {
       program_name: 'All Auto',
       weeks: 8,
@@ -371,7 +371,7 @@ describe('Scenario C — Regression: hard errors always fire', () => {
     expect(issues.some(i => i.code === 'PROGRESSION_NOT_MEANINGFUL' && i.severity === 'error')).toBe(true)
   })
 
-  it('C3 — BEGINNER_FAILURE_OVERUSE: beginner with failure_allowed triggers error', () => {
+  it('C3 — BEGINNER_FAILURE_OVERUSE: beginner with failure_allowed triggers error', async () => {
     const draft: ProgramDraft = {
       program_name: 'Beginner Failure',
       days: [{
@@ -389,7 +389,7 @@ describe('Scenario C — Regression: hard errors always fire', () => {
     expect(issues.some(i => i.code === 'BEGINNER_FAILURE_OVERUSE' && i.severity === 'error')).toBe(true)
   })
 
-  it('C4 — errors are sorted first: all errors precede all warnings in result', () => {
+  it('C4 — errors are sorted first: all errors precede all warnings in result', async () => {
     const draft: ProgramDraft = {
       program_name: 'Mixed Issues',
       weeks: 8,

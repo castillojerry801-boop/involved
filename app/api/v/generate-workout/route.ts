@@ -4,9 +4,10 @@ import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getOpenAI } from '@/lib/ai/client'
 import { workoutModel } from '@/lib/ai/models'
-import { SEARCH_EXERCISES_TOOL, executeExerciseSearch } from '@/lib/ai/tools/exercises'
+import { SEARCH_EXERCISES_TOOL, executeExerciseSearchAsync } from '@/lib/ai/tools/exercises'
+import type { ExerciseSearchParams } from '@/lib/ai/tools/exercises'
 import { PROPOSE_WORKOUT_TOOL, validateWorkoutDraft } from '@/lib/ai/tools/workout'
-import type { WorkoutDraft } from '@/lib/ai/tools/workout'
+import type { WorkoutDraft, WorkoutValidationResult } from '@/lib/ai/tools/workout'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { hasFeatureAccess } from '@/lib/subscription/config'
 import { checkAndConsumeVUsage } from '@/lib/v/usage'
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
   ]
 
   const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_WORKOUT_TOOL]
-  let pendingWorkout: ReturnType<typeof validateWorkoutDraft> | null = null
+  let pendingWorkout: WorkoutValidationResult | null = null
   const MAX_ROUNDS = 6
   const requestLogs: PendingRequestLog[] = []
 
@@ -104,14 +105,14 @@ export async function POST(req: NextRequest) {
       let result: string
 
       if (fn.name === 'search_exercises') {
-        const params = JSON.parse(fn.arguments) as Parameters<typeof executeExerciseSearch>[0]
-        const exercises = executeExerciseSearch({ ...params, limit: Math.min(params.limit ?? 15, 20) })
+        const params = JSON.parse(fn.arguments) as ExerciseSearchParams
+        const exercises = await executeExerciseSearchAsync({ ...params, limit: Math.min(params.limit ?? 15, 20) }, prisma)
         result = exercises.length > 0
           ? JSON.stringify(exercises)
           : JSON.stringify({ message: 'No exercises found. Try different filters.' })
       } else if (fn.name === 'propose_workout') {
         const draft = JSON.parse(fn.arguments) as WorkoutDraft
-        const validation = validateWorkoutDraft(draft)
+        const validation = await validateWorkoutDraft(draft, user.id, prisma)
         if (validation.valid) {
           pendingWorkout = validation
           result = JSON.stringify({ status: 'valid', message: 'Workout validated. You are done.' })

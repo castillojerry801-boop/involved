@@ -172,7 +172,7 @@ export async function buildVTrainerContext(
     const clientYmvRows = clientYmvBareIds.length > 0
       ? await prisma.ymoveExerciseCatalog.findMany({
           where: { ymoveId: { in: clientYmvBareIds } },
-          select: { ymoveId: true, name: true, equipment: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
+          select: { ymoveId: true, name: true, equipment: true, category: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
         }).catch(() => [])
       : []
     const clientYmvMap = new Map<string, ExerciseMeta>(

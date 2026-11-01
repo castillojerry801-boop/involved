@@ -16,6 +16,8 @@
  */
 
 import type { ExerciseSummary } from '@/lib/ai/tools/exercises'
+import { normalizeExdbEquipment, normalizeYmoveEquipment } from '@/lib/ymove/hierarchy-scorer'
+import { isYmvId } from '@/lib/exercises/identity'
 
 // Foundational compound movement patterns any resistance program needs to cover.
 // These are searched first and define "coverage". Accessory patterns are searched
@@ -146,8 +148,34 @@ export function filterCandidatesByEquipment(
   allowedEquipment: string[] | null | undefined,
 ): ExerciseSummary[] {
   if (!allowedEquipment || allowedEquipment.length === 0) return results
-  const allowed = new Set([...allowedEquipment.map(e => e.toLowerCase()), 'body weight'])
-  return results.filter(e => allowed.has(e.equipment.toLowerCase()))
+
+  // Build allowed EqFamily values from profile's ExerciseDB strings.
+  // 'bodyweight' always allowed (body weight = no-equipment baseline).
+  const allowedFamilies = new Set<string>(['bodyweight'])
+  const allowedRaw      = new Set<string>(['body weight'])
+  for (const eq of allowedEquipment) {
+    const lc  = eq.toLowerCase()
+    allowedRaw.add(lc)
+    const fam = normalizeExdbEquipment(lc)
+    if (fam) allowedFamilies.add(fam)
+  }
+
+  return results.filter(e => {
+    // Conditioning exercises use cardio equipment (treadmill, bike, rower) that is
+    // never listed in strength profiles — always treat them as available.
+    if (e.exerciseRole === 'conditioning') return true
+
+    // Bridge: YMove "machine" and ExDB "leverage machine" both normalise to EqFamily
+    // "machine", so the profile allows YMove exercises regardless of catalog vocabulary.
+    const fam = isYmvId(e.id)
+      ? normalizeYmoveEquipment(e.equipment)
+      : normalizeExdbEquipment(e.equipment)
+
+    if (fam !== null) return allowedFamilies.has(fam)
+
+    // Equipment can't be normalised (e.g. "stability ball") — raw string fallback.
+    return allowedRaw.has(e.equipment.toLowerCase())
+  })
 }
 
 // How many candidates to keep per pattern after compaction. Core compounds keep a

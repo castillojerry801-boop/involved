@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     const ymvRows = ymvBareIds.length > 0
       ? await prisma.ymoveExerciseCatalog.findMany({
           where: { ymoveId: { in: ymvBareIds } },
-          select: { ymoveId: true, name: true, equipment: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
+          select: { ymoveId: true, name: true, equipment: true, category: true, primaryMuscleGroup: true, thumbnailMediaId: true, hasVideo: true },
         })
       : []
     const ymvMetaMap = new Map(ymvRows.map(r => [formatYmvId(r.ymoveId), ymvToMeta(r)]))

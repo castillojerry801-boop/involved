@@ -117,6 +117,53 @@ describe('filterCandidatesByEquipment', () => {
     expect(names).toContain('body weight') // always allowed
     expect(names).not.toContain('cable')   // not in profile
   })
+
+  // ── YMove/ExDB equipment bridge (EqFamily normalisation) ──────────────────────
+  // Profile items use ExDB strings; YMove exercises use YMove API strings. The
+  // bridge ensures vocabulary differences (e.g. "machine" vs "leverage machine")
+  // don't incorrectly exclude valid exercises.
+
+  it('YMove "machine" passes when profile has ExDB "leverage machine"', () => {
+    const ymvMachine = ex('horizontal_pull', { id: 'ymv:aabbccdd-0000-0000-0000-000000000001', equipment: 'machine' })
+    const kept = filterCandidatesByEquipment([ymvMachine], ['leverage machine'])
+    expect(kept).toHaveLength(1)
+  })
+
+  it('YMove "bodyweight" passes when profile has ExDB "body weight"', () => {
+    const ymvBw = ex('core', { id: 'ymv:aabbccdd-0000-0000-0000-000000000002', equipment: 'bodyweight' })
+    const kept = filterCandidatesByEquipment([ymvBw], ['body weight'])
+    expect(kept).toHaveLength(1)
+  })
+
+  it('ExDB "leverage machine" passes when profile has ExDB "leverage machine"', () => {
+    const exdbMachine = ex('horizontal_pull', { id: '0025', equipment: 'leverage machine' })
+    const kept = filterCandidatesByEquipment([exdbMachine], ['leverage machine'])
+    expect(kept).toHaveLength(1)
+  })
+
+  it('conditioning exercises always pass regardless of equipment profile', () => {
+    const treadmill = ex('cardio', {
+      id: 'ymv:aabbccdd-0000-0000-0000-000000000003',
+      equipment: 'treadmill',
+      exerciseRole: 'conditioning',
+    })
+    const kept = filterCandidatesByEquipment([treadmill], ['barbell'])
+    expect(kept).toHaveLength(1)
+  })
+
+  it('YMove "cable" is excluded when profile does not include cable', () => {
+    const ymvCable = ex('horizontal_pull', { id: 'ymv:aabbccdd-0000-0000-0000-000000000004', equipment: 'cable' })
+    const kept = filterCandidatesByEquipment([ymvCable], ['barbell', 'dumbbell'])
+    expect(kept).toHaveLength(0)
+  })
+
+  it('unknown equipment (stability ball) uses raw string fallback', () => {
+    const exdbBall = ex('core', { id: '0099', equipment: 'stability ball' })
+    // Profile does include stability ball
+    expect(filterCandidatesByEquipment([exdbBall], ['stability ball'])).toHaveLength(1)
+    // Profile does not include stability ball
+    expect(filterCandidatesByEquipment([exdbBall], ['barbell'])).toHaveLength(0)
+  })
 })
 
 // ─── Coverage + handoff rule ───────────────────────────────────────────────────

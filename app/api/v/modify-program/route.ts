@@ -1,11 +1,13 @@
 import 'server-only'
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { prisma } from '@/lib/prisma'
 import { getOpenAI } from '@/lib/ai/client'
 import { workoutModel, buildModelParamShape } from '@/lib/ai/models'
-import { SEARCH_EXERCISES_TOOL, executeExerciseSearch } from '@/lib/ai/tools/exercises'
+import { SEARCH_EXERCISES_TOOL, executeExerciseSearchAsync } from '@/lib/ai/tools/exercises'
+import type { ExerciseSearchParams } from '@/lib/ai/tools/exercises'
 import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/program'
-import type { ProgramDraft } from '@/lib/ai/tools/program'
+import type { ProgramDraft, ProgramValidationResult } from '@/lib/ai/tools/program'
 import type { ProgramPreview, GenerationConstraints } from '@/app/api/v/generate-program/route'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
 import { hasFeatureAccess } from '@/lib/subscription/config'
@@ -120,7 +122,7 @@ export async function POST(req: NextRequest) {
   ]
 
   const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_PROGRAM_TOOL]
-  let pendingProgram: ReturnType<typeof validateProgramDraft> | null = null
+  let pendingProgram: ProgramValidationResult | null = null
   let pendingDraft: ProgramDraft | null = null
   const MAX_ROUNDS = 12
   const requestLogs: PendingRequestLog[] = []
@@ -148,14 +150,14 @@ export async function POST(req: NextRequest) {
         let result: string
 
         if (fn.name === 'search_exercises') {
-          const params = JSON.parse(fn.arguments) as Parameters<typeof executeExerciseSearch>[0]
-          const exercises = executeExerciseSearch({ ...params, limit: Math.min(params.limit ?? 15, 20) })
+          const params = JSON.parse(fn.arguments) as ExerciseSearchParams
+          const exercises = await executeExerciseSearchAsync({ ...params, limit: Math.min(params.limit ?? 15, 20) }, prisma)
           result = exercises.length > 0
             ? JSON.stringify(exercises)
             : JSON.stringify({ message: 'No exercises found. Try different filters.' })
         } else if (fn.name === 'propose_program') {
           const draft = JSON.parse(fn.arguments) as ProgramDraft
-          const validation = validateProgramDraft(draft, { allowedEquipment })
+          const validation = await validateProgramDraft(draft, user.id, prisma, { allowedEquipment })
           if (validation.valid) {
             pendingProgram = validation
             pendingDraft = draft
