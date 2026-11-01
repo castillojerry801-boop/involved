@@ -6,7 +6,7 @@ interface Props {
   /**
    * YMove exercise UUID. When provided the component fetches the SVG body-map
    * from the sanitized server-side proxy (/api/ymove/body-map/:ymoveId).
-   * Takes precedence over exerciseId.
+   * Takes precedence over exerciseId / exerciseIds.
    */
   ymoveId?: string | null
   /**
@@ -15,6 +15,14 @@ interface Props {
    * ymoveId server-side. Falls back to text-tag mode if no mapping exists.
    */
   exerciseId?: string | null
+  /**
+   * Ordered list of ExerciseDB exercise IDs to try when a single exerciseId is
+   * not available or its mapping returns 404. Used by canonical exercise views
+   * where the first implementation may be unmapped but later ones are verified.
+   * Ignored when ymoveId or exerciseId is set. The component tries each in
+   * sequence and uses the first that returns a valid body map.
+   */
+  exerciseIds?: string[]
   /** Primary muscles — shown in text-tag fallback and as the label when SVG renders. */
   primaryMuscles: string[]
   /** Secondary muscles — clearly distinct from primary in both SVG and text-tag modes. */
@@ -65,29 +73,55 @@ function TextTagFallback({
   )
 }
 
+// Derives the ordered candidate fetch URLs from props.
+// ymoveId → single URL (highest priority)
+// exerciseId → single URL
+// exerciseIds → one URL per ID in order (tried sequentially on 404)
+function buildCandidates(
+  ymoveId?: string | null,
+  exerciseId?: string | null,
+  exerciseIds?: string[],
+): string[] {
+  if (ymoveId) return [`/api/ymove/body-map/${encodeURIComponent(ymoveId)}`]
+  if (exerciseId) return [`/api/ymove/body-map/by-exercise/${encodeURIComponent(exerciseId)}`]
+  if (exerciseIds && exerciseIds.length > 0) {
+    return exerciseIds.map(id => `/api/ymove/body-map/by-exercise/${encodeURIComponent(id)}`)
+  }
+  return []
+}
+
 export function MuscleBodyMap({
   ymoveId,
   exerciseId,
+  exerciseIds,
   primaryMuscles,
   secondaryMuscles = [],
   className = '',
 }: Props) {
   const [svgMarkup, setSvgMarkup] = useState<string | null>(null)
   const [fetchFailed, setFetchFailed] = useState(false)
+  // Index into the candidates list — advances on 404/error to try next candidate
+  const [candidateIndex, setCandidateIndex] = useState(0)
 
-  // Resolve which URL to fetch — ymoveId route takes precedence over exerciseId route
-  const fetchUrl = ymoveId
-    ? `/api/ymove/body-map/${encodeURIComponent(ymoveId)}`
-    : exerciseId
-      ? `/api/ymove/body-map/by-exercise/${encodeURIComponent(exerciseId)}`
-      : null
+  // Stable key representing the full candidate set — used to reset state when
+  // the prop set changes (e.g. parent navigates to a different exercise).
+  const candidatesKey = `${ymoveId ?? ''}|${exerciseId ?? ''}|${(exerciseIds ?? []).join(',')}`
+
+  // Reset all fetch state when the candidate set changes
+  useEffect(() => {
+    setCandidateIndex(0)
+    setSvgMarkup(null)
+    setFetchFailed(false)
+  }, [candidatesKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const candidates = buildCandidates(ymoveId, exerciseId, exerciseIds)
+  const fetchUrl = candidates[candidateIndex] ?? null
 
   useEffect(() => {
     if (!fetchUrl) return
 
     let cancelled = false
     setSvgMarkup(null)
-    setFetchFailed(false)
 
     fetch(fetchUrl)
       .then(res => {
@@ -98,15 +132,21 @@ export function MuscleBodyMap({
         if (!cancelled) setSvgMarkup(svg)
       })
       .catch(() => {
-        if (!cancelled) setFetchFailed(true)
+        if (cancelled) return
+        // Try the next candidate if one exists; otherwise give up
+        if (candidateIndex < candidates.length - 1) {
+          setCandidateIndex(i => i + 1)
+        } else {
+          setFetchFailed(true)
+        }
       })
 
     return () => {
       cancelled = true
     }
-  }, [fetchUrl])
+  }, [fetchUrl]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Text-tag mode: no identifier provided, or fetch failed/404
+  // Text-tag mode: no identifiers provided, or all candidates exhausted
   if (!fetchUrl || fetchFailed) {
     return (
       <div className={className}>
@@ -118,7 +158,7 @@ export function MuscleBodyMap({
     )
   }
 
-  // Loading state
+  // Loading state (between candidates or initial load)
   if (!svgMarkup) {
     return (
       <div className={`${className} flex items-center justify-center`}>

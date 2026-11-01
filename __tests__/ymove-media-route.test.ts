@@ -21,9 +21,10 @@ vi.mock('@/lib/exercises', () => ({
 
 const mockGetYmoveById = vi.fn()
 
-vi.mock('@/lib/ymove/client', () => ({
-  getYmoveById: (...args: unknown[]) => mockGetYmoveById(...args),
-}))
+vi.mock('@/lib/ymove/client', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/lib/ymove/client')>()
+  return { ...real, getYmoveById: (...args: unknown[]) => mockGetYmoveById(...args) }
+})
 
 import { GET } from '@/app/api/training/exercises/[exerciseId]/media/route'
 import { NextRequest } from 'next/server'
@@ -77,10 +78,11 @@ describe('GET /api/training/exercises/[exerciseId]/media', () => {
     expect(body.fallbackGifUrl).toContain('0026')
   })
 
-  it('thumbnail mode: does NOT call getYmoveById (no cap charge, no API round-trip)', async () => {
+  it('thumbnail mode: calls getYmoveById with includeVideo=false only — never charges video cap', async () => {
     setMapping({ '0026': YMOVE_UUID })
     await callRoute('0026')
-    expect(mockGetYmoveById).not.toHaveBeenCalled()
+    expect(mockGetYmoveById).toHaveBeenCalledWith(YMOVE_UUID, false)
+    expect(mockGetYmoveById).not.toHaveBeenCalledWith(YMOVE_UUID, true)
   })
 
   it('thumbnail mode: does not return videoUrl', async () => {
@@ -128,7 +130,10 @@ describe('GET /api/training/exercises/[exerciseId]/media', () => {
 
   it('video mode: getYmoveById throws → returns ymove source with ymoveId (thumbnail still works)', async () => {
     setMapping({ '0026': YMOVE_UUID })
-    mockGetYmoveById.mockRejectedValue(new Error('ymove network error'))
+    // First call (video mode) throws; second (browse-mode fallback) resolves null
+    mockGetYmoveById
+      .mockRejectedValueOnce(new Error('ymove network error'))
+      .mockResolvedValueOnce(null)
     const { body } = await callRoute('0026', true)
     expect(body.source).toBe('ymove')
     expect(body.ymoveId).toBe(YMOVE_UUID)
@@ -168,7 +173,9 @@ describe('GET /api/training/exercises/[exerciseId]/media', () => {
 
   it('video mode: provider 429 → route catches, returns ymove source without videoUrl', async () => {
     setMapping({ '0026': YMOVE_UUID })
-    mockGetYmoveById.mockRejectedValue(Object.assign(new Error('429'), { status: 429 }))
+    mockGetYmoveById
+      .mockRejectedValueOnce(Object.assign(new Error('429'), { status: 429 }))
+      .mockResolvedValueOnce(null)
     const { body } = await callRoute('0026', true)
     expect(body.source).toBe('ymove')
     expect(body.ymoveId).toBe(YMOVE_UUID)
@@ -216,8 +223,10 @@ describe('ExerciseMedia play-button display contract', () => {
 
     const video = await callRoute('0026', true)
     expect(video.body.videoUrl).toBe('https://ymove.example.com/video.mp4')
-    // Confirms the cap is only charged on explicit play tap
-    expect(mockGetYmoveById).toHaveBeenCalledTimes(1)
+    // Thumbnail mode calls getYmoveById(false); play mode calls getYmoveById(true)
+    // Video cap only charged on the play-mode call with includeVideo=true
+    expect(mockGetYmoveById).toHaveBeenCalledTimes(2)
+    expect(mockGetYmoveById).toHaveBeenCalledWith(YMOVE_UUID, false)
     expect(mockGetYmoveById).toHaveBeenCalledWith(YMOVE_UUID, true)
   })
 

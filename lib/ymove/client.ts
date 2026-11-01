@@ -117,6 +117,35 @@ export async function getBodyMap(ymoveId: string): Promise<string | null> {
   return text.trim() || null
 }
 
+// Trusted CDN hostname patterns for YMove thumbnail URLs.
+// Thumbnail CDN URLs are public (no API key needed); we still validate hostnames
+// to prevent arbitrary server-side URLs from reaching client responses.
+//
+// IMPORTANT: Only list domains that are exclusively controlled by YMove.
+// Shared CDN domains (cloudfront.net, fastly.net, imgix.net) are NOT listed because
+// any third-party customer of those CDNs can serve content from those domains —
+// an attacker who can influence the YMove API response could redirect to unrelated
+// content on the same CDN. Add the specific YMove-controlled hostname discovered
+// from a live API response if thumbnails are served via a custom-domain CNAME.
+const TRUSTED_THUMBNAIL_PATTERNS: RegExp[] = [
+  /^[a-z0-9.-]+\.ymove\.app$/i, // any subdomain of ymove.app — exclusively YMove-controlled
+]
+
+/**
+ * Returns true when a YMove thumbnail URL is from a known trusted CDN.
+ * Only HTTPS URLs with recognised CDN hostnames pass.
+ * Empty strings, data URIs, and HTTP URLs all return false.
+ */
+export function isTrustedThumbnailUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'https:') return false
+    return TRUSTED_THUMBNAIL_PATTERNS.some(re => re.test(parsed.hostname))
+  } catch {
+    return false
+  }
+}
+
 // ─── DEV-ONLY HELPERS ────────────────────────────────────────────────────────
 // These functions exist to assist human admins in building the verified mapping.
 // They MUST NOT be called in production code paths.

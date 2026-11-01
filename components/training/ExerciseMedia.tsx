@@ -11,6 +11,12 @@ interface MediaResponse {
   videoUrl?: string
   videoHlsUrl?: string
   fallbackGifUrl: string
+  /**
+   * Thumbnail media UUID — different from ymoveId (exercise UUID).
+   * The client passes this through the /api/ymove/thumbnail proxy which adds the API key.
+   * null means the metadata fetch failed or the URL couldn't be parsed.
+   */
+  thumbnailMediaId?: string | null
 }
 
 interface Props {
@@ -81,9 +87,9 @@ export function ExerciseMedia({
   }
 
   const gifSrc = getGifUrl(exerciseId)
-  // Thumbnail served through our proxy — raw ymove URLs require the API key header.
-  const thumbSrc = media?.ymoveId
-    ? `/api/ymove/thumbnail/${media.ymoveId}?crop=${crop}`
+  // Thumbnail served through the proxy (adds API key). Media UUID ≠ exercise UUID.
+  const thumbSrc = media?.thumbnailMediaId
+    ? `/api/ymove/thumbnail/${media.thumbnailMediaId}?crop=${crop}`
     : null
 
   if (playing && videoSrc) {

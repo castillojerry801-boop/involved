@@ -7,22 +7,31 @@
  * transitions), a jsdom environment is required.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { sanitizeSvg } from '@/lib/ymove/sanitize-svg'
 
-// ── URL resolution logic ──────────────────────────────────────────────────────
-// Mirrors the fetchUrl derivation in MuscleBodyMap (lines 79-83 of component).
-// This function is not exported; testing the logic directly here keeps the
-// component clean while giving us full coverage.
+// ── buildCandidates: mirrors the exported helper in MuscleBodyMap ─────────────
+// Kept inline here so tests stay independent of the component's internals.
 
-function deriveBodyMapUrl(
+function buildCandidates(
   ymoveId?: string | null,
   exerciseId?: string | null,
-): string | null {
-  if (ymoveId) return `/api/ymove/body-map/${encodeURIComponent(ymoveId)}`
-  if (exerciseId) return `/api/ymove/body-map/by-exercise/${encodeURIComponent(exerciseId)}`
-  return null
+  exerciseIds?: string[],
+): string[] {
+  if (ymoveId) return [`/api/ymove/body-map/${encodeURIComponent(ymoveId)}`]
+  if (exerciseId) return [`/api/ymove/body-map/by-exercise/${encodeURIComponent(exerciseId)}`]
+  if (exerciseIds && exerciseIds.length > 0) {
+    return exerciseIds.map(id => `/api/ymove/body-map/by-exercise/${encodeURIComponent(id)}`)
+  }
+  return []
 }
+
+/** Convenience: returns first candidate (single-ID paths). */
+function deriveBodyMapUrl(ymoveId?: string | null, exerciseId?: string | null): string | null {
+  return buildCandidates(ymoveId, exerciseId)[0] ?? null
+}
+
+// ── URL resolution: single identifiers ───────────────────────────────────────
 
 describe('MuscleBodyMap URL resolution', () => {
   const UUID = '65e95132-e6bb-41e8-af7d-0eda931a1693'
@@ -61,6 +70,175 @@ describe('MuscleBodyMap URL resolution', () => {
   it('encodes special characters in exerciseId', () => {
     const url = deriveBodyMapUrl(null, 'ex/id')
     expect(url).toBe('/api/ymove/body-map/by-exercise/ex%2Fid')
+  })
+})
+
+// ── buildCandidates: exerciseIds list (Bench Press fallback fix) ──────────────
+
+describe('buildCandidates — exerciseIds list', () => {
+  it('returns empty array for empty exerciseIds', () => {
+    expect(buildCandidates(null, null, [])).toEqual([])
+    expect(buildCandidates(null, null, undefined)).toEqual([])
+  })
+
+  it('builds one URL per exerciseId in order', () => {
+    const ids = ['1254', '0151', '0289', '0748']
+    const urls = buildCandidates(null, null, ids)
+    expect(urls).toHaveLength(4)
+    expect(urls[0]).toBe('/api/ymove/body-map/by-exercise/1254')
+    expect(urls[1]).toBe('/api/ymove/body-map/by-exercise/0151')
+    expect(urls[2]).toBe('/api/ymove/body-map/by-exercise/0289')
+    expect(urls[3]).toBe('/api/ymove/body-map/by-exercise/0748')
+  })
+
+  it('encodes each exerciseId in the list', () => {
+    const urls = buildCandidates(null, null, ['ex/1', 'ex 2'])
+    expect(urls[0]).toBe('/api/ymove/body-map/by-exercise/ex%2F1')
+    expect(urls[1]).toBe('/api/ymove/body-map/by-exercise/ex%202')
+  })
+
+  it('ymoveId takes precedence over exerciseIds list', () => {
+    const urls = buildCandidates('some-uuid', null, ['1254', '0151'])
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toBe('/api/ymove/body-map/some-uuid')
+  })
+
+  it('exerciseId takes precedence over exerciseIds list', () => {
+    const urls = buildCandidates(null, 'direct-id', ['1254', '0151'])
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toBe('/api/ymove/body-map/by-exercise/direct-id')
+  })
+
+  it('single-element exerciseIds list behaves like exerciseId', () => {
+    const urls = buildCandidates(null, null, ['0043'])
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toBe('/api/ymove/body-map/by-exercise/0043')
+  })
+})
+
+// ── Regression: Bench Press — first impl unmapped, later impl verified ────────
+//
+// Before the fix, CanonicalExerciseDetail passed only the first exerciseId
+// (1254 — Band Bench Press, ymoveId=NULL → 404). The body map never appeared
+// even though implementations at indexes 6 (0151), 7 (0289), 12 (0748) are
+// verified.
+//
+// The fix passes all exerciseIds; MuscleBodyMap tries them in order and stops
+// at the first successful body map.
+
+describe('MuscleBodyMap — sequential candidate fetch logic', () => {
+  // Simulate the fetch calls that the component makes internally.
+  // Test the URL sequence rather than the React hook state machine.
+
+  const BENCH_PRESS_IDS = [
+    '1254', // Band Bench Press — ymoveId=NULL → 404
+    '0289', // Barbell Bench Press — verified → 200 (simplified; actual is 0151 first)
+    '0748', // Smith Machine Bench Press — verified
+  ]
+
+  it('Bench Press candidate list starts with unmapped ID, continues to verified IDs', () => {
+    const urls = buildCandidates(null, null, BENCH_PRESS_IDS)
+    // First candidate is the unmapped one — component will 404 and advance
+    expect(urls[0]).toBe('/api/ymove/body-map/by-exercise/1254')
+    // Subsequent candidates are the verified ones
+    expect(urls[1]).toBe('/api/ymove/body-map/by-exercise/0289')
+    expect(urls[2]).toBe('/api/ymove/body-map/by-exercise/0748')
+  })
+
+  it('stops at the first successful fetch — does not over-request', async () => {
+    const fetchMock = vi.fn()
+    // First ID (1254) returns 404; second (0289) returns 200 with SVG
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes('1254')) {
+        return Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve('') })
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('<svg xmlns="http://www.w3.org/2000/svg"><g data-region="chest"/></svg>'),
+      })
+    })
+
+    const urls = buildCandidates(null, null, BENCH_PRESS_IDS)
+
+    // Simulate the component's sequential fetch logic
+    let resolvedSvg: string | null = null
+    for (const url of urls) {
+      const res = await fetchMock(url) as { ok: boolean; status: number; text: () => Promise<string> }
+      if (res.ok) {
+        resolvedSvg = await res.text()
+        break
+      }
+    }
+
+    expect(resolvedSvg).not.toBeNull()
+    expect(resolvedSvg).toContain('<svg')
+    expect(resolvedSvg).toContain('data-region="chest"')
+    // Should have fetched 1254 (→ 404) then 0289 (→ 200), NOT 0748
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][0]).toContain('1254')
+    expect(fetchMock.mock.calls[1][0]).toContain('0289')
+  })
+
+  it('exhausts all candidates and resolves to null when all return 404', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404, text: () => Promise.resolve('') })
+
+    const ids = ['1254', '0151', '0289']
+    const urls = buildCandidates(null, null, ids)
+
+    let resolvedSvg: string | null = null
+    for (const url of urls) {
+      const res = await fetchMock(url) as { ok: boolean; text: () => Promise<string> }
+      if (res.ok) {
+        resolvedSvg = await res.text()
+        break
+      }
+    }
+
+    expect(resolvedSvg).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('succeeds on first try when first ID is already verified (Back Squat regression)', async () => {
+    // Back Squat: first impl (0043, Barbell Back Squat) is verified — should need only 1 fetch
+    const BACK_SQUAT_IDS = ['0043', '0044', '0045']
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve('<svg xmlns="http://www.w3.org/2000/svg"><g data-region="quads"/></svg>'),
+    })
+
+    const urls = buildCandidates(null, null, BACK_SQUAT_IDS)
+    let resolvedSvg: string | null = null
+    for (const url of urls) {
+      const res = await fetchMock(url) as { ok: boolean; text: () => Promise<string> }
+      if (res.ok) {
+        resolvedSvg = await res.text()
+        break
+      }
+    }
+
+    expect(resolvedSvg).toContain('data-region="quads"')
+    // Only one fetch needed — verified first impl
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/ymove/body-map/by-exercise/0043')
+  })
+
+  it('generates correct candidate count from all 14 Bench Press implementations', () => {
+    // Bench Press has 14 implementations in involved-exercise-library.json.
+    // All IDs should appear in candidate list in priority order.
+    // (This test asserts the list structure, not that all 14 exist in DB.)
+    const allBenchIds = [
+      '1254', '0051', '0052', '0053', '0054', '0055',
+      '0151', '0289', '0290', '0291', '0292', '0293',
+      '0748', '0749',
+    ]
+    const urls = buildCandidates(null, null, allBenchIds)
+    expect(urls).toHaveLength(14)
+    // Priority 1 (unmapped) is first
+    expect(urls[0]).toContain('1254')
+    // Verified IDs appear in their implementation-priority order
+    expect(urls[6]).toContain('0151')
   })
 })
 

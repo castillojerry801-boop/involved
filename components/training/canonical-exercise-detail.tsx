@@ -114,8 +114,11 @@ function ImplementationCard({ impl, onSelect }: {
 export function CanonicalExerciseDetail({ exercise, onBack, onSelectImpl }: Props) {
   const family = getCanonicalFamily(exercise.movementFamilyId)
   const { muscleCard, description, coachingCues, commonMistakes, implementations, browseTags, sourceGap } = exercise
-  // Use the first implementation's exerciseId for the body map (best-effort; may be null)
-  const firstImplExerciseId = implementations.find(i => i.source?.exerciseId)?.source?.exerciseId ?? null
+  // Collect all implementation exerciseIds in priority order so MuscleBodyMap
+  // can try each in sequence — the first verified mapping wins.
+  const implExerciseIds = implementations
+    .map(i => i.source?.exerciseId)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0)
 
   const isOriginalCard = implementations.length === 0 && !!description.steps?.length
 
@@ -168,9 +171,9 @@ export function CanonicalExerciseDetail({ exercise, onBack, onSelectImpl }: Prop
           {(muscleCard.primary.length > 0 || muscleCard.secondary.length > 0) && (
             <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 mb-4">
               <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Muscles Targeted</p>
-              {firstImplExerciseId && (
+              {implExerciseIds.length > 0 && (
                 <MuscleBodyMap
-                  exerciseId={firstImplExerciseId}
+                  exerciseIds={implExerciseIds}
                   primaryMuscles={muscleCard.primary}
                   secondaryMuscles={muscleCard.secondary}
                   className="mb-3"
@@ -321,9 +324,9 @@ export function CanonicalExerciseDetail({ exercise, onBack, onSelectImpl }: Prop
           {/* Muscles */}
           <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 mb-4">
             <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-3">Muscles</p>
-            {firstImplExerciseId && (
+            {implExerciseIds.length > 0 && (
               <MuscleBodyMap
-                exerciseId={firstImplExerciseId}
+                exerciseIds={implExerciseIds}
                 primaryMuscles={muscleCard.primary}
                 secondaryMuscles={muscleCard.secondary}
                 className="mb-3"
