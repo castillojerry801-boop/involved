@@ -1643,6 +1643,48 @@ model YmoveMapping {
 }
 
 // ═════════════════════════════════════════════════════════════════════
+// YMOVE EXERCISE CATALOG
+// Full YMove exercise library synced via the admin catalog-sync job.
+// Independent of ExerciseDB — covers all 2,000+ YMove exercises.
+// YMove-native IDs are namespaced as ymv:{uuid} in workout/program
+// references; this table is the source of truth for those IDs.
+//
+// NOT exposed in the public UI yet (Milestone B — backend only).
+// Selection UI gating deferred to Milestone C.
+// ═════════════════════════════════════════════════════════════════════
+model YmoveExerciseCatalog {
+  id                   String   @id @default(uuid()) @db.Uuid
+  // The YMove exercise UUID, e.g. 65e95132-e6bb-41e8-af7d-0eda931a1693.
+  // Public ID format for callers: ymv:{ymoveId} (see lib/ymove/namespace.ts).
+  ymoveId              String   @unique @map("ymove_id") @db.VarChar(36)
+  name                 String   @db.VarChar(300)
+  slug                 String   @db.VarChar(300)
+  description          String?  @db.Text
+  primaryMuscleGroup   String?  @map("primary_muscle_group") @db.VarChar(100)
+  // Full muscle group list and secondary muscles stored as JSONB arrays.
+  muscleGroupsJson     Json     @default("[]") @map("muscle_groups_json")
+  secondaryMusclesJson Json     @default("[]") @map("secondary_muscles_json")
+  equipment            String?  @db.VarChar(100)
+  category             String?  @db.VarChar(100)
+  difficulty           String?  @db.VarChar(50)
+  hasVideo             Boolean  @default(false) @map("has_video")
+  exerciseTypesJson    Json     @default("[]") @map("exercise_types_json")
+  // Media UUID extracted from thumbnailUrl at sync time — used with
+  // /api/ymove/thumbnail/:id proxy. Null when URL fails domain validation.
+  // Never stores the full authenticated API URL.
+  thumbnailMediaId     String?  @map("thumbnail_media_id") @db.VarChar(36)
+  syncedAt             DateTime @map("synced_at")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@index([equipment])
+  @@index([category])
+  @@index([difficulty])
+  @@index([primaryMuscleGroup, name])
+  @@map("ymove_exercise_catalog")
+}
+
+// ═════════════════════════════════════════════════════════════════════
 // MEAL CALCULATION REFS
 // Short-lived server-side store mapping an opaque UUID to a full signed
 // meal-log token. V receives only the UUID (calculationRefId); the full
