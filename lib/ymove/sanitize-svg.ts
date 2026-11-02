@@ -16,9 +16,11 @@
  *
  * Allowed elements: svg, g, path, circle, ellipse, rect, title, desc,
  *   defs, clippath, mask, symbol
- * Allowed attributes: geometry, presentation, accessibility, data-region
+ * Allowed attributes: geometry, presentation, accessibility, data-region,
+ *   style (CSS property allowlist — color/opacity values only; url() blocked)
  * Forbidden unconditionally: script, foreignObject, use, iframe, object,
- *   on* event handlers, javascript:/data: URIs, xlink:href, any unlisted attr
+ *   on* event handlers, javascript:/data: URIs, xlink:href, any unlisted attr,
+ *   any style property not in the SVG presentation allowlist
  *
  * Returns null if the input doesn't look like valid SVG — caller falls back to
  * text-tag rendering.
@@ -62,18 +64,22 @@ const ALLOWED_TAGS: string[] = [
   'title', 'desc', 'defs', 'clippath', 'mask', 'symbol',
 ]
 
-// Presentation attributes shared by shape elements
+// Presentation attributes shared by shape elements.
+// 'style' is included so that inline style="fill:…" declarations used by some
+// body-map SVGs for per-muscle color highlighting survive sanitization.
+// Permitted CSS properties are further restricted by ALLOWED_STYLES below
+// to prevent url()/javascript: injection through the style attribute.
 const SHAPE_ATTRS = [
   'fill', 'fill-opacity', 'fill-rule',
   'stroke', 'stroke-width', 'stroke-opacity', 'stroke-linecap', 'stroke-linejoin',
-  'opacity', 'transform', 'id', 'class',
+  'opacity', 'transform', 'id', 'class', 'style',
 ]
 
 const ALLOWED_ATTRS: sanitizeHtml.IOptions['allowedAttributes'] = {
   svg: [
     'xmlns', 'viewbox', 'width', 'height', 'preserveaspectratio',
     'role', 'aria-label', 'aria-hidden',
-    'id', 'class',
+    'id', 'class', 'style',
   ],
   g: [...SHAPE_ATTRS, 'clip-path', 'mask', 'data-region'],
   path: ['d', ...SHAPE_ATTRS],
@@ -88,9 +94,41 @@ const ALLOWED_ATTRS: sanitizeHtml.IOptions['allowedAttributes'] = {
   symbol:   ['id', 'viewbox'],
 }
 
+// ── CSS property allowlist for inline style attributes ────────────────────────
+// Only SVG presentation properties; each value must match one of the listed
+// regex patterns. Anything not listed (background, content, url(), etc.) is
+// stripped by sanitize-html, blocking CSS-based injection vectors.
+
+const CSS_COLOR: RegExp[] = [
+  /^none$/i,
+  /^transparent$/i,
+  /^currentColor$/i,
+  /^#[0-9a-fA-F]{3,8}$/,
+  /^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/i,
+  /^rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(?:0|1|0?\.\d+)\s*\)$/i,
+  /^hsl\(\s*\d{1,3}\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%\s*\)$/i,
+  /^[a-z]{2,30}$/i, // Named CSS colors (red, blue, lightcoral, …)
+]
+const CSS_OPACITY: RegExp[] = [/^(?:0|1|0?\.\d+)$/]
+const CSS_DISPLAY: RegExp[] = [/^(?:none|block|inline(?:-block)?)$/i]
+const CSS_VISIBILITY: RegExp[] = [/^(?:visible|hidden|collapse)$/i]
+
+const ALLOWED_STYLES: sanitizeHtml.IOptions['allowedStyles'] = {
+  '*': {
+    fill:             CSS_COLOR,
+    stroke:           CSS_COLOR,
+    'fill-opacity':   CSS_OPACITY,
+    'stroke-opacity': CSS_OPACITY,
+    opacity:          CSS_OPACITY,
+    display:          CSS_DISPLAY,
+    visibility:       CSS_VISIBILITY,
+  },
+}
+
 const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: ALLOWED_TAGS,
   allowedAttributes: ALLOWED_ATTRS,
+  allowedStyles: ALLOWED_STYLES,
   // Never allow any URL scheme — href/src are not in allowedAttributes anyway
   allowedSchemes: [],
   // Remove unknown tags; their inner text is harmless in SVG context (text nodes

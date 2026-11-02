@@ -126,8 +126,9 @@ describe('cleanup-meal-refs — schedule config', () => {
   it('vercel.json cron path matches the route path', async () => {
     const { readFileSync } = await import('fs')
     const { resolve } = await import('path')
+    // __dirname is reliable regardless of shell cwd; process.cwd() varies by invocation
     const vercelJson = JSON.parse(
-      readFileSync(resolve(process.cwd(), 'vercel.json'), 'utf-8'),
+      readFileSync(resolve(__dirname, '../../vercel.json'), 'utf-8'),
     ) as { crons: { path: string; schedule: string }[] }
 
     const cronEntry = vercelJson.crons.find(c => c.path === '/api/cron/cleanup-meal-refs')

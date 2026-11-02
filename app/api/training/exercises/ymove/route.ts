@@ -31,6 +31,44 @@ function isCatalogEnabled(): boolean {
 
 const MAX_LIMIT = 100
 
+// ── Movement family classification cache ──────────────────────────────────────
+// Movement family is computed from name+equipment+category (not stored in DB).
+// To support accurate SQL-level pagination and totals for movement-filtered
+// queries, we build an in-memory index once per serverless instance (refreshed
+// after TTL) and translate ?movement= into ymoveId IN (...) before the DB query.
+//
+// Cache structure: ymoveId → movementFamilyId | null
+
+interface MovementCache {
+  map: Map<string, string | null>
+  loadedAt: number
+}
+
+let movementCache: MovementCache | null = null
+const MOVEMENT_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+async function getMovementFamilyMap(): Promise<Map<string, string | null>> {
+  if (movementCache && Date.now() - movementCache.loadedAt < MOVEMENT_CACHE_TTL_MS) {
+    return movementCache.map
+  }
+  const rows = await prisma.ymoveExerciseCatalog.findMany({
+    where: { NOT: { curationStatus: 'duplicate' } },
+    select: { ymoveId: true, name: true, equipment: true, category: true },
+  })
+  const map = new Map<string, string | null>()
+  for (const r of rows) {
+    const cls = classifyYmoveExercise({ name: r.name, equipment: r.equipment, category: r.category })
+    map.set(r.ymoveId, cls.movementFamilyId)
+  }
+  movementCache = { map, loadedAt: Date.now() }
+  return map
+}
+
+/** Resets the module-level cache. Test use only. */
+export function _resetMovementCacheForTest(): void {
+  movementCache = null
+}
+
 /**
  * GET /api/training/exercises/ymove
  *
@@ -40,10 +78,11 @@ const MAX_LIMIT = 100
  * Query params:
  *   ?q=bench              — full-text name search (case-insensitive contains)
  *   ?equipment=barbell    — exact equipment string match (YMove API value)
- *   ?movement=fam_chest_press — movement family filter (derived at query time)
- *   ?eqFamily=barbell     — single normalised equipment family filter (derived at query time)
- *   ?eqFamilies=barbell,dumbbell — multi-family filter; returns all families in the set.
- *                                  Items with eqFamily=null are excluded. Composes with ?eqFamily.
+ *   ?movement=fam_chest_press — movement family filter; translated to ymoveId IN
+ *                               via in-memory classification cache so count/pages
+ *                               accurately reflect only matching exercises
+ *   ?eqFamily=barbell     — single normalised equipment family filter (SQL-level)
+ *   ?eqFamilies=barbell,dumbbell — multi-family filter; SQL-level via equipment IN
  *   ?page=1&limit=50      — pagination (max 100 per page)
  *
  * Response shape (per item):
@@ -93,13 +132,34 @@ export async function GET(req: NextRequest) {
     where.equipment = { equals: equipment, mode: 'insensitive' }
   } else if (eqFamilies.length > 0) {
     // Translate EqFamily values to stored equipment strings so the SQL WHERE
-    // clause (and therefore count()) reflects the profile filter.  This makes
-    // total / pages accurate; the post-classification guard below is a safety net.
+    // clause (and therefore count()) reflects the profile filter.
     const allowedStrings = eqFamilies.flatMap(f => EQFAMILY_TO_YMOVE_EQUIPMENT[f] ?? [])
     if (allowedStrings.length === 0) {
       return NextResponse.json({ items: [], total: 0, page, limit, pages: 0 })
     }
     where.equipment = { in: allowedStrings, mode: 'insensitive' }
+  } else if (eqFamily) {
+    // Single-family pill: SQL translation so pagination and totals are accurate.
+    const familyStrings = EQFAMILY_TO_YMOVE_EQUIPMENT[eqFamily] ?? []
+    if (familyStrings.length === 0) {
+      return NextResponse.json({ items: [], total: 0, page, limit, pages: 0 })
+    }
+    where.equipment = { in: familyStrings, mode: 'insensitive' }
+  }
+
+  // Movement filter: translate to ymoveId IN (matchingIds) so both count() and
+  // findMany() operate on the correct filtered set. This gives accurate total/pages
+  // and eliminates the over-fetch + client-dedup workaround.
+  if (movement) {
+    const movMap = await getMovementFamilyMap()
+    const matchingIds: string[] = []
+    for (const [id, fam] of movMap) {
+      if (fam === movement) matchingIds.push(id)
+    }
+    if (matchingIds.length === 0) {
+      return NextResponse.json({ items: [], total: 0, page, limit, pages: 0 })
+    }
+    where.ymoveId = { in: matchingIds }
   }
 
   const [total, rows] = await Promise.all([
@@ -129,14 +189,11 @@ export async function GET(req: NextRequest) {
         category:  row.category,
       })
 
-      // Post-classification filters (movementFamilyId and eqFamily are computed,
-      // not stored, so they can't be applied in the SQL WHERE clause)
+      // Safety nets: post-filters catch discrepancies between SQL mapping and the
+      // classifier, and also enforce correctness in environments where the WHERE
+      // clause is not applied (e.g. mocked tests).
       if (movement && cls.movementFamilyId !== movement) return null
       if (eqFamily && cls.eqFamily !== eqFamily) return null
-      // Multi-family filter: used for equipment-profile-aware queries so all
-      // compatible families are searched in one request with good page density.
-      // Items with eqFamily=null (unknown equipment) are excluded when this filter
-      // is active — they must not be treated as compatible with any profile.
       if (eqFamilies.length > 0 && !eqFamilies.includes(cls.eqFamily ?? '')) return null
 
       return {

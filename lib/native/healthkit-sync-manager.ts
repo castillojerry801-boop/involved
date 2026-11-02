@@ -50,9 +50,8 @@ async function executeSync(trigger: SyncTrigger, lastSyncAt: string | null): Pro
 
   let sinceDate: Date
   if (!lastSyncAt) {
-    // First ever sync — pull full history
-    sinceDate = new Date()
-    sinceDate.setDate(sinceDate.getDate() - INITIAL_SYNC_DAYS)
+    // First ever sync — pull full history (pure ms to stay DST-safe)
+    sinceDate = new Date(Date.now() - INITIAL_SYNC_DAYS * 24 * 60 * 60 * 1000)
   } else {
     // Always cover the last 7 days so any gap from a prior partial sync is healed.
     // For old syncs the lastSyncAt-24h term goes even further back and wins naturally.

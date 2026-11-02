@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { getGifUrl } from '@/lib/exercises'
 import { Play, X, VideoOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -28,6 +29,50 @@ interface Props {
   crop?: 'default' | 'square' | 'portrait' | 'landscape'
   /** Show a play button overlay that loads inline video from ymove on click. */
   showVideo?: boolean
+  /**
+   * When true, tapping play opens the video in a fullscreen portal modal instead
+   * of replacing the thumbnail inline. Use for compact containers (e.g. workout cards)
+   * where the container size would make inline video unreadable.
+   */
+  videoModal?: boolean
+}
+
+function VideoModal({ src, exerciseName, onClose }: {
+  src: string
+  exerciseName: string
+  onClose: () => void
+}) {
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-sm"
+        onClick={e => e.stopPropagation()}
+      >
+        <video
+          src={src}
+          autoPlay
+          loop
+          playsInline
+          controls
+          className="w-full rounded-2xl"
+          style={{ maxHeight: '80vh' }}
+          aria-label={`${exerciseName} demonstration`}
+        />
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 flex size-8 items-center justify-center rounded-full bg-black/60 text-white"
+          aria-label="Close video"
+        >
+          <X className="size-4" />
+        </button>
+        <p className="mt-3 text-center text-sm font-semibold text-white">{exerciseName}</p>
+      </div>
+    </div>,
+    document.body,
+  )
 }
 
 /**
@@ -35,7 +80,8 @@ interface Props {
  *
  * Immediately shows the ExerciseDB GIF (or ymove thumbnail once loaded).
  * With showVideo=true, overlays a play button that fetches and plays
- * the ymove HD video inline on click.
+ * the ymove HD video. With videoModal=true, the video opens in a fullscreen
+ * portal instead of replacing the thumbnail inline.
  */
 export function ExerciseMedia({
   exerciseId,
@@ -44,6 +90,7 @@ export function ExerciseMedia({
   imgClassName,
   crop = 'square',
   showVideo = false,
+  videoModal = false,
 }: Props) {
   const [media, setMedia] = useState<MediaResponse | null>(null)
   const [playing, setPlaying] = useState(false)
@@ -92,7 +139,8 @@ export function ExerciseMedia({
     ? `/api/ymove/thumbnail/${media.thumbnailMediaId}?crop=${crop}`
     : null
 
-  if (playing && videoSrc) {
+  // Inline video — only when videoModal=false (default behavior)
+  if (playing && videoSrc && !videoModal) {
     return (
       <div className={cn('relative overflow-hidden bg-black', className)}>
         {/* Portrait 9:16 container */}
@@ -119,44 +167,50 @@ export function ExerciseMedia({
   const hasYmove = media?.source === 'ymove' && !!media.ymoveId
 
   return (
-    <div className={cn('relative', className)}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={thumbSrc ?? gifSrc}
-        alt={exerciseName}
-        className={cn('h-full w-auto object-contain', imgClassName)}
-        onError={e => {
-          const img = e.currentTarget
-          if (img.src !== gifSrc) img.src = gifSrc
-        }}
-      />
-      {showVideo && hasYmove && (
-        <button
-          onClick={videoError ? undefined : handlePlay}
-          disabled={videoLoading || videoError}
-          className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/20 transition-colors group"
-          aria-label={videoError ? `No video available for ${exerciseName}` : `Play ${exerciseName} video`}
-        >
-          {videoError ? (
-            <div className="flex flex-col items-center gap-1.5">
-              <div className="flex size-10 items-center justify-center rounded-full bg-black/60 shadow-md">
-                <VideoOff className="size-4 text-white/80" />
+    <>
+      <div className={cn('relative', className)}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={thumbSrc ?? gifSrc}
+          alt={exerciseName}
+          className={cn('h-full w-auto object-contain', imgClassName)}
+          onError={e => {
+            const img = e.currentTarget
+            if (img.src !== gifSrc) img.src = gifSrc
+          }}
+        />
+        {showVideo && hasYmove && (
+          <button
+            onClick={videoError ? undefined : handlePlay}
+            disabled={videoLoading || videoError}
+            className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/20 transition-colors group"
+            aria-label={videoError ? `No video available for ${exerciseName}` : `Play ${exerciseName} video`}
+          >
+            {videoError ? (
+              <div className="flex flex-col items-center gap-1.5">
+                <div className="flex size-10 items-center justify-center rounded-full bg-black/60 shadow-md">
+                  <VideoOff className="size-4 text-white/80" />
+                </div>
+                <span className="rounded px-1.5 py-0.5 bg-black/50 text-[10px] text-white/80 leading-none">
+                  No video
+                </span>
               </div>
-              <span className="rounded px-1.5 py-0.5 bg-black/50 text-[10px] text-white/80 leading-none">
-                No video
-              </span>
-            </div>
-          ) : (
-            <div className={cn(
-              'flex size-10 items-center justify-center rounded-full bg-white/90 shadow-md',
-              'opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity',
-              videoLoading && 'opacity-100 animate-pulse',
-            )}>
-              <Play className="size-4 text-zinc-900 fill-zinc-900 ml-0.5" />
-            </div>
-          )}
-        </button>
+            ) : (
+              <div className={cn(
+                'flex size-10 items-center justify-center rounded-full bg-white/90 shadow-md',
+                'opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity',
+                videoLoading && 'opacity-100 animate-pulse',
+              )}>
+                <Play className="size-4 text-zinc-900 fill-zinc-900 ml-0.5" />
+              </div>
+            )}
+          </button>
+        )}
+      </div>
+      {/* Modal portal — only active when videoModal=true and a video is playing */}
+      {videoModal && playing && videoSrc && (
+        <VideoModal src={videoSrc} exerciseName={exerciseName} onClose={() => setPlaying(false)} />
       )}
-    </div>
+    </>
   )
 }

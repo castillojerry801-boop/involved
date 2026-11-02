@@ -72,6 +72,7 @@ function ImplementationCard({ impl, onSelect }: {
             className="h-full w-full"
             crop="square"
             showVideo
+            videoModal
           />
         ) : (
           <div className="flex flex-col items-center gap-2 text-zinc-300 dark:text-zinc-600">

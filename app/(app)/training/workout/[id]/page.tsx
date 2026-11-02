@@ -466,14 +466,15 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove, onRefresh }: {
     <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
       {/* Exercise header */}
       <div className="flex items-center gap-0 px-4 py-3">
+        {/* Thumbnail outside the collapse button — prevents nested <button> elements */}
+        <div className="size-12 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center mr-3">
+          {ex.exercise && !isCustomExerciseId(ex.exerciseId) ? (
+            <ExerciseMedia exerciseId={ex.exerciseId} exerciseName={ex.exercise.name} className="h-full w-full" showVideo videoModal />
+          ) : (
+            <Dumbbell className="size-5 text-zinc-300" />
+          )}
+        </div>
         <button onClick={() => setCollapsed(c => !c)} className="flex items-center gap-3 flex-1 text-left min-w-0">
-          <div className="size-12 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center">
-            {ex.exercise && !isCustomExerciseId(ex.exerciseId) ? (
-              <ExerciseMedia exerciseId={ex.exerciseId} exerciseName={ex.exercise.name} className="h-full w-full" showVideo />
-            ) : (
-              <Dumbbell className="size-5 text-zinc-300" />
-            )}
-          </div>
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm text-zinc-900 dark:text-white truncate">
               {ex.exercise?.name ?? ex.exerciseId}

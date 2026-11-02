@@ -30,7 +30,7 @@ vi.mock('@/lib/prisma', () => ({
 }))
 
 import { GET as getConfig }  from '@/app/api/training/exercises/config/route'
-import { GET as getYmove }   from '@/app/api/training/exercises/ymove/route'
+import { GET as getYmove, _resetMovementCacheForTest } from '@/app/api/training/exercises/ymove/route'
 import { NextRequest }       from 'next/server'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -195,9 +195,16 @@ describe('GET /api/training/exercises/ymove — eqFamily filter', () => {
 
   beforeEach(() => {
     process.env = { ...OLD_ENV, YMOVE_CATALOG_ENABLED: 'true' }
+    mockFindMany.mockClear()
     mockCount.mockResolvedValue(2)
+    // Reset movement cache: the movement+eqFamily composition test triggers a cache
+    // load as a side effect; reset ensures a clean slate for each test.
+    _resetMovementCacheForTest()
   })
-  afterEach(() => { process.env = OLD_ENV })
+  afterEach(() => {
+    process.env = OLD_ENV
+    _resetMovementCacheForTest()
+  })
 
   it('filters to barbell exercises when eqFamily=barbell', async () => {
     const barbellRow  = makeRow({ ymoveId: 'aaaa0001-0000-0000-0000-000000000001', name: 'Barbell Squat',  equipment: 'barbell' })

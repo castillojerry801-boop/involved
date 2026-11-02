@@ -131,26 +131,29 @@ export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleF
           <div className="mb-4">
             <p className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">Muscles</p>
             <MuscleBodyMap
-              exerciseId={exercise.id}
+              ymoveId={exercise.id.startsWith('ymv:') ? exercise.id.slice(4) : undefined}
+              exerciseId={exercise.id.startsWith('ymv:') ? undefined : exercise.id}
               primaryMuscles={[exercise.target]}
               secondaryMuscles={exercise.secondaryMuscles}
             />
           </div>
 
-          {/* Instructions */}
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Instructions</p>
-            <ol className="flex flex-col gap-3">
-              {exercise.instructions.map((step, i) => (
-                <li key={i} className="flex gap-3">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-xs font-black">
-                    {i + 1}
-                  </span>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed pt-0.5">{step}</p>
-                </li>
-              ))}
-            </ol>
-          </div>
+          {/* Instructions — hidden when empty (YMove exercises have no step-by-step cues) */}
+          {exercise.instructions.length > 0 && (
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-zinc-400 mb-3">Instructions</p>
+              <ol className="flex flex-col gap-3">
+                {exercise.instructions.map((step, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-xs font-black">
+                      {i + 1}
+                    </span>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed pt-0.5">{step}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
       </div>
     </div>

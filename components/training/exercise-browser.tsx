@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useTransition, useCallback, useOptimistic } from 'react'
+import { useState, useTransition, useCallback, useOptimistic, useRef, useEffect } from 'react'
 import { Search, Loader2, Heart, SlidersHorizontal, X, Filter, ArrowLeft } from 'lucide-react'
 import { type Exercise, type EquipmentOption, BODY_PARTS, getGifUrl } from '@/lib/exercises'
 import { type CanonicalFamily, type CanonicalExercise, movementFamilies, getExercisesForFamily, getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import { ExerciseDetailModal } from './exercise-detail-modal'
 import { CanonicalExerciseDetail } from './canonical-exercise-detail'
+import { ExerciseMedia } from './ExerciseMedia'
 import { cn } from '@/lib/utils'
 
 export type PreferenceState = 'favorite' | 'more_often' | 'normal' | 'less_often' | 'dont_recommend'
@@ -29,6 +30,7 @@ interface Props {
   onSelect?: (exercise: Exercise) => void
   showFavoriteToggle?: boolean
   compact?: boolean  // condensed layout for modal/picker use
+  ymoveMode?: boolean  // when true, replaces ExDB search with YMove catalog client-side search
 }
 
 const BODY_PART_LABELS: Record<string, string> = {
@@ -39,6 +41,36 @@ const BODY_PART_LABELS: Record<string, string> = {
 
 // Equipment values with > 5 exercises get individual pills; the rest go under "Other"
 const MIN_EQUIPMENT_COUNT = 5
+
+const YMOVE_MOVEMENT_FAMILIES = [
+  { id: 'fam_squat', label: 'Squat' },
+  { id: 'fam_hip_hinge', label: 'Hip Hinge' },
+  { id: 'fam_lunge', label: 'Lunge' },
+  { id: 'fam_chest_press', label: 'Chest Press' },
+  { id: 'fam_row', label: 'Row' },
+  { id: 'fam_overhead_press', label: 'Overhead Press' },
+  { id: 'fam_pulldown_pullup', label: 'Pull-up / Pulldown' },
+  { id: 'fam_core', label: 'Core' },
+  { id: 'fam_legs', label: 'Legs' },
+  { id: 'fam_cardio', label: 'Cardio' },
+  { id: 'fam_arms', label: 'Arms' },
+  { id: 'fam_shoulders', label: 'Shoulders' },
+]
+
+const YMOVE_EQ_FAMILIES = [
+  { id: 'barbell', label: 'Barbell' },
+  { id: 'dumbbell', label: 'Dumbbell' },
+  { id: 'cable', label: 'Cable' },
+  { id: 'machine', label: 'Machine' },
+  { id: 'bodyweight', label: 'Bodyweight' },
+  { id: 'kettlebell', label: 'Kettlebell' },
+  { id: 'band', label: 'Band' },
+  { id: 'smith', label: 'Smith' },
+]
+
+const PILL_BASE = 'shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold capitalize transition-colors'
+const PILL_ON = 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+const PILL_OFF = 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
 
 function HeartButton({ exerciseId, state, onToggle }: {
   exerciseId: string
@@ -69,22 +101,33 @@ function ExerciseCard({ exercise, preference, onToggleFav, onClick, compact }: {
   onClick: () => void
   compact?: boolean
 }) {
+  const isYmove = exercise.id.startsWith('ymv:')
   return (
     <button
       onClick={onClick}
       className="group relative flex flex-col rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm overflow-hidden text-left transition-shadow hover:shadow-md"
     >
       <div className={cn(
-        'bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center w-full',
+        'bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center w-full overflow-hidden',
         compact ? 'h-24' : 'h-32'
       )}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={getGifUrl(exercise.id)}
-          alt={exercise.name}
-          className="h-full w-auto object-contain"
-          loading="lazy"
-        />
+        {isYmove ? (
+          <ExerciseMedia
+            exerciseId={exercise.id}
+            exerciseName={exercise.name}
+            className="h-full w-full"
+            imgClassName="h-full w-auto object-contain"
+            crop="square"
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={getGifUrl(exercise.id)}
+            alt={exercise.name}
+            className="h-full w-auto object-contain"
+            loading="lazy"
+          />
+        )}
       </div>
       <div className="p-2.5">
         <p className="text-xs font-semibold text-zinc-900 dark:text-white line-clamp-2 leading-snug">
@@ -110,6 +153,7 @@ export function ExerciseBrowser({
   onSelect,
   showFavoriteToggle = true,
   compact = false,
+  ymoveMode = false,
 }: Props) {
   const [exercises, setExercises] = useState<Exercise[]>(initialExercises)
   const [filters, setFilters] = useState<BrowserFilterState>({
@@ -122,9 +166,18 @@ export function ExerciseBrowser({
   const [selected, setSelected] = useState<Exercise | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [isPending, startTransition] = useTransition()
-  const [mode, setMode] = useState<'search' | 'browse'>('browse')
+  const [mode, setMode] = useState<'search' | 'browse'>(ymoveMode ? 'search' : 'browse')
   const [browseFamily, setBrowseFamily] = useState<CanonicalFamily | null>(null)
   const [browseCanonical, setBrowseCanonical] = useState<CanonicalExercise | null>(null)
+
+  // YMove-specific state
+  const [ymoveMovement, setYmoveMovement] = useState<string | null>(null)
+  const [ymoveEqFamily, setYmoveEqFamily] = useState<string | null>(null)
+  const [ymovePage, setYmovePage] = useState(1)
+  const [ymoveTotalPages, setYmoveTotalPages] = useState(0)
+  const [ymoveSearching, setYmoveSearching] = useState(false)
+  const [ymoveLoadingMore, setYmoveLoadingMore] = useState(false)
+  const ymoveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Optimistic preferences — toggling heart is instant, synced to API in background
   const [preferences, updatePreferences] = useOptimistic(
@@ -143,11 +196,71 @@ export function ExerciseBrowser({
     })
   }, [onSearch])
 
-  const setQ = (q: string) => applyFilters({ ...filters, q })
+  const searchYmove = useCallback(async (
+    q: string,
+    movement: string | null,
+    eqFamily: string | null,
+    page: number,
+    append = false,
+  ) => {
+    if (!append) setYmoveSearching(true)
+    else setYmoveLoadingMore(true)
+    try {
+      const params = new URLSearchParams({ limit: '20', page: String(page) })
+      if (q.trim()) params.set('q', q.trim())
+      if (movement) params.set('movement', movement)
+      if (eqFamily) params.set('eqFamily', eqFamily)
+      const r = await fetch(`/api/training/exercises/ymove?${params}`)
+      if (!r.ok) return
+      const data = await r.json() as { items: Exercise[]; total: number; pages: number }
+      setYmoveTotalPages(data.pages ?? 0)
+      setYmovePage(page)
+      setExercises(prev => {
+        if (!append) return data.items
+        const seen = new Set(prev.map(e => e.id))
+        return [...prev, ...data.items.filter(e => !seen.has(e.id))]
+      })
+    } catch {
+      // leave existing state on network error
+    } finally {
+      setYmoveSearching(false)
+      setYmoveLoadingMore(false)
+    }
+  }, [])
+
+  // Initial YMove load: fetch page 1 to populate pagination state
+  useEffect(() => {
+    if (ymoveMode) {
+      searchYmove('', null, null, 1)
+    }
+  }, [ymoveMode, searchYmove])
+
+  const setQ = (q: string) => {
+    if (ymoveMode) {
+      setFilters(f => ({ ...f, q }))
+      if (ymoveDebounceRef.current) clearTimeout(ymoveDebounceRef.current)
+      ymoveDebounceRef.current = setTimeout(() => {
+        searchYmove(q, ymoveMovement, ymoveEqFamily, 1)
+      }, 300)
+    } else {
+      applyFilters({ ...filters, q })
+    }
+  }
+
   const setBodyPart = (bp: string) => applyFilters({ ...filters, bodyPart: bp })
   const setEquipment = (eq: string | null) => applyFilters({ ...filters, equipment: eq })
   const setTarget = (t: string | null) => applyFilters({ ...filters, target: t })
   const toggleFavoritesOnly = () => applyFilters({ ...filters, favoritesOnly: !filters.favoritesOnly })
+
+  const setYmoveMovementFilter = (m: string | null) => {
+    setYmoveMovement(m)
+    searchYmove(filters.q, m, ymoveEqFamily, 1)
+  }
+
+  const setYmoveEqFamilyFilter = (e: string | null) => {
+    setYmoveEqFamily(e)
+    searchYmove(filters.q, ymoveMovement, e, 1)
+  }
 
   const handleToggleFav = async (exerciseId: string, next: PreferenceState) => {
     updatePreferences({ exerciseId, next })
@@ -176,8 +289,8 @@ export function ExerciseBrowser({
 
   return (
     <div>
-      {/* Active equipment profile banner */}
-      {activeEquipmentProfile && (
+      {/* Active equipment profile banner — ExDB mode only */}
+      {!ymoveMode && activeEquipmentProfile && (
         <div className="mb-3 flex items-center gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/40 px-3 py-2">
           <span className="size-1.5 rounded-full bg-emerald-500 shrink-0" />
           <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
@@ -192,33 +305,35 @@ export function ExerciseBrowser({
         </div>
       )}
 
-      {/* Mode switcher */}
-      <div className="flex p-1 mb-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800/80">
-        <button
-          onClick={() => setMode('browse')}
-          className={cn(
-            'flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
-            mode === 'browse'
-              ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-          )}
-        >
-          Browse
-        </button>
-        <button
-          onClick={() => { setMode('search'); setSelected(null) }}
-          className={cn(
-            'flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
-            mode === 'search'
-              ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-          )}
-        >
-          Search
-        </button>
-      </div>
+      {/* Mode switcher — hidden in YMove mode (browse uses ExDB canonical data) */}
+      {!ymoveMode && (
+        <div className="flex p-1 mb-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800/80">
+          <button
+            onClick={() => setMode('browse')}
+            className={cn(
+              'flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
+              mode === 'browse'
+                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+            )}
+          >
+            Browse
+          </button>
+          <button
+            onClick={() => { setMode('search'); setSelected(null) }}
+            className={cn(
+              'flex-1 py-2 rounded-xl text-sm font-semibold transition-colors',
+              mode === 'search'
+                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+            )}
+          >
+            Search
+          </button>
+        </div>
+      )}
 
-      {mode === 'search' && (<>
+      {(mode === 'search' || ymoveMode) && (<>
       {/* Search + filter toggle */}
       <div className="flex gap-2 mb-3">
         <div className="relative flex-1">
@@ -230,25 +345,30 @@ export function ExerciseBrowser({
             placeholder="Search exercises, muscles, equipment…"
             className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-900/80 pl-9 pr-4 py-2.5 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
-          {isPending && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-zinc-400 animate-spin" />}
+          {(isPending || ymoveSearching) && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-zinc-400 animate-spin" />
+          )}
         </div>
-        <button
-          onClick={() => setShowFilters(v => !v)}
-          className={cn(
-            'flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors',
-            activeFiltersCount > 0
-              ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-              : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-          )}
-        >
-          <SlidersHorizontal className="size-4" />
-          {activeFiltersCount > 0 && (
-            <span className="flex size-4 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
-              {activeFiltersCount}
-            </span>
-          )}
-        </button>
-        {showFavoriteToggle && (
+        {/* ExDB-only: filter panel toggle + favorites */}
+        {!ymoveMode && (
+          <button
+            onClick={() => setShowFilters(v => !v)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors',
+              activeFiltersCount > 0
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+            )}
+          >
+            <SlidersHorizontal className="size-4" />
+            {activeFiltersCount > 0 && (
+              <span className="flex size-4 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">
+                {activeFiltersCount}
+              </span>
+            )}
+          </button>
+        )}
+        {showFavoriteToggle && !ymoveMode && (
           <button
             onClick={toggleFavoritesOnly}
             className={cn(
@@ -264,8 +384,8 @@ export function ExerciseBrowser({
         )}
       </div>
 
-      {/* Expanded filter panel */}
-      {showFilters && (
+      {/* ExDB: expanded filter panel */}
+      {!ymoveMode && showFilters && (
         <div className="mb-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 space-y-4">
           {/* Body part */}
           <div>
@@ -335,37 +455,96 @@ export function ExerciseBrowser({
         </div>
       )}
 
-      {/* Equipment pills — always visible */}
-      <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3 scrollbar-hide">
-        <button
-          onClick={() => setEquipment(null)}
-          className={cn(
-            'shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold capitalize transition-colors',
-            !filters.equipment
-              ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
-              : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
-          )}
-        >
-          All equipment
-        </button>
-        {primaryEquipment.map(eq => (
+      {/* YMove: movement family pills */}
+      {ymoveMode && (
+        <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2 scrollbar-hide">
           <button
-            key={eq.value}
-            onClick={() => setEquipment(filters.equipment === eq.value ? null : eq.value)}
+            onClick={() => setYmoveMovementFilter(null)}
+            className={cn(PILL_BASE, !ymoveMovement ? PILL_ON : PILL_OFF)}
+          >
+            All movements
+          </button>
+          {YMOVE_MOVEMENT_FAMILIES.map(m => (
+            <button
+              key={m.id}
+              onClick={() => setYmoveMovementFilter(ymoveMovement === m.id ? null : m.id)}
+              className={cn(PILL_BASE, ymoveMovement === m.id ? PILL_ON : PILL_OFF)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Equipment pills */}
+      {ymoveMode ? (
+        <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3 scrollbar-hide">
+          <button
+            onClick={() => setYmoveEqFamilyFilter(null)}
+            className={cn(PILL_BASE, !ymoveEqFamily ? PILL_ON : PILL_OFF)}
+          >
+            All equipment
+          </button>
+          {YMOVE_EQ_FAMILIES.map(e => (
+            <button
+              key={e.id}
+              onClick={() => setYmoveEqFamilyFilter(ymoveEqFamily === e.id ? null : e.id)}
+              className={cn(PILL_BASE, ymoveEqFamily === e.id ? PILL_ON : PILL_OFF)}
+            >
+              {e.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3 scrollbar-hide">
+          <button
+            onClick={() => setEquipment(null)}
             className={cn(
               'shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold capitalize transition-colors',
-              filters.equipment === eq.value
+              !filters.equipment
                 ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
                 : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
             )}
           >
-            {eq.value}
+            All equipment
           </button>
-        ))}
-      </div>
+          {primaryEquipment.map(eq => (
+            <button
+              key={eq.value}
+              onClick={() => setEquipment(filters.equipment === eq.value ? null : eq.value)}
+              className={cn(
+                'shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold capitalize transition-colors',
+                filters.equipment === eq.value
+                  ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+              )}
+            >
+              {eq.value}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Active filter chips */}
-      {activeFiltersCount > 0 && (
+      {/* YMove: active filter chips */}
+      {ymoveMode && (ymoveMovement || ymoveEqFamily) && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {ymoveMovement && (
+            <span className="flex items-center gap-1 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              {YMOVE_MOVEMENT_FAMILIES.find(m => m.id === ymoveMovement)?.label ?? ymoveMovement}
+              <button onClick={() => setYmoveMovementFilter(null)}><X className="size-3" /></button>
+            </span>
+          )}
+          {ymoveEqFamily && (
+            <span className="flex items-center gap-1 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              {YMOVE_EQ_FAMILIES.find(e => e.id === ymoveEqFamily)?.label ?? ymoveEqFamily}
+              <button onClick={() => setYmoveEqFamilyFilter(null)}><X className="size-3" /></button>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* ExDB: active filter chips */}
+      {!ymoveMode && activeFiltersCount > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-3">
           {filters.bodyPart !== 'all' && (
             <span className="flex items-center gap-1 rounded-full bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
@@ -390,40 +569,82 @@ export function ExerciseBrowser({
 
       {/* Results count */}
       <p className="text-xs text-zinc-400 mb-3">
-        {exercises.length} exercise{exercises.length !== 1 ? 's' : ''}
-        {filters.equipment ? ` · ${filters.equipment}` : ''}
+        {ymoveMode
+          ? `${exercises.length} exercise${exercises.length !== 1 ? 's' : ''}${ymoveMovement || ymoveEqFamily ? ' (filtered)' : ''}`
+          : `${exercises.length} exercise${exercises.length !== 1 ? 's' : ''}${filters.equipment ? ` · ${filters.equipment}` : ''}`
+        }
       </p>
 
-      {/* Grid */}
-      <div className={cn('grid gap-3', compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3')}>
-        {exercises.map(exercise => (
-          <ExerciseCard
-            key={exercise.id}
-            exercise={exercise}
-            preference={preferences[exercise.id] ?? 'normal'}
-            onToggleFav={handleToggleFav}
-            compact={compact}
-            onClick={() => onSelect ? onSelect(exercise) : setSelected(exercise)}
-          />
-        ))}
-      </div>
+      {/* Searching spinner (ymove only, when list is empty) */}
+      {ymoveMode && ymoveSearching && exercises.length === 0 && (
+        <div className="flex justify-center py-12">
+          <Loader2 className="size-6 animate-spin text-zinc-400" />
+        </div>
+      )}
 
-      {exercises.length === 0 && (
+      {/* Grid */}
+      {(!ymoveMode || !ymoveSearching || exercises.length > 0) && (
+        <div className={cn('grid gap-3', compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3')}>
+          {exercises.map(exercise => (
+            <ExerciseCard
+              key={exercise.id}
+              exercise={exercise}
+              preference={preferences[exercise.id] ?? 'normal'}
+              onToggleFav={handleToggleFav}
+              compact={compact}
+              onClick={() => onSelect ? onSelect(exercise) : setSelected(exercise)}
+            />
+          ))}
+        </div>
+      )}
+
+      {exercises.length === 0 && !ymoveSearching && (
         <div className="flex flex-col items-center py-12 text-center">
           <Filter className="size-8 text-zinc-300 dark:text-zinc-700 mb-3" />
           <p className="text-sm text-zinc-400">No exercises match these filters.</p>
+          {ymoveMode ? (
+            <button
+              onClick={() => {
+                setYmoveMovementFilter(null)
+                setYmoveEqFamilyFilter(null)
+                setFilters(f => ({ ...f, q: '' }))
+                searchYmove('', null, null, 1)
+              }}
+              className="mt-3 text-xs text-zinc-400 underline"
+            >
+              Clear filters
+            </button>
+          ) : (
+            <button
+              onClick={() => applyFilters({ q: '', bodyPart: 'all', equipment: null, target: null, favoritesOnly: false })}
+              className="mt-3 text-xs text-zinc-400 underline"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* YMove: Load More */}
+      {ymoveMode && !ymoveSearching && ymovePage < ymoveTotalPages && (
+        <div className="mt-4">
           <button
-            onClick={() => applyFilters({ q: '', bodyPart: 'all', equipment: null, target: null, favoritesOnly: false })}
-            className="mt-3 text-xs text-zinc-400 underline"
+            onClick={() => searchYmove(filters.q, ymoveMovement, ymoveEqFamily, ymovePage + 1, true)}
+            disabled={ymoveLoadingMore}
+            className="w-full flex items-center justify-center gap-2 min-h-[44px] rounded-2xl border border-zinc-200 dark:border-zinc-700 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50 transition-colors"
           >
-            Clear filters
+            {ymoveLoadingMore ? (
+              <><Loader2 className="size-4 animate-spin" /> Loading…</>
+            ) : (
+              'Load More'
+            )}
           </button>
         </div>
       )}
 
       </>)}
 
-      {mode === 'browse' && (
+      {!ymoveMode && mode === 'browse' && (
         <div>
           {!browseFamily && (
             <>

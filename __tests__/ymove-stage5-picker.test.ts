@@ -38,7 +38,7 @@ vi.mock('@/lib/prisma', () => ({
   },
 }))
 
-import { GET as getYmove } from '@/app/api/training/exercises/ymove/route'
+import { GET as getYmove, _resetMovementCacheForTest } from '@/app/api/training/exercises/ymove/route'
 import { NextRequest }      from 'next/server'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -401,7 +401,142 @@ describe('GET /api/training/exercises/ymove — SQL-level eqFamilies filter', ()
   })
 })
 
-// ── 6. Template profile wiring — source verification ─────────────────────────
+// ── 6. Movement family filter — accurate SQL pagination ──────────────────────
+// Movement family is a derived field (not stored in DB). The route must:
+//   1. Build an in-memory classification index from the full catalog
+//   2. Translate ?movement= to ymoveId IN (...) before the SQL query
+//   3. Run count() against the ymoveId-filtered WHERE so total/pages are accurate
+//   4. Paginate normally via skip/take on the correctly filtered set
+
+describe('GET /api/training/exercises/ymove — movement filter pagination', () => {
+  const OLD_ENV = process.env
+
+  beforeEach(() => {
+    process.env = { ...OLD_ENV, YMOVE_CATALOG_ENABLED: 'true' }
+    mockFindMany.mockClear()
+    mockCount.mockClear()
+    // Each test gets a fresh classification cache
+    _resetMovementCacheForTest()
+  })
+  afterEach(() => {
+    process.env = OLD_ENV
+    _resetMovementCacheForTest()
+  })
+
+  // Exercise rows whose movement family is deterministic per the classifier rules:
+  //   "Back Squat" contains "squat" → fam_squat
+  //   "Goblet Squat" contains "squat" → fam_squat
+  //   "Romanian Deadlift" contains "romanian" → fam_hip_hinge
+  const SQUAT_ROW_1 = makeRow({ ymoveId: 'squat-0000-0000-0000-000000000001', name: 'Barbell Back Squat', equipment: 'barbell', category: 'Legs' })
+  const SQUAT_ROW_2 = makeRow({ ymoveId: 'squat-0000-0000-0000-000000000002', name: 'Goblet Squat',       equipment: 'kettlebell', category: 'Legs' })
+  const HINGE_ROW   = makeRow({ ymoveId: 'hinge-0000-0000-0000-000000000001', name: 'Romanian Deadlift', equipment: 'barbell', category: 'Back' })
+
+  it('first request builds classification cache then runs data query', async () => {
+    mockFindMany
+      .mockResolvedValueOnce([SQUAT_ROW_1, SQUAT_ROW_2, HINGE_ROW]) // cache load
+      .mockResolvedValue([SQUAT_ROW_1, SQUAT_ROW_2])                  // data query
+    mockCount.mockResolvedValue(2)
+
+    await getYmove(ymoveReq({ movement: 'fam_squat', limit: '20' }))
+
+    // Two findMany calls: one for the classification cache, one for data
+    expect(mockFindMany).toHaveBeenCalledTimes(2)
+  })
+
+  it('movement filter adds ymoveId IN to both count and findMany', async () => {
+    mockFindMany
+      .mockResolvedValueOnce([SQUAT_ROW_1, SQUAT_ROW_2, HINGE_ROW])
+      .mockResolvedValue([])
+    mockCount.mockResolvedValue(2)
+
+    await getYmove(ymoveReq({ movement: 'fam_squat' }))
+
+    const dataCall  = mockFindMany.mock.calls[1][0] as { where: Record<string, unknown> }
+    const countCall = mockCount.mock.calls[0][0]    as { where: Record<string, unknown> }
+    const idFilter  = dataCall.where.ymoveId as { in: string[] }
+
+    // Both the data query and count see ymoveId IN (squat IDs only)
+    expect(idFilter.in).toContain('squat-0000-0000-0000-000000000001')
+    expect(idFilter.in).toContain('squat-0000-0000-0000-000000000002')
+    expect(idFilter.in).not.toContain('hinge-0000-0000-0000-000000000001')
+    expect((countCall.where.ymoveId as { in: string[] }).in).toContain('squat-0000-0000-0000-000000000001')
+  })
+
+  it('total and pages reflect movement-filtered count, not full catalog size', async () => {
+    // Catalog has 3 rows but only 2 classify as fam_squat
+    mockFindMany
+      .mockResolvedValueOnce([SQUAT_ROW_1, SQUAT_ROW_2, HINGE_ROW])
+      .mockResolvedValue([SQUAT_ROW_1])
+    mockCount.mockResolvedValue(2) // DB returns filtered count
+
+    const res  = await getYmove(ymoveReq({ movement: 'fam_squat', limit: '1' }))
+    const body = await res.json() as { total: number; pages: number }
+
+    expect(body.total).toBe(2)
+    expect(body.pages).toBe(2) // ceil(2/1)
+  })
+
+  it('movement filter with no matches returns empty without a data DB query', async () => {
+    mockFindMany.mockResolvedValueOnce([HINGE_ROW]) // cache: only hinge
+    mockCount.mockResolvedValue(0)
+
+    const res  = await getYmove(ymoveReq({ movement: 'fam_chest_press' }))
+    const body = await res.json() as { items: unknown[]; total: number; pages: number }
+
+    expect(body.items).toHaveLength(0)
+    expect(body.total).toBe(0)
+    expect(body.pages).toBe(0)
+    // Early return after empty cache hit: no count or data query fired
+    expect(mockCount).not.toHaveBeenCalled()
+    expect(mockFindMany).toHaveBeenCalledTimes(1) // only cache load
+  })
+
+  it('page 2 uses correct DB offset within movement-filtered set', async () => {
+    mockFindMany
+      .mockResolvedValueOnce([SQUAT_ROW_1, SQUAT_ROW_2, HINGE_ROW])
+      .mockResolvedValue([SQUAT_ROW_2])
+    mockCount.mockResolvedValue(2)
+
+    await getYmove(ymoveReq({ movement: 'fam_squat', limit: '1', page: '2' }))
+
+    const dataCall = mockFindMany.mock.calls[1][0] as { skip: number; take: number }
+    expect(dataCall.skip).toBe(1)  // (page-1) * limit = (2-1) * 1
+    expect(dataCall.take).toBe(1)
+  })
+
+  it('warm cache is reused across consecutive requests', async () => {
+    mockFindMany
+      .mockResolvedValueOnce([SQUAT_ROW_1, SQUAT_ROW_2, HINGE_ROW])
+      .mockResolvedValue([SQUAT_ROW_1, SQUAT_ROW_2])
+    mockCount.mockResolvedValue(2)
+    await getYmove(ymoveReq({ movement: 'fam_squat' }))
+
+    // Second request should reuse the cache — only 1 findMany (data), not 2 (cache + data)
+    mockFindMany.mockClear()
+    mockCount.mockClear()
+    mockFindMany.mockResolvedValue([SQUAT_ROW_1, SQUAT_ROW_2])
+    mockCount.mockResolvedValue(2)
+
+    await getYmove(ymoveReq({ movement: 'fam_squat' }))
+
+    expect(mockFindMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('movement + eqFamily composes: both filters appear in the WHERE clause', async () => {
+    mockFindMany
+      .mockResolvedValueOnce([SQUAT_ROW_1, SQUAT_ROW_2, HINGE_ROW])
+      .mockResolvedValue([SQUAT_ROW_1])
+    mockCount.mockResolvedValue(1)
+
+    await getYmove(ymoveReq({ movement: 'fam_squat', eqFamily: 'barbell' }))
+
+    const dataCall = mockFindMany.mock.calls[1][0] as { where: Record<string, unknown> }
+    expect((dataCall.where.ymoveId as { in: string[] }).in).toContain('squat-0000-0000-0000-000000000001')
+    expect(dataCall.where.equipment).toBeDefined()
+  })
+})
+
+// ── 7. Template profile wiring — source verification ─────────────────────────
 // Template pages must call /api/equipment-profiles (the user-profile endpoint),
 // NOT /api/training/equipment (an exercise-type endpoint that returns no profiles).
 
@@ -409,7 +544,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 describe('Template pages — use correct equipment-profiles endpoint', () => {
-  const root = resolve(process.cwd())
+  // __dirname is reliable regardless of shell cwd; process.cwd() varies by invocation
+  const root = resolve(__dirname, '..')
 
   it('templates/new does not call the broken /api/training/equipment endpoint', () => {
     const src = readFileSync(`${root}/app/(app)/training/templates/new/page.tsx`, 'utf8')

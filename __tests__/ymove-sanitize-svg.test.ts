@@ -204,10 +204,33 @@ describe('sanitizeSvg — adversarial regression', () => {
     expect(r).toContain('data-region="chest"')
   })
 
-  it('strips style attribute (CSS-based injection vector)', () => {
+  it('blocks url() injection in style attributes (background not in CSS allowlist)', () => {
+    // style= is now allowed for fill/stroke color highlighting, but CSS properties
+    // outside the allowlist (background, content, etc.) and url() values are stripped.
     const r = sanitizeSvg(BASE.replace('<path', '<path style="background:url(javascript:alert(1))"'))
     expect(r).not.toBeNull()
-    expect(r).not.toContain('style=')
+    expect(r).not.toContain('url(')
+    expect(r).not.toContain('javascript:')
+    expect(r).not.toContain('background')
+  })
+
+  it('blocks url() in fill style value (not a valid color pattern)', () => {
+    const r = sanitizeSvg(BASE.replace('<path', '<path style="fill:url(https://evil.com/track)"'))
+    expect(r).not.toBeNull()
+    expect(r).not.toContain('url(')
+    expect(r).not.toContain('evil.com')
+  })
+
+  it('preserves fill hex color in style attribute for muscle highlighting', () => {
+    const r = sanitizeSvg(BASE.replace('<path', '<path style="fill:#e74c3c"'))
+    expect(r).not.toBeNull()
+    expect(r).toContain('fill:#e74c3c')
+  })
+
+  it('preserves fill rgb color in style attribute', () => {
+    const r = sanitizeSvg(BASE.replace('<path', '<path style="fill:rgb(231, 76, 60)"'))
+    expect(r).not.toBeNull()
+    expect(r).toContain('fill:rgb(231, 76, 60)')
   })
 
   it('strips href from path element (not in attribute allowlist)', () => {
