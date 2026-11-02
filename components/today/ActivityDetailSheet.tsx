@@ -12,12 +12,15 @@ import { useDistanceUnit } from '@/lib/hooks/use-distance-unit'
 export interface TodayActivity {
   id: string
   activityType: string
+  provider?: string
   title: string | null
   startedAt: string
   durationSeconds: number | null
   activeEnergyKcal: number | null
   avgHeartRateBpm: number | null
   distanceM: number | null
+  involvedWorkoutId?: string | null
+  workoutSummary?: { exerciseCount: number; setCount: number } | null
 }
 
 interface Props {
@@ -179,19 +182,30 @@ export function ActivityDetailSheet({
 
       </div>
 
-      {/* Sync status line */}
-      {connected && lastSyncedAt && (
+      {/* Workout count / status line */}
+      {hasData ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="mt-2 flex w-full items-center gap-1 text-left text-[10px] text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+        >
+          <span className="flex-1">
+            {activities.length} workout{activities.length !== 1 ? 's' : ''} today
+            {connected && lastSyncedAt
+              ? ` · synced ${formatSyncAge(lastSyncedAt)} via ${providerLabel(provider)}`
+              : null}
+          </span>
+          <ChevronRight className="size-3 shrink-0" />
+        </button>
+      ) : connected && lastSyncedAt ? (
         <p className="mt-2 text-[10px] text-zinc-500 dark:text-zinc-600">
-          {hasData
-            ? `${activities.length} workout${activities.length !== 1 ? 's' : ''} today · synced ${formatSyncAge(lastSyncedAt)} via ${providerLabel(provider)}`
-            : `No workouts today · last sync ${formatSyncAge(lastSyncedAt)}`}
+          No workouts today · last sync {formatSyncAge(lastSyncedAt)}
         </p>
-      )}
-      {!connected && (
+      ) : (
         <p className="mt-2 text-[10px] text-zinc-500">
-          Connect Apple Health in{' '}
-          <Link href="/health" className="text-emerald-500 hover:underline">Settings</Link>
-          {' '}to see activity data here.
+          <Link href="/training" className="text-emerald-500 hover:underline">Start a workout</Link>
+          {' '}or{' '}
+          <Link href="/health" className="text-emerald-500 hover:underline">connect Apple Health</Link>
+          {' '}to see activity here.
         </p>
       )}
 
@@ -263,13 +277,32 @@ export function ActivityDetailSheet({
                             <Icon className="size-4 text-emerald-400" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-white truncate">{label}</p>
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-semibold text-white truncate">{label}</p>
+                              {a.involvedWorkoutId && (
+                                <Link
+                                  href={`/training/workout/${a.involvedWorkoutId}`}
+                                  onClick={e => e.stopPropagation()}
+                                  className="shrink-0 flex items-center gap-0.5 text-[10px] text-emerald-500 hover:text-emerald-400 transition-colors"
+                                >
+                                  View <ChevronRight className="size-2.5" />
+                                </Link>
+                              )}
+                            </div>
                             <p className="text-xs text-zinc-500">{formatTime(a.startedAt)}</p>
                             <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
                               {a.durationSeconds != null && (
                                 <span className="flex items-center gap-1 text-xs text-zinc-400">
                                   <Clock className="size-3 text-zinc-500 shrink-0" />
                                   {formatDuration(a.durationSeconds)}
+                                </span>
+                              )}
+                              {a.workoutSummary && (
+                                <span className="flex items-center gap-1 text-xs text-zinc-400">
+                                  <Dumbbell className="size-3 text-zinc-500 shrink-0" />
+                                  {a.workoutSummary.exerciseCount} exercise{a.workoutSummary.exerciseCount !== 1 ? 's' : ''}
+                                  {' · '}
+                                  {a.workoutSummary.setCount} set{a.workoutSummary.setCount !== 1 ? 's' : ''}
                                 </span>
                               )}
                               {a.activeEnergyKcal != null && (
@@ -298,8 +331,12 @@ export function ActivityDetailSheet({
                 </div>
               ) : (
                 <div className="rounded-xl bg-zinc-900 border border-zinc-800 px-4 py-6 text-center">
-                  <p className="text-sm text-zinc-400">No workouts synced today.</p>
-                  <p className="mt-1 text-xs text-zinc-600">Workouts logged in Involved or synced from Apple Health will appear here.</p>
+                  <p className="text-sm text-zinc-400">No workouts today.</p>
+                  <p className="mt-1 text-xs text-zinc-600">
+                    {connected
+                      ? 'Complete a workout and it will appear here automatically.'
+                      : 'Complete a workout or connect Apple Health to see activity here.'}
+                  </p>
                 </div>
               )}
 

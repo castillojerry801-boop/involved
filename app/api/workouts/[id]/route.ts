@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
 import { resolveExerciseMeta } from '@/lib/ymove/resolver'
+import { linkOrCreateHealthActivity } from '@/lib/health/link-workout'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -153,6 +154,27 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       where: { id },
       data: updates,
     })
+
+    // Write completed workout into health_activities so it appears on Today + Activities.
+    // Non-fatal: a failure here never blocks workout completion.
+    if (body.status === 'completed' && existing.status !== 'completed') {
+      const durationSeconds = existing.startedAt
+        ? Math.round((now.getTime() - existing.startedAt.getTime()) / 1000)
+        : null
+      try {
+        await linkOrCreateHealthActivity({
+          id: existing.id,
+          userId: user.id,
+          title: typeof updates.title === 'string' ? updates.title : existing.title,
+          startedAt: existing.startedAt,
+          completedAt: now,
+          durationSeconds,
+          exercises: existing.exercises.map(e => ({ trackingType: e.trackingType })),
+        }, prisma)
+      } catch (err) {
+        console.error('[unified-activity] linkOrCreateHealthActivity failed', err)
+      }
+    }
 
     return Response.json({ workout: updated })
   } catch {

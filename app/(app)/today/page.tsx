@@ -104,12 +104,14 @@ async function getTodayHealth(userId: string, start: Date, end: Date) {
       select: {
         id: true,
         activityType: true,
+        provider: true,
         title: true,
         startedAt: true,
         durationSeconds: true,
         activeEnergyKcal: true,
         avgHeartRateBpm: true,
         distanceM: true,
+        involvedWorkoutId: true,
       },
     }),
     prisma.healthSyncCursor.findFirst({
@@ -131,12 +133,33 @@ async function getTodayHealth(userId: string, start: Date, end: Date) {
     }),
   ])
 
+  // Fetch exercise + completed-set counts for any Involved-linked workouts.
+  const involvedIds = activities.filter(a => a.involvedWorkoutId).map(a => a.involvedWorkoutId!)
+  const workoutExDetails = involvedIds.length > 0
+    ? await prisma.workoutExercise.findMany({
+        where: { workoutId: { in: involvedIds } },
+        select: {
+          workoutId: true,
+          sets: { where: { completed: true }, select: { id: true } },
+        },
+      })
+    : []
+
+  const workoutSummaryMap = new Map<string, { exerciseCount: number; setCount: number }>()
+  for (const we of workoutExDetails) {
+    const s = workoutSummaryMap.get(we.workoutId) ?? { exerciseCount: 0, setCount: 0 }
+    workoutSummaryMap.set(we.workoutId, {
+      exerciseCount: s.exerciseCount + 1,
+      setCount: s.setCount + we.sets.length,
+    })
+  }
+
   const toKcal = (agg: { _sum: { value: { toString(): string } | null } }) => {
     const v = agg._sum.value
     return v != null && Number(v) > 0 ? Math.round(Number(v)) : null
   }
 
-  const stepCount      = toKcal(stepsAgg)
+  const stepCount        = toKcal(stepsAgg)
   const allDayActiveKcal = toKcal(activeEnergyAgg)
   const basalKcal        = toKcal(basalEnergyAgg)
   const totalBurnKcal    = allDayActiveKcal != null && basalKcal != null
@@ -150,12 +173,15 @@ async function getTodayHealth(userId: string, start: Date, end: Date) {
     activities: activities.map(a => ({
       id: a.id,
       activityType: a.activityType as string,
+      provider: a.provider as string,
       title: a.title,
       startedAt: a.startedAt.toISOString(),
       durationSeconds: a.durationSeconds,
       activeEnergyKcal: a.activeEnergyKcal != null ? Math.round(Number(a.activeEnergyKcal)) : null,
       avgHeartRateBpm: a.avgHeartRateBpm,
       distanceM: a.distanceM != null ? Math.round(Number(a.distanceM)) : null,
+      involvedWorkoutId: a.involvedWorkoutId ?? null,
+      workoutSummary: a.involvedWorkoutId ? (workoutSummaryMap.get(a.involvedWorkoutId) ?? null) : null,
     })),
     stepCount,
     allDayActiveKcal,
