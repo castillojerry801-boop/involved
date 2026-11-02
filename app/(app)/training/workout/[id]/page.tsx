@@ -767,18 +767,19 @@ function CompletedCard({ workout }: { workout: WorkoutData }) {
     return `${m}:${String(sec).padStart(2, '0')}`
   }
 
-  // Compute muscles from the completed exercises
+  // Compute muscles from the completed exercises.
+  // we.exercise is populated by resolveExerciseMeta in the API (covers ymv: IDs).
+  // secondaryMuscles falls back to ExDB lookup; ymv: exercises have none.
   const primaryMuscles = [...new Set(
     workout.exercises.flatMap(we => {
-      const ex = getExerciseById(we.exerciseId)
-      return ex ? [ex.target] : (we.exercise?.target ? [we.exercise.target] : [])
+      const target = we.exercise?.target ?? getExerciseById(we.exerciseId)?.target
+      return target ? [target] : []
     })
   )]
   const primarySet = new Set(primaryMuscles)
   const secondaryMuscles = [...new Set(
     workout.exercises.flatMap(we => {
-      const ex = getExerciseById(we.exerciseId)
-      return ex ? (ex.secondaryMuscles ?? []) : []
+      return getExerciseById(we.exerciseId)?.secondaryMuscles ?? []
     })
   )].filter(m => m && !primarySet.has(m))
 

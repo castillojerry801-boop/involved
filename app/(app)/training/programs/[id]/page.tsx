@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { prefetchYmvMeta } from '@/lib/ymove/resolver'
 import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
 import type { PersistedWeekProgression, PersistedPhase } from '@/lib/training/prescription'
 import { ProgramActions } from './program-actions'
@@ -44,6 +45,12 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
   const program = await getProgram(id, user.id)
   if (!program) redirect('/training/programs')
 
+  // Prefetch ymv: exercise metadata so ymove exercises render with correct
+  // display names instead of falling back to the raw ymv:uuid string.
+  const allExerciseIds = program.days.flatMap(d => d.exercises.map(e => e.exerciseId))
+  const ymvMap = await prefetchYmvMeta(allExerciseIds, prisma)
+  const resolveMeta = (eid: string) => ymvMap.get(eid) ?? getExerciseById(eid)
+
   // Build the client payload: resolve display names + metadata server-side (keeps
   // the large exercise library off the client bundle); the shared resolver runs
   // client-side for week selection.
@@ -56,7 +63,7 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
       name: day.name,
       weekday: (day as unknown as { weekday: number | null }).weekday ?? null,
       exercises: day.exercises.map(ex => {
-        const meta = getExerciseById(ex.exerciseId)
+        const meta = resolveMeta(ex.exerciseId)
         const e = ex as unknown as {
           startingLoad: number | null
           weekProgressions: PersistedWeekProgression[] | null

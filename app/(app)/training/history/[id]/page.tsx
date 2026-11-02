@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { getUser } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { getExerciseById } from '@/lib/exercises'
+import { prefetchYmvMeta } from '@/lib/ymove/resolver'
 import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { getWeightUnit, kgToUnit } from '@/lib/weight-unit.server'
 
@@ -59,19 +60,23 @@ export default async function WorkoutHistoryPage({ params }: { params: Promise<{
   ])
   if (!workout) redirect('/training')
 
+  const exerciseIds = workout.exercises.map(we => we.exerciseId)
+  const ymvMap = await prefetchYmvMeta(exerciseIds, prisma)
+  const resolveMeta = (eid: string) => ymvMap.get(eid) ?? getExerciseById(eid)
+
   const totalSets = workout.exercises.reduce((n, ex) => n + ex.sets.length, 0)
 
   // Compute muscles from completed exercises (server-side — no extra fetch)
   const primaryMuscles = [...new Set(
     workout.exercises.flatMap(we => {
-      const ex = getExerciseById(we.exerciseId)
+      const ex = resolveMeta(we.exerciseId)
       return ex ? [ex.target] : []
     })
   )]
   const primarySet = new Set(primaryMuscles)
   const secondaryMuscles = [...new Set(
     workout.exercises.flatMap(we => {
-      const ex = getExerciseById(we.exerciseId)
+      const ex = resolveMeta(we.exerciseId)
       return ex ? (ex.secondaryMuscles ?? []) : []
     })
   )].filter(m => m && !primarySet.has(m))
@@ -132,7 +137,7 @@ export default async function WorkoutHistoryPage({ params }: { params: Promise<{
       {/* Exercises */}
       <div className="space-y-4">
         {workout.exercises.map(ex => {
-          const meta = getExerciseById(ex.exerciseId)
+          const meta = resolveMeta(ex.exerciseId)
           const completedSets = ex.sets
 
           return (
