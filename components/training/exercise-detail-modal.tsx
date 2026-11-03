@@ -13,9 +13,11 @@ interface Props {
   preference?: PreferenceState
   onToggleFav?: (exerciseId: string, next: PreferenceState) => void
   onClose: () => void
+  /** When provided, renders an "Add to Workout" button at the bottom of the modal. */
+  onAdd?: () => void
 }
 
-export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleFav, onClose }: Props) {
+export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleFav, onClose, onAdd }: Props) {
   const isFav = preference === 'favorite'
 
   return (
@@ -155,6 +157,18 @@ export function ExerciseDetailModal({ exercise, preference = 'normal', onToggleF
             </div>
           )}
         </div>
+
+        {/* Add to Workout — only rendered when caller provides onAdd */}
+        {onAdd && (
+          <div className="shrink-0 border-t border-zinc-100 dark:border-zinc-800 px-5 py-4">
+            <button
+              onClick={onAdd}
+              className="w-full min-h-[48px] rounded-2xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-sm font-bold transition-colors hover:bg-zinc-700 dark:hover:bg-zinc-200 active:scale-[0.98]"
+            >
+              Add to Workout
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

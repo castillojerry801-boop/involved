@@ -6,6 +6,7 @@ import { Search, X, Plus, Loader2, Dumbbell, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { ExerciseMeta } from '@/lib/exercises'
 import { normalizeExdbEquipment } from '@/lib/ymove/hierarchy-scorer'
+import { ExerciseDetailModal } from './exercise-detail-modal'
 
 // ── ExerciseDB mode ───────────────────────────────────────────────────────────
 
@@ -138,8 +139,23 @@ export default function ExercisePicker({
 
   const [exercises, setExercises] = useState<ExerciseMeta[]>([])
   const [loading, setLoading] = useState(true)
+  const [previewExercise, setPreviewExercise] = useState<ExerciseMeta | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const savedScrollRef = useRef<number>(0)
+
+  const openPreview = useCallback((ex: ExerciseMeta) => {
+    savedScrollRef.current = scrollRef.current?.scrollTop ?? 0
+    setPreviewExercise(ex)
+  }, [])
+
+  const closePreview = useCallback(() => {
+    setPreviewExercise(null)
+    requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = savedScrollRef.current
+    })
+  }, [])
 
   // Probe the feature flag once — server reads the env var, client never needs NEXT_PUBLIC_
   useEffect(() => {
@@ -510,7 +526,7 @@ export default function ExercisePicker({
       )}
 
       {/* Results */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {loading || ymoveMode === null ? (
           <div className="flex justify-center py-12">
             <Loader2 className="size-5 animate-spin text-zinc-400" />
@@ -534,65 +550,73 @@ export default function ExercisePicker({
                 const ymvItem = ymoveMode && 'thumbnailMediaId' in ex ? ex as YmoveItem : null
                 return (
                   <li key={ex.id}>
-                    <button
-                      onClick={() => !already && onSelect(ex)}
-                      disabled={already}
-                      className={cn(
-                        'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
-                        already
-                          ? 'opacity-40 cursor-default'
-                          : 'hover:bg-zinc-50 dark:hover:bg-zinc-900/50 active:bg-zinc-100 dark:active:bg-zinc-900',
-                      )}
-                    >
-                      {/* Thumbnail — YMove exercises only */}
-                      {ymvItem ? (
-                        ymvItem.thumbnailMediaId ? (
-                          <Image
-                            src={`/api/ymove/thumbnail/${ymvItem.thumbnailMediaId}?crop=square`}
-                            alt=""
-                            width={40}
-                            height={40}
-                            unoptimized
-                            loading="lazy"
-                            className="size-10 rounded-lg object-cover shrink-0 bg-zinc-100 dark:bg-zinc-800"
-                          />
-                        ) : (
-                          <div className="size-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
-                            <Dumbbell className="size-4 text-zinc-400" />
+                    <div className={cn(
+                      'flex items-center gap-3 px-4 py-3',
+                      already && 'opacity-40',
+                    )}>
+                      {/* Preview trigger — thumbnail + name opens detail without adding */}
+                      <button
+                        onClick={() => openPreview(ex)}
+                        className="flex-1 flex items-center gap-3 text-left min-w-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 active:bg-zinc-100 dark:active:bg-zinc-900 -mx-1 px-1 py-0.5 rounded-xl transition-colors"
+                        aria-label={`Preview ${ex.name}`}
+                      >
+                        {/* Thumbnail — YMove exercises only */}
+                        {ymvItem ? (
+                          ymvItem.thumbnailMediaId ? (
+                            <Image
+                              src={`/api/ymove/thumbnail/${ymvItem.thumbnailMediaId}?crop=square`}
+                              alt=""
+                              width={40}
+                              height={40}
+                              unoptimized
+                              loading="lazy"
+                              className="size-10 rounded-lg object-cover shrink-0 bg-zinc-100 dark:bg-zinc-800"
+                            />
+                          ) : (
+                            <div className="size-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                              <Dumbbell className="size-4 text-zinc-400" />
+                            </div>
+                          )
+                        ) : null}
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
+                              {ex.name}
+                            </span>
+                            {ex.isCustom && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-wide shrink-0">
+                                Mine
+                              </span>
+                            )}
+                            {ymvItem?.hasVideo && !ex.isCustom && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[10px] font-medium shrink-0">
+                                Video
+                              </span>
+                            )}
                           </div>
-                        )
-                      ) : null}
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-sm font-semibold text-zinc-900 dark:text-white truncate">
-                            {ex.name}
-                          </span>
-                          {ex.isCustom && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-wide shrink-0">
-                              Mine
-                            </span>
-                          )}
-                          {ymvItem?.hasVideo && !ex.isCustom && (
-                            <span className="px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 text-[10px] font-medium shrink-0">
-                              Video
-                            </span>
-                          )}
+                          <p className="text-xs text-zinc-400 capitalize mt-0.5">
+                            {ex.bodyPart}
+                            {ex.equipment && ex.equipment !== 'bodyweight' && ex.equipment !== 'unknown'
+                              ? ` · ${ex.equipment}`
+                              : ''}
+                          </p>
                         </div>
-                        <p className="text-xs text-zinc-400 capitalize mt-0.5">
-                          {ex.bodyPart}
-                          {ex.equipment && ex.equipment !== 'bodyweight' && ex.equipment !== 'unknown'
-                            ? ` · ${ex.equipment}`
-                            : ''}
-                        </p>
-                      </div>
+                      </button>
 
+                      {/* Add button — direct add without preview */}
                       {already ? (
                         <span className="text-xs text-zinc-400 shrink-0">Added</span>
                       ) : (
-                        <Plus className="size-4 text-zinc-400 shrink-0" />
+                        <button
+                          onClick={() => onSelect(ex)}
+                          aria-label={`Add ${ex.name} to workout`}
+                          className="shrink-0 flex size-8 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                        >
+                          <Plus className="size-4 text-zinc-600 dark:text-zinc-400" />
+                        </button>
                       )}
-                    </button>
+                    </div>
                   </li>
                 )
               })}
@@ -627,6 +651,18 @@ export default function ExercisePicker({
           Can&apos;t find it? Create a custom exercise →
         </a>
       </div>
+
+      {/* Exercise preview — opens on row tap; add button inside commits to workout */}
+      {previewExercise && (
+        <ExerciseDetailModal
+          exercise={previewExercise}
+          onClose={closePreview}
+          onAdd={selectedIds?.has(previewExercise.id) ? undefined : () => {
+            onSelect(previewExercise)
+            closePreview()
+          }}
+        />
+      )}
     </div>
   )
 }
