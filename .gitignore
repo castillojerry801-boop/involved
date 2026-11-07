@@ -45,3 +45,8 @@ data/involved-migration-*.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Android signing keystores — must never be committed
+*.jks
+*.keystore
+*.p12
