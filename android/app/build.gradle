@@ -17,10 +17,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            storeFile     file(project.findProperty('INVOLVED_STORE_FILE')     ?: '/Users/jerrycastillo/Keys/involved-upload-key.jks')
+            storePassword project.findProperty('INVOLVED_STORE_PASSWORD')      ?: ''
+            keyAlias      project.findProperty('INVOLVED_KEY_ALIAS')           ?: 'involved-upload'
+            keyPassword   project.findProperty('INVOLVED_KEY_PASSWORD')        ?: ''
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 }
