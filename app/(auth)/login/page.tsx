@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Turnstile } from '@/components/turnstile'
+import { SocialAuthButtons } from '@/components/auth/social-auth-buttons'
 import { createClient } from '@/lib/supabase/client'
 
 function safeRedirect(next: string | null): string {
@@ -17,12 +18,18 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const next = safeRedirect(searchParams.get('next'))
+  const urlError = searchParams.get('error')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [honeypot, setHoneypot] = useState('')
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const [turnstileError, setTurnstileError] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(
+    urlError === 'oauth_canceled' ? 'Sign-in was canceled.' :
+    urlError === 'oauth_failed'   ? 'Sign-in failed. Please try again.' :
+    urlError === 'auth_failed'    ? 'Authentication failed. Please try again.' :
+    urlError ? 'Sign-in failed. Please try again.' : null
+  )
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -74,6 +81,17 @@ function LoginForm() {
           Welcome back
         </h1>
         <p className="mt-1 text-sm text-zinc-500">Sign in to continue your training</p>
+      </div>
+
+      <SocialAuthButtons next={next !== '/today' ? next : undefined} />
+
+      <div className="relative my-2">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-zinc-200 dark:border-zinc-800" />
+        </div>
+        <div className="relative flex justify-center text-xs">
+          <span className="bg-zinc-50 dark:bg-zinc-950 px-2 text-zinc-400">or continue with email</span>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">

@@ -28,12 +28,12 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Involved uses the camera to scan food barcodes and support photo-based nutrition logging.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Involved uses the microphone to let you log workouts and meals by voice.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Involved reads your workouts, weight, and resting heart rate from Apple Health to show your training history in one place. No data is written back to Health.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Involved uses HealthKit access to support your fitness and activity experience. Involved does not currently write health data without your permission.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Involved uses the microphone to let you log workouts and meals by voice.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -78,6 +78,17 @@
 	<array>
 		<string>involvedfit.com</string>
 		<string>www.involvedfit.com</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.involved.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.involved.app</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

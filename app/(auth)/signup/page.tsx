@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Turnstile } from '@/components/turnstile'
+import { SocialAuthButtons } from '@/components/auth/social-auth-buttons'
 
 function safeRedirect(next: string | null): string | null {
   if (!next || !next.startsWith('/') || next.startsWith('//')) return null
@@ -68,6 +69,17 @@ function SignupForm() {
           Create your account
         </h1>
         <p className="mt-1 text-sm text-zinc-500">Free to start. No credit card needed.</p>
+      </div>
+
+      <SocialAuthButtons next={next ?? undefined} />
+
+      <div className="relative my-2">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-zinc-200 dark:border-zinc-800" />
+        </div>
+        <div className="relative flex justify-center text-xs">
+          <span className="bg-zinc-50 dark:bg-zinc-950 px-2 text-zinc-400">or sign up with email</span>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
