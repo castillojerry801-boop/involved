@@ -225,7 +225,7 @@ function SetRow({
 
   return (
     <div className="border-b border-zinc-100 dark:border-zinc-800 last:border-0">
-      <div className={cn('flex items-center gap-2 py-2.5', done && 'opacity-60')}>
+      <div className={cn('flex min-h-[44px] items-center gap-2 py-1', done && 'opacity-60')}>
         <span className="w-6 text-xs text-zinc-400 shrink-0 text-center">{set.setNumber}</span>
 
         {showWeight && (
@@ -261,12 +261,12 @@ function SetRow({
           />
         )}
 
-        {/* Optional RPE/RIR toggle */}
+        {/* Optional RPE/RIR toggle — h-11 gives 44px touch target height */}
         {!done && (trackingType === 'strength' || trackingType === 'bodyweight' || trackingType === 'assisted') && (
           <button
             onClick={() => setShowEffort(v => !v)}
             className={cn(
-              'ml-auto flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-colors',
+              'ml-auto flex h-11 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-bold transition-colors',
               showEffort
                 ? 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'
                 : 'text-zinc-300 dark:text-zinc-600 hover:text-zinc-500'
@@ -295,8 +295,7 @@ function SetRow({
           onClick={handleComplete}
           disabled={done || saving}
           className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-full transition-colors',
-            !showEffort && !done && set.id.startsWith('pending-') ? 'ml-auto' : '',
+            'flex size-11 shrink-0 items-center justify-center rounded-full transition-colors',
             done
               ? 'bg-emerald-500 text-white'
               : 'border-2 border-zinc-200 dark:border-zinc-600 text-zinc-300 hover:border-emerald-400 hover:text-emerald-400'
@@ -304,9 +303,14 @@ function SetRow({
         >
           {saving ? <Loader2 className="size-4 animate-spin" /> : done ? <CheckCircle2 className="size-4" /> : <Circle className="size-4" />}
         </button>
-
-        <PRBadges prs={prs} />
       </div>
+
+      {/* PR badges rendered below the input row to avoid overflowing the card */}
+      {Object.keys(prs).length > 0 && (
+        <div className="pb-1 pl-8">
+          <PRBadges prs={prs} />
+        </div>
+      )}
 
       {/* Effort inputs — shown inline below the set row */}
       {showEffort && !done && (
