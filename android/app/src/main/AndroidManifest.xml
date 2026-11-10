@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_WEIGHT" />
 
+    <!-- Google Play Billing — required for in-app purchases and subscriptions -->
+    <uses-permission android:name="com.android.vending.BILLING" />
+
     <!-- Required on Android < 14 to detect if Health Connect app is installed -->
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
