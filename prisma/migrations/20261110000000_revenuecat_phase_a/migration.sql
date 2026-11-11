@@ -7,7 +7,10 @@
 -- The unique constraint swap requires a brief ACCESS EXCLUSIVE lock on
 -- user_subscriptions. Run during a low-traffic window on production.
 --
--- NOTE: Prisma manages the transaction wrapper; no explicit BEGIN/COMMIT here.
+-- TRANSACTION: Explicit BEGIN/COMMIT are required. Prisma 5.x's migrate deploy
+-- executes PostgreSQL migration SQL directly without an outer transaction wrapper.
+-- All 9 statements below are PostgreSQL transactional DDL — none uses CONCURRENTLY,
+-- which is the only index operation that cannot run inside a transaction block.
 -- ============================================================================
 
 
@@ -51,6 +54,8 @@
 -- ============================================================================
 -- MIGRATION
 -- ============================================================================
+
+BEGIN;
 
 -- Step 0: Backfill any NULL billing_source values before adding NOT NULL.
 -- Safe when no NULLs exist — UPDATE with no matching rows is a no-op.
@@ -138,6 +143,8 @@ CREATE INDEX IF NOT EXISTS webhook_events_app_user_id_idx
 
 CREATE INDEX IF NOT EXISTS webhook_events_status_created_at_idx
   ON webhook_events (status, created_at);
+
+COMMIT;
 
 
 -- ============================================================================
