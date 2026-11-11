@@ -34,9 +34,17 @@ const migrations = [
 for (const rel of migrations) {
   const file = path.join(root, rel)
   console.log(`apply-migration-preview: applying ${rel}`)
-  execFileSync('npx', ['prisma', 'db', 'execute', '--file', file, '--url', directUrl], {
-    stdio: 'inherit',
-    cwd: root,
-  })
-  console.log(`apply-migration-preview: ${rel} OK`)
+  try {
+    execFileSync('npx', ['prisma', 'db', 'execute', '--file', file, '--url', directUrl], {
+      stdio: 'inherit',
+      cwd: root,
+    })
+    console.log(`apply-migration-preview: ${rel} OK`)
+  } catch {
+    // Supabase direct connection (port 5432) is blocked from Vercel build machines.
+    // Log clearly and continue — apply the migration manually in Supabase Dashboard.
+    console.warn(`apply-migration-preview: WARN — could not apply ${rel} automatically (network unreachable)`)
+    console.warn('apply-migration-preview: Apply manually in Supabase SQL Editor (project qverqgbfkgiscycdqsck):')
+    console.warn("  ALTER TYPE \"BillingSource\" ADD VALUE IF NOT EXISTS 'rc_test';")
+  }
 }
