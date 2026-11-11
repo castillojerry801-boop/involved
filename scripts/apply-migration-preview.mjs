@@ -68,19 +68,26 @@ for (const name of enumMigrations) {
   if (!databaseUrl) {
     console.warn('apply-migration-preview: reconcile WARN — DATABASE_URL not set, skipping')
   } else {
+    // Add a 5-second connect timeout so the reconcile step fails fast rather than
+    // hanging for minutes when Supabase blocks the build machine's IP.
+    const timeoutUrl = databaseUrl.includes('?')
+      ? `${databaseUrl}&connect_timeout=5`
+      : `${databaseUrl}?connect_timeout=5`
     console.log(`apply-migration-preview: reconcile — marking ${name} as applied`)
     try {
       execFileSync('npx', ['prisma', 'migrate', 'resolve', '--applied', name], {
-        stdio: 'inherit',
-        cwd:   root,
-        env:   { ...process.env, DIRECT_URL: databaseUrl },
+        stdio:   'inherit',
+        cwd:     root,
+        env:     { ...process.env, DIRECT_URL: timeoutUrl },
+        timeout: 15000,
       })
       console.log(`apply-migration-preview: reconcile OK — ${name}`)
     } catch {
       // Expected on re-deploy if migration is already recorded as applied.
-      // Also fires if _prisma_migrations table does not exist (schema not yet initialised
-      // via migrate deploy). Both cases are non-fatal.
-      console.warn(`apply-migration-preview: reconcile WARN — ${name} (already applied, or _prisma_migrations absent)`)
+      // Also fires if Supabase blocks the build machine IP or _prisma_migrations absent.
+      // Reconcile manually in Supabase SQL Editor (project qverqgbfkgiscycdqsck):
+      //   see prisma/migrations/20261110010000_billing_source_rc_test/migration.sql
+      console.warn(`apply-migration-preview: reconcile WARN — ${name} (network, already applied, or no _prisma_migrations table)`)
     }
   }
 }
