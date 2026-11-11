@@ -32,26 +32,27 @@ export async function POST(req: NextRequest) {
   const goalType = VALID_GOAL_TYPES.has(body.goalType) ? body.goalType : 'custom'
   const weeklyWorkouts = Math.max(1, Math.min(7, Math.round(body.weeklyWorkouts ?? 3)))
 
-  await Promise.all([
-    // 1. Upsert profile — create if missing (e.g. no DB trigger in sandbox)
-    prisma.profile.upsert({
-      where:  { id: user.id },
-      create: {
-        id:           user.id,
-        displayName:  body.displayName.trim(),
-        fitnessLevel: body.fitnessLevel,
-        weightKg:     body.weightKg   ?? null,
-        heightCm:     body.heightCm   ?? null,
-      },
-      update: {
-        displayName:  body.displayName.trim(),
-        fitnessLevel: body.fitnessLevel,
-        weightKg:     body.weightKg   ?? null,
-        heightCm:     body.heightCm   ?? null,
-      },
-    }),
+  // 1. Profile MUST be committed before goal/target FK checks run.
+  //    Running this inside Promise.all races the INSERT against FK-dependent writes.
+  await prisma.profile.upsert({
+    where:  { id: user.id },
+    create: {
+      id:           user.id,
+      displayName:  body.displayName.trim(),
+      fitnessLevel: body.fitnessLevel,
+      weightKg:     body.weightKg   ?? null,
+      heightCm:     body.heightCm   ?? null,
+    },
+    update: {
+      displayName:  body.displayName.trim(),
+      fitnessLevel: body.fitnessLevel,
+      weightKg:     body.weightKg   ?? null,
+      heightCm:     body.heightCm   ?? null,
+    },
+  })
 
-    // 2. Create primary goal
+  // 2. Profile is now committed — goal and weekly target can reference it safely
+  await Promise.all([
     prisma.goal.create({
       data: {
         userId: user.id,
@@ -61,7 +62,6 @@ export async function POST(req: NextRequest) {
       },
     }),
 
-    // 3. Set weekly workout target
     prisma.weeklyTarget.upsert({
       where:  { userId_targetType: { userId: user.id, targetType: 'workouts_per_week' } },
       create: { userId: user.id, targetType: 'workouts_per_week', targetValue: weeklyWorkouts },
