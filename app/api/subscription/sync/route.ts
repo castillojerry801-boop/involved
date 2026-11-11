@@ -23,10 +23,11 @@ export async function POST() {
   }
 
   const result = await reconcileSubscriberFromRC({
-    userId:        user.id,
+    userId:          user.id,
     rcSecretKey,
-    isProduction:  process.env.NODE_ENV === 'production',
-    acceptSandbox: process.env.REVENUECAT_ACCEPT_SANDBOX === 'true',
+    isProduction:    process.env.NODE_ENV === 'production',
+    acceptSandbox:   process.env.REVENUECAT_ACCEPT_SANDBOX   === 'true',
+    acceptTestStore: process.env.REVENUECAT_ACCEPT_TEST_STORE === 'true' && process.env.VERCEL_ENV !== 'production',
   })
 
   if (result.status === 'rc_error') {

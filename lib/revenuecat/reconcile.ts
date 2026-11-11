@@ -41,6 +41,7 @@ export interface ReconcileOptions {
   rcSecretKey: string
   isProduction: boolean
   acceptSandbox: boolean
+  acceptTestStore?: boolean
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -59,6 +60,10 @@ export function rcStoreToSource(store: string): BillingSource | null {
       return 'google'
     case 'STRIPE':
       return 'stripe'
+    case 'TEST':
+      // RC sandbox simulator. Mapped to its own billing source so test purchases
+      // never collide with real Apple/Google rows on the same user.
+      return 'rc_test'
     default:
       return null
   }
@@ -85,7 +90,7 @@ export interface SubscriptionEntry {
  */
 export function selectBestBySource(
   subscriptions: Record<string, RCSubscriberSubscription>,
-  opts: { isProduction: boolean; acceptSandbox: boolean },
+  opts: { isProduction: boolean; acceptSandbox: boolean; acceptTestStore?: boolean },
 ): Map<BillingSource, SubscriptionEntry> {
   const now = new Date()
   const best = new Map<BillingSource, SubscriptionEntry>()
@@ -94,6 +99,10 @@ export function selectBestBySource(
     const billingSource = rcStoreToSource(sub.store)
     if (!billingSource) continue
     if (sub.is_sandbox && opts.isProduction && !opts.acceptSandbox) continue
+    // TEST store requires an explicit opt-in separate from acceptSandbox.
+    // This prevents REVENUECAT_ACCEPT_SANDBOX=true from accidentally granting
+    // rc_test entitlements in production.
+    if (billingSource === 'rc_test' && !opts.acceptTestStore) continue
 
     const expiresAt = sub.expires_date ? new Date(sub.expires_date) : null
     const isActive = expiresAt ? expiresAt > now : false
@@ -153,7 +162,7 @@ export function selectBestBySource(
 export async function reconcileSubscriberFromRC(
   opts: ReconcileOptions,
 ): Promise<ReconcileResult> {
-  const { userId, rcSecretKey, isProduction, acceptSandbox } = opts
+  const { userId, rcSecretKey, isProduction, acceptSandbox, acceptTestStore } = opts
 
   // fetchedAt is captured BEFORE the RC request. It serves two purposes:
   //   1. "last reconciled at" metadata stored on each subscription row.
@@ -195,7 +204,7 @@ export async function reconcileSubscriberFromRC(
 
   // ── Select best subscription per billing source ──────────────────────────
   const subscriptions = rcData.subscriber?.subscriptions ?? {}
-  const best = selectBestBySource(subscriptions, { isProduction, acceptSandbox })
+  const best = selectBestBySource(subscriptions, { isProduction, acceptSandbox, acceptTestStore })
 
   // ── Write subscription rows with CAS ordering guard ──────────────────────
   for (const [billingSource, { sub, productId, isActive, expiresAt }] of best.entries()) {

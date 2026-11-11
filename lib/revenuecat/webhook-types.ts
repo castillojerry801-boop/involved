@@ -9,6 +9,7 @@ export type RCStore =
   | 'PROMOTIONAL'
   | 'AMAZON'
   | 'UNKNOWN_STORE'
+  | 'TEST'
 
 export type RCEnvironment = 'SANDBOX' | 'PRODUCTION'
 

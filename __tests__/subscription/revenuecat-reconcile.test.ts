@@ -50,7 +50,7 @@ vi.mock('@/lib/subscription/entitlements', () => ({
 
 import { prisma } from '@/lib/prisma'
 import { getUserEntitlement } from '@/lib/subscription/entitlements'
-import { selectBestBySource, reconcileSubscriberFromRC } from '../../lib/revenuecat/reconcile'
+import { selectBestBySource, reconcileSubscriberFromRC, rcStoreToSource } from '../../lib/revenuecat/reconcile'
 import type { RCSubscriberSubscription } from '../../lib/revenuecat/reconcile'
 
 const mockUpdateMany     = prisma.userSubscription.updateMany as ReturnType<typeof vi.fn>
@@ -563,5 +563,255 @@ describe('reconcileSubscriberFromRC — concurrent reconciliation safety (CAS gu
     expect(where.OR).toHaveLength(2)
     expect(where.OR[0]).toEqual({ lastEventTimestampMs: null })
     expect(where.OR[1].lastEventTimestampMs.lt).toBeTypeOf('bigint')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// rcStoreToSource — RC store identifier mapping
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('rcStoreToSource', () => {
+  it('maps APP_STORE to apple', () => {
+    expect(rcStoreToSource('APP_STORE')).toBe('apple')
+  })
+
+  it('maps MAC_APP_STORE to apple', () => {
+    expect(rcStoreToSource('MAC_APP_STORE')).toBe('apple')
+  })
+
+  it('maps PLAY_STORE to google', () => {
+    expect(rcStoreToSource('PLAY_STORE')).toBe('google')
+  })
+
+  it('maps STRIPE to stripe', () => {
+    expect(rcStoreToSource('STRIPE')).toBe('stripe')
+  })
+
+  it('maps TEST to rc_test', () => {
+    expect(rcStoreToSource('TEST')).toBe('rc_test')
+  })
+
+  it('maps test case-insensitively to rc_test', () => {
+    expect(rcStoreToSource('test')).toBe('rc_test')
+  })
+
+  it('returns null for AMAZON (unsupported)', () => {
+    expect(rcStoreToSource('AMAZON')).toBeNull()
+  })
+
+  it('returns null for PROMOTIONAL (unsupported)', () => {
+    expect(rcStoreToSource('PROMOTIONAL')).toBeNull()
+  })
+
+  it('returns null for UNKNOWN_STORE', () => {
+    expect(rcStoreToSource('UNKNOWN_STORE')).toBeNull()
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// selectBestBySource — TEST store filtering (rc_test billing source)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('selectBestBySource — TEST store filtering', () => {
+  const testSub = () => makeSub({ store: 'TEST', is_sandbox: true })
+
+  it('TEST store is filtered out when acceptTestStore is not set', () => {
+    const result = selectBestBySource(
+      { 'com.involved.plus.monthly': testSub() },
+      { isProduction: false, acceptSandbox: false },
+    )
+    expect(result.size).toBe(0)
+  })
+
+  it('TEST store is filtered out when acceptTestStore is explicitly false', () => {
+    const result = selectBestBySource(
+      { 'com.involved.plus.monthly': testSub() },
+      { isProduction: false, acceptSandbox: false, acceptTestStore: false },
+    )
+    expect(result.size).toBe(0)
+  })
+
+  it('TEST store is accepted and maps to rc_test when acceptTestStore is true', () => {
+    const result = selectBestBySource(
+      { 'com.involved.plus.monthly': testSub() },
+      { isProduction: false, acceptSandbox: false, acceptTestStore: true },
+    )
+    expect(result.has('rc_test')).toBe(true)
+    expect(result.get('rc_test')!.productId).toBe('com.involved.plus.monthly')
+  })
+
+  it('REVENUECAT_ACCEPT_SANDBOX=true does not enable TEST store (separate guard)', () => {
+    // REVENUECAT_ACCEPT_SANDBOX lets sandbox APP_STORE/PLAY_STORE/STRIPE through.
+    // It must NOT also allow rc_test — that requires acceptTestStore explicitly.
+    const result = selectBestBySource(
+      { 'com.involved.plus.monthly': testSub() },
+      { isProduction: true, acceptSandbox: true },  // no acceptTestStore
+    )
+    expect(result.has('rc_test')).toBe(false)
+    expect(result.size).toBe(0)
+  })
+
+  it('REVENUECAT_ACCEPT_SANDBOX=true with acceptTestStore=true allows TEST store', () => {
+    const result = selectBestBySource(
+      { 'com.involved.plus.monthly': testSub() },
+      { isProduction: true, acceptSandbox: true, acceptTestStore: true },
+    )
+    expect(result.has('rc_test')).toBe(true)
+  })
+
+  it('TEST store and genuine Apple APP_STORE subscription coexist in separate billing sources', () => {
+    const result = selectBestBySource(
+      {
+        'com.involved.plus.monthly':      makeSub({ store: 'APP_STORE' }),
+        'com.involved.plus.monthly.test': testSub(),
+      },
+      { isProduction: false, acceptSandbox: false, acceptTestStore: true },
+    )
+    expect(result.has('apple')).toBe(true)
+    expect(result.has('rc_test')).toBe(true)
+    expect(result.size).toBe(2)
+    expect(result.get('apple')!.productId).toBe('com.involved.plus.monthly')
+    expect(result.get('rc_test')!.productId).toBe('com.involved.plus.monthly.test')
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// reconcileSubscriberFromRC — TEST store / rc_test billing source
+//
+// Verifies the full subscription lifecycle (INITIAL_PURCHASE, RENEWAL,
+// CANCELLATION, EXPIRATION, Restore) using the rc_test billing source, plus
+// the production safety guard (acceptTestStore=false → no DB writes).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('reconcileSubscriberFromRC — TEST store (rc_test billing source)', () => {
+  beforeEach(resetMocks)
+
+  it('INITIAL_PURCHASE: writes billingSource=rc_test, tier=plus, status=active when acceptTestStore=true', async () => {
+    mockRC({ 'com.involved.plus.monthly': makeSub({ store: 'TEST', is_sandbox: true }) })
+    await reconcileSubscriberFromRC(makeOpts({ acceptTestStore: true }))
+
+    const where = mockUpdateMany.mock.calls[0][0].where
+    expect(where.billingSource).toBe('rc_test')
+    const data = mockUpdateMany.mock.calls[0][0].data
+    expect(data.tier).toBe('plus')
+    expect(data.status).toBe('active')
+  })
+
+  it('RENEWAL: updates rc_test billing source with active/plus and cancelAtPeriodEnd=false', async () => {
+    // A renewal: subscription is still active, unsubscribe_detected_at is null.
+    mockRC({ 'com.involved.plus.monthly': makeSub({
+      store: 'TEST',
+      is_sandbox: true,
+      unsubscribe_detected_at: null,
+    }) })
+    await reconcileSubscriberFromRC(makeOpts({ acceptTestStore: true }))
+
+    const data = mockUpdateMany.mock.calls[0][0].data
+    expect(data.status).toBe('active')
+    expect(data.tier).toBe('plus')
+    expect(data.cancelAtPeriodEnd).toBe(false)
+  })
+
+  it('CANCELLATION: sets cancelAtPeriodEnd=true but keeps status=active (no immediate loss)', async () => {
+    // User cancelled but period has not ended yet (expires_date in the future).
+    mockRC({ 'com.involved.plus.monthly': makeSub({
+      store: 'TEST',
+      is_sandbox: true,
+      unsubscribe_detected_at: pastDate(1),  // cancelled yesterday
+      expires_date: futureDate(14),            // but still active for 14 more days
+    }) })
+    await reconcileSubscriberFromRC(makeOpts({ acceptTestStore: true }))
+
+    const data = mockUpdateMany.mock.calls[0][0].data
+    expect(data.cancelAtPeriodEnd).toBe(true)
+    expect(data.status).toBe('active')
+    expect(data.tier).toBe('plus')
+  })
+
+  it('EXPIRATION: writes status=expired, tier=free when RC subscription expires (returned to Free)', async () => {
+    mockRC({ 'com.involved.plus.monthly': makeSub({
+      store: 'TEST',
+      is_sandbox: true,
+      expires_date: pastDate(1),  // subscription has expired
+    }) })
+    await reconcileSubscriberFromRC(makeOpts({ acceptTestStore: true }))
+
+    const data = mockUpdateMany.mock.calls[0][0].data
+    expect(data.status).toBe('expired')
+    expect(data.tier).toBe('free')
+    const where = mockUpdateMany.mock.calls[0][0].where
+    expect(where.billingSource).toBe('rc_test')
+  })
+
+  it('Restore / new purchase: writes status=active, tier=plus (returned to Plus)', async () => {
+    // After expiration the user purchases again — RC shows a new active subscription.
+    mockRC({ 'com.involved.plus.monthly': makeSub({
+      store: 'TEST',
+      is_sandbox: true,
+      expires_date: futureDate(30),
+      purchase_date: pastDate(0),
+      unsubscribe_detected_at: null,
+    }) })
+    await reconcileSubscriberFromRC(makeOpts({ acceptTestStore: true }))
+
+    const data = mockUpdateMany.mock.calls[0][0].data
+    expect(data.status).toBe('active')
+    expect(data.tier).toBe('plus')
+    expect(data.cancelAtPeriodEnd).toBe(false)
+  })
+
+  it('TEST store rejected when acceptTestStore is false: no DB writes', async () => {
+    mockRC({ 'com.involved.plus.monthly': makeSub({ store: 'TEST', is_sandbox: true }) })
+    await reconcileSubscriberFromRC(makeOpts({ acceptTestStore: false }))
+
+    expect(mockUpdateMany).not.toHaveBeenCalled()
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('TEST store rejected when acceptTestStore is not set (default false): no DB writes', async () => {
+    mockRC({ 'com.involved.plus.monthly': makeSub({ store: 'TEST', is_sandbox: true }) })
+    await reconcileSubscriberFromRC(makeOpts())  // no acceptTestStore
+
+    expect(mockUpdateMany).not.toHaveBeenCalled()
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('TEST store and genuine Apple subscription written to separate billing sources without collision', async () => {
+    mockRC({
+      'com.involved.plus.monthly':      makeSub({ store: 'APP_STORE', is_sandbox: false }),
+      'com.involved.plus.monthly.test': makeSub({ store: 'TEST',      is_sandbox: true }),
+    })
+    await reconcileSubscriberFromRC(makeOpts({ acceptTestStore: true }))
+
+    const sources = mockUpdateMany.mock.calls.map(
+      (c: any[]) => (c[0] as any).where.billingSource,
+    )
+    expect(sources).toContain('apple')
+    expect(sources).toContain('rc_test')
+    expect(sources).toHaveLength(2)
+  })
+
+  it('production: TEST store rejected even when ACCEPT_SANDBOX=true (acceptTestStore not set)', async () => {
+    // This is the critical production safety check.
+    // Setting REVENUECAT_ACCEPT_SANDBOX=true on a production deployment must not
+    // accidentally allow rc_test entitlements through.
+    mockRC({ 'com.involved.plus.monthly': makeSub({ store: 'TEST', is_sandbox: true }) })
+    await reconcileSubscriberFromRC(makeOpts({ isProduction: true, acceptSandbox: true }))
+
+    expect(mockUpdateMany).not.toHaveBeenCalled()
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('billing issue on TEST store sets billingIssueDetectedAt when acceptTestStore=true', async () => {
+    mockRC({ 'com.involved.plus.monthly': makeSub({
+      store: 'TEST',
+      is_sandbox: true,
+      billing_issues_detected_at: pastDate(1),
+    }) })
+    await reconcileSubscriberFromRC(makeOpts({ acceptTestStore: true }))
+
+    const data = mockUpdateMany.mock.calls[0][0].data
+    expect(data.billingIssueDetectedAt).toBeInstanceOf(Date)
+    expect(data.status).toBe('active')
   })
 })

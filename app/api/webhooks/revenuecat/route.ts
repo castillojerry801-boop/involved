@@ -112,8 +112,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       reconcileSubscriberFromRC({
         userId,
         rcSecretKey,
-        isProduction: process.env.NODE_ENV === 'production',
-        acceptSandbox: process.env.REVENUECAT_ACCEPT_SANDBOX === 'true',
+        isProduction:    process.env.NODE_ENV === 'production',
+        acceptSandbox:   process.env.REVENUECAT_ACCEPT_SANDBOX   === 'true',
+        acceptTestStore: process.env.REVENUECAT_ACCEPT_TEST_STORE === 'true' && process.env.VERCEL_ENV !== 'production',
       })
 
     await processWebhookEvent(payload, reconcileFn)

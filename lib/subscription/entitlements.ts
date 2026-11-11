@@ -74,7 +74,11 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
 
   const now = new Date()
 
-  const [subs, trainerSub, sponsoredEntitlements, adminEntitlements] = await Promise.all([
+  const testStoreEnabled =
+    process.env.REVENUECAT_ACCEPT_TEST_STORE === 'true' &&
+    process.env.VERCEL_ENV !== 'production'
+
+  const [rawSubs, trainerSub, sponsoredEntitlements, adminEntitlements] = await Promise.all([
     prisma.userSubscription.findMany({ where: { userId } }).catch((): UserSubscription[] => []),
     prisma.trainerSubscription.findUnique({ where: { userId } }).catch(() => null),
     prisma.userEntitlement.findMany({
@@ -94,6 +98,10 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
       },
     }).catch(() => []),
   ])
+
+  // rc_test rows only count when Test Store is explicitly enabled in a non-production environment.
+  // This prevents stale test rows from granting Plus after the flag is removed or the app is promoted.
+  const subs = testStoreEnabled ? rawSubs : rawSubs.filter(s => s.billingSource !== 'rc_test')
 
   // 1. Trainer tier — has an active trainer subscription
   if (trainerSub && trainerSub.status === 'active') {
