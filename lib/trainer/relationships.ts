@@ -203,12 +203,12 @@ export async function revokeClientRelationship(
       data: { status: 'revoked', revokedAt: now },
     })
 
-    // Determine effective tier after revocation
-    const personalSub = await tx.userSubscription.findUnique({
-      where: { userId: clientId },
-    })
-    const hasPersistentPlus = personalSub?.status === 'active' && personalSub.tier === 'plus'
-    const hasActiveTrial    = personalSub?.status === 'trialing' && (personalSub.trialEndsAt ?? now) > now
+    // Determine effective tier after revocation — check all billing sources
+    const clientSubs = await tx.userSubscription.findMany({ where: { userId: clientId } })
+    const hasPersistentPlus = clientSubs.some(s => s.status === 'active' && s.tier === 'plus')
+    const hasActiveTrial    = clientSubs.some(
+      s => s.billingSource === 'manual' && s.status === 'trialing' && (s.trialEndsAt ?? now) > now,
+    )
 
     const newTier = hasPersistentPlus ? 'plus'
                   : hasActiveTrial    ? 'trial'

@@ -17,7 +17,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    userSubscription:          { findUnique: vi.fn() },
+    userSubscription:          { findMany: vi.fn(), updateMany: vi.fn() },
     trainerSubscription:       { findUnique: vi.fn(), findMany: vi.fn() },
     userEntitlement:           { findMany: vi.fn() },
     trainerClientRelationship: { findMany: vi.fn() },
@@ -29,7 +29,7 @@ import { prisma } from '@/lib/prisma'
 import { getUserEntitlement } from '../../lib/subscription/entitlements'
 
 // ─── Typed refs ───────────────────────────────────────────────────────────────
-const mockFindUniqueSub        = prisma.userSubscription.findUnique          as ReturnType<typeof vi.fn>
+const mockFindManySubs         = prisma.userSubscription.findMany            as ReturnType<typeof vi.fn>
 const mockFindUniqueTrainer    = prisma.trainerSubscription.findUnique       as ReturnType<typeof vi.fn>
 const mockFindManyTrainerSubs  = prisma.trainerSubscription.findMany         as ReturnType<typeof vi.fn>
 const mockFindManyEntitlements = prisma.userEntitlement.findMany             as ReturnType<typeof vi.fn>
@@ -56,7 +56,7 @@ function makeSponsored(trainerId: string, overrides: Record<string, unknown> = {
 
 function resetAll() {
   vi.unstubAllEnvs()
-  mockFindUniqueSub.mockResolvedValue(null)
+  mockFindManySubs.mockResolvedValue([])
   mockFindUniqueTrainer.mockResolvedValue(null)
   mockFindManyTrainerSubs.mockResolvedValue([])
   mockFindManyRels.mockResolvedValue([])
@@ -372,11 +372,12 @@ describe('Bypass trainer — relationship must still exist', () => {
 describe('Independent personal Plus survives sponsorship removal', () => {
   beforeEach(() => {
     resetAll()
-    // Personal active Plus subscription
-    mockFindUniqueSub.mockResolvedValue({
-      userId: CLIENT_ID, status: 'active', tier: 'plus',
+    // Personal active Plus subscription (manual billing source)
+    mockFindManySubs.mockResolvedValue([{
+      userId: CLIENT_ID, status: 'active', tier: 'plus', billingSource: 'manual',
       currentPeriodEnd: null, cancelAtPeriodEnd: false, trialEndsAt: null,
-    })
+      lastEventTimestampMs: null,
+    }])
     // Sponsorship entitlement also exists but trainer is invalid
     mockFindManyEntitlements.mockImplementation(({ where }: { where: { source: string } }) =>
       where.source === 'trainer_sponsored'
@@ -399,10 +400,11 @@ describe('Active trial survives sponsorship removal', () => {
   beforeEach(() => {
     resetAll()
     const trialEndsAt = new Date(Date.now() + 7 * 86_400_000)
-    mockFindUniqueSub.mockResolvedValue({
-      userId: CLIENT_ID, status: 'trialing', tier: 'plus',
+    mockFindManySubs.mockResolvedValue([{
+      userId: CLIENT_ID, status: 'trialing', tier: 'plus', billingSource: 'manual',
       currentPeriodEnd: null, cancelAtPeriodEnd: false, trialEndsAt,
-    })
+      lastEventTimestampMs: null,
+    }])
     mockFindManyEntitlements.mockResolvedValue([])
     mockFindManyTrainerSubs.mockResolvedValue([])
     mockFindManyRels.mockResolvedValue([])

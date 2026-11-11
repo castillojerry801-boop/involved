@@ -28,9 +28,9 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Unknown action' }, { status: 400 })
   }
 
-  // Check whether user is eligible (no prior trial or active subscription)
-  const existing = await prisma.userSubscription.findUnique({
-    where: { userId: user.id },
+  // Check whether user is eligible (no prior trial or active subscription on manual source)
+  const existing = await prisma.userSubscription.findFirst({
+    where: { userId: user.id, billingSource: 'manual' },
   })
 
   if (existing) {
@@ -48,14 +48,13 @@ export async function POST(req: NextRequest) {
   const now = new Date()
   const trialEndsAt = new Date(now.getTime() + TRIAL_DAYS * 86_400_000)
 
-  // Create or update the subscription record
+  // Create or update the manual subscription record
   const sub = existing
     ? await prisma.userSubscription.update({
-        where: { userId: user.id },
+        where: { userId_billingSource: { userId: user.id, billingSource: 'manual' } },
         data: {
           tier: 'plus',
           status: 'trialing',
-          billingSource: 'manual',
           trialStartedAt: now,
           trialEndsAt,
         },

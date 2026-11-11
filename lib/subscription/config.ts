@@ -17,7 +17,7 @@ export const PRICING = {
     productIds: {
       stripe: 'prod_involved_plus_monthly',
       apple:  'com.involved.plus.monthly',
-      google: 'involved_plus_monthly',
+      google: 'involved_premium:monthly',
     },
   },
   annual: {
@@ -25,7 +25,7 @@ export const PRICING = {
     productIds: {
       stripe: 'prod_involved_plus_annual',
       apple:  'com.involved.plus.annual',
-      google: 'involved_plus_annual',
+      google: 'involved_premium:annual',
     },
   },
 } as const

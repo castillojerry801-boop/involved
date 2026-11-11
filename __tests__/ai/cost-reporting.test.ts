@@ -31,7 +31,7 @@ function makeLog(overrides: {
   audioBytes?: number | null
   estimatedCostUsd?: string | null
   pricingStatus?: string
-  profile?: { subscription: { tier: string; status: string } | null }
+  profile?: { subscriptionTier: string }
   createdAt?: Date
 }) {
   const raw = {
@@ -47,7 +47,7 @@ function makeLog(overrides: {
     audioBytes: null,
     estimatedCostUsd: '0.001800',
     pricingStatus: 'confirmed',
-    profile: { subscription: { tier: 'plus', status: 'active' } },
+    profile: { subscriptionTier: 'plus' },
     createdAt: TODAY,
     ...overrides,
   }
@@ -165,9 +165,9 @@ describe('generateAiUsageReport — unknown model pricing', () => {
 describe('generateAiUsageReport — cross-user isolation', () => {
   beforeEach(() => {
     mockFindMany.mockResolvedValue([
-      makeLog({ userId: 'user-a', inputTokens: 10_000, estimatedCostUsd: '0.001500', profile: { subscription: { tier: 'plus', status: 'active' } } }),
-      makeLog({ userId: 'user-b', inputTokens: 50_000, estimatedCostUsd: '0.007500', profile: { subscription: { tier: 'free',  status: 'active' } } }),
-      makeLog({ userId: 'user-a', inputTokens:  5_000, estimatedCostUsd: '0.000750', profile: { subscription: { tier: 'plus', status: 'active' } } }),
+      makeLog({ userId: 'user-a', inputTokens: 10_000, estimatedCostUsd: '0.001500', profile: { subscriptionTier: 'plus' } }),
+      makeLog({ userId: 'user-b', inputTokens: 50_000, estimatedCostUsd: '0.007500', profile: { subscriptionTier: 'free' } }),
+      makeLog({ userId: 'user-a', inputTokens:  5_000, estimatedCostUsd: '0.000750', profile: { subscriptionTier: 'plus' } }),
     ])
     mockSubCount.mockResolvedValue(1)
   })

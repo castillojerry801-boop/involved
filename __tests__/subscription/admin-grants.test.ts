@@ -19,7 +19,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // ─── Mock prisma — factory cannot reference hoisted vars ─────────────────────
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    userSubscription:          { findUnique: vi.fn() },
+    userSubscription:          { findMany: vi.fn(), updateMany: vi.fn() },
     trainerSubscription:       { findUnique: vi.fn(), findMany: vi.fn() },
     userEntitlement:           { findMany: vi.fn() },
     trainerClientRelationship: { findMany: vi.fn() },
@@ -33,7 +33,7 @@ import { getUserEntitlement } from '../../lib/subscription/entitlements'
 import { isAdmin } from '../../lib/admin/auth'
 
 // ─── Typed mock refs ─────────────────────────────────────────────────────────
-const mockFindUniqueSub        = prisma.userSubscription.findUnique          as ReturnType<typeof vi.fn>
+const mockFindManySubs         = prisma.userSubscription.findMany            as ReturnType<typeof vi.fn>
 const mockFindUniqueTrainer    = prisma.trainerSubscription.findUnique       as ReturnType<typeof vi.fn>
 const mockFindManyTrainerSubs  = prisma.trainerSubscription.findMany         as ReturnType<typeof vi.fn>
 const mockFindManyEntitlements = prisma.userEntitlement.findMany             as ReturnType<typeof vi.fn>
@@ -65,7 +65,7 @@ function makeAdminGrant(overrides: Record<string, unknown> = {}) {
 }
 
 function resetMocks() {
-  mockFindUniqueSub.mockResolvedValue(null)
+  mockFindManySubs.mockResolvedValue([])
   mockFindUniqueTrainer.mockResolvedValue(null)
   mockFindManyTrainerSubs.mockResolvedValue([])
   mockFindManyRels.mockResolvedValue([])

@@ -108,7 +108,7 @@ export async function generateAiUsageReport(
         createdAt: true,
         profile: {
           select: {
-            subscription: { select: { tier: true, status: true } },
+            subscriptionTier: true,
           },
         },
       },
@@ -187,9 +187,7 @@ export async function generateAiUsageReport(
   for (const log of logs) {
     const uid = log.userId
     if (!userMap.has(uid)) {
-      const tier = log.profile.subscription?.status === 'active'
-        ? (log.profile.subscription.tier as string)
-        : 'free'
+      const tier = (log.profile.subscriptionTier as string) ?? 'free'
       userMap.set(uid, {
         userId: uid,
         subscriptionTier: tier,

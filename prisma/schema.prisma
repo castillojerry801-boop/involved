@@ -39,7 +39,7 @@ model Profile {
   goals               Goal[]
   aiUsageLogs         AiUsageLog[]
   aiRequestLogs       AiRequestLog[]
-  subscription        UserSubscription?
+  subscriptions       UserSubscription[]
   entitlements        UserEntitlement[]
 
   // Training
@@ -182,10 +182,10 @@ model AiRequestLog {
 
 model UserSubscription {
   id                     String             @id @default(uuid()) @db.Uuid
-  userId                 String             @unique @map("user_id") @db.Uuid
+  userId                 String             @map("user_id") @db.Uuid
   tier                   SubscriptionTier   @default(free)
   status                 SubscriptionStatus @default(active)
-  billingSource          BillingSource?     @map("billing_source")
+  billingSource          BillingSource      @default(manual) @map("billing_source")
   externalSubscriptionId String?            @map("external_subscription_id") @db.VarChar(255)
   externalPriceId        String?            @map("external_price_id") @db.VarChar(255)
   trialStartedAt         DateTime?          @map("trial_started_at") @db.Timestamptz(3)
@@ -193,11 +193,14 @@ model UserSubscription {
   currentPeriodStart     DateTime?          @map("current_period_start") @db.Timestamptz(3)
   currentPeriodEnd       DateTime?          @map("current_period_end") @db.Timestamptz(3)
   cancelAtPeriodEnd      Boolean            @default(false) @map("cancel_at_period_end")
+  billingIssueDetectedAt DateTime?          @map("billing_issue_detected_at") @db.Timestamptz(3)
+  lastEventTimestampMs   BigInt?            @map("last_event_timestamp_ms")
   createdAt              DateTime           @default(now()) @map("created_at")
   updatedAt              DateTime           @updatedAt @map("updated_at")
 
   profile Profile @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, billingSource])
   @@index([userId])
   @@map("user_subscriptions")
 }
@@ -1701,6 +1704,28 @@ model YmoveExerciseCatalog {
   @@index([canonicalId])
   @@index([isDuplicateOf])
   @@map("ymove_exercise_catalog")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// REVENUECAT WEBHOOK EVENTS
+// Idempotent deduplication table for RevenueCat webhook delivery.
+// processing → completed on success; processing → error on crash/failure.
+// Stale processing rows (> 5 min) are reclaimed via atomic updateMany CAS.
+// ═════════════════════════════════════════════════════════════════════
+model WebhookEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  eventId     String   @unique @map("event_id") @db.VarChar(100)
+  eventType   String   @map("event_type") @db.VarChar(50)
+  appUserId   String?  @map("app_user_id") @db.VarChar(255)
+  status      String   @default("processing") @db.VarChar(20)
+  outcomeNote String?  @map("outcome_note") @db.VarChar(500)
+  rawPayload  Json?    @map("raw_payload")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([appUserId])
+  @@index([status, createdAt])
+  @@map("webhook_events")
 }
 
 // ═════════════════════════════════════════════════════════════════════

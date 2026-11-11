@@ -6,6 +6,8 @@
 -- SAFE TO RUN: All changes are additive (new columns with defaults, new table).
 -- The unique constraint swap requires a brief ACCESS EXCLUSIVE lock on
 -- user_subscriptions. Run during a low-traffic window on production.
+--
+-- NOTE: Prisma manages the transaction wrapper; no explicit BEGIN/COMMIT here.
 -- ============================================================================
 
 
@@ -19,15 +21,17 @@
 --   FROM user_subscriptions
 --  WHERE billing_source IS NULL;
 
--- 2. Identify the actual unique constraint name on user_id.
---    The migration uses a DO block to discover and drop it dynamically,
---    but confirm the name here before running so you know what to expect.
+-- 2. Identify unique indexes/constraints on user_id.
+--    The migration handles BOTH constraint-backed and bare-index forms.
 -- SELECT conname AS constraint_name, contype
 --   FROM pg_constraint
 --  WHERE conrelid = 'user_subscriptions'::regclass
 --    AND contype = 'u'
 --  ORDER BY conname;
--- Expected: a row like { conname: 'user_subscriptions_user_id_key', contype: 'u' }
+-- SELECT indexname, indexdef
+--   FROM pg_indexes
+--  WHERE tablename = 'user_subscriptions'
+--  ORDER BY indexname;
 
 -- 3. Confirm no duplicate (user_id, billing_source) pairs exist.
 --    This must return 0 rows before running Step 3 (compound index creation).
@@ -43,18 +47,13 @@
 --  GROUP BY billing_source, status
 --  ORDER BY billing_source, status;
 
+
 -- ============================================================================
--- MIGRATION — all schema changes in a single atomic transaction
--- ============================================================================
--- PostgreSQL supports transactional DDL (CREATE TABLE, ALTER TABLE, CREATE INDEX
--- without CONCURRENTLY). If any step fails, the entire transaction rolls back
--- and the database is left unchanged.
+-- MIGRATION
 -- ============================================================================
 
-BEGIN;
-
--- Step 0: Backfill any NULL billing_source values before adding NOT NULL constraint.
--- Safe to run even if no NULLs exist — UPDATE with no matching rows is a no-op.
+-- Step 0: Backfill any NULL billing_source values before adding NOT NULL.
+-- Safe when no NULLs exist — UPDATE with no matching rows is a no-op.
 UPDATE user_subscriptions
    SET billing_source = 'manual'
  WHERE billing_source IS NULL;
@@ -72,18 +71,29 @@ ALTER TABLE user_subscriptions
 ALTER TABLE user_subscriptions
   ALTER COLUMN billing_source SET NOT NULL;
 
--- Step 3: Replace the single-column unique constraint on user_id with a
+-- Step 3: Replace the single-column unique index on (user_id) with a
 -- compound unique index on (user_id, billing_source).
 --
--- We use a DO block to discover the actual constraint name dynamically.
--- This prevents a silent no-op if the production constraint was created with
--- a different name than what Prisma generates locally.
+-- Two-part drop to handle both Prisma deployment styles:
+--
+--   Part (a) — constraint-backed unique (prisma migrate):
+--     Prisma stores these as ALTER TABLE ... ADD CONSTRAINT, which appears
+--     in pg_constraint as type 'u'. Dropped via ALTER TABLE DROP CONSTRAINT
+--     using the dynamically discovered constraint name. The backing index is
+--     removed automatically.
+--
+--   Part (b) — bare CREATE UNIQUE INDEX (prisma db push / legacy SQL):
+--     Appears only in pg_indexes, not pg_constraint. The DO block finds
+--     nothing and skips. Dropped explicitly by name via DROP INDEX IF EXISTS.
+--
+-- Together they cover every Prisma deployment path. Each part is a no-op if
+-- its target does not exist.
+
+-- Part (a): dynamically discover and drop any constraint-backed unique on user_id
 DO $$
 DECLARE
   v_constraint TEXT;
 BEGIN
-  -- Find the single-column unique constraint on user_id (not a primary key,
-  -- not a compound constraint — exactly one column, that column is user_id).
   SELECT c.conname INTO v_constraint
     FROM pg_constraint c
     JOIN pg_attribute  a ON a.attrelid = c.conrelid
@@ -98,12 +108,15 @@ BEGIN
     EXECUTE 'ALTER TABLE user_subscriptions DROP CONSTRAINT ' || quote_ident(v_constraint);
     RAISE NOTICE 'Dropped single-column unique constraint: %', v_constraint;
   ELSE
-    RAISE NOTICE 'No single-column unique constraint on user_id found — skipping drop (may already be compound)';
+    RAISE NOTICE 'No constraint-backed single-column unique on user_id — handled by bare-index drop below';
   END IF;
 END $$;
 
+-- Part (b): drop the bare unique index by name (safe if already gone or never existed)
+DROP INDEX IF EXISTS user_subscriptions_user_id_key;
+
 -- Create the compound unique index.
--- IF NOT EXISTS makes this idempotent; the name matches Prisma's @@unique generation.
+-- IF NOT EXISTS makes this idempotent on re-run.
 CREATE UNIQUE INDEX IF NOT EXISTS user_subscriptions_user_id_billing_source_key
   ON user_subscriptions (user_id, billing_source);
 
@@ -126,35 +139,49 @@ CREATE INDEX IF NOT EXISTS webhook_events_app_user_id_idx
 CREATE INDEX IF NOT EXISTS webhook_events_status_created_at_idx
   ON webhook_events (status, created_at);
 
-COMMIT;
-
 
 -- ============================================================================
--- POST-MIGRATION VERIFICATION — run after COMMIT to confirm correctness
+-- POST-MIGRATION VERIFICATION — run after deploy to confirm correctness
 -- ============================================================================
 
--- 1. Verify new columns exist and have correct nullability.
+-- 1. Verify new columns exist with correct nullability and defaults.
 -- SELECT column_name, data_type, is_nullable, column_default
 --   FROM information_schema.columns
 --  WHERE table_name = 'user_subscriptions'
 --    AND column_name IN ('billing_source', 'billing_issue_detected_at', 'last_event_timestamp_ms')
 --  ORDER BY column_name;
+-- Expected:
+--   billing_issue_detected_at | timestamp with time zone | YES | null
+--   billing_source            | USER-DEFINED             | NO  | 'manual'::"BillingSource"
+--   last_event_timestamp_ms   | bigint                   | YES | null
 
 -- 2. Confirm the compound unique index was created.
 -- SELECT indexname, indexdef
 --   FROM pg_indexes
 --  WHERE tablename = 'user_subscriptions'
 --    AND indexname = 'user_subscriptions_user_id_billing_source_key';
+-- Expected: 1 row
 
--- 3. Confirm row count is unchanged (compare with preflight snapshot).
+-- 3. Confirm single-column unique index was removed.
+-- SELECT indexname
+--   FROM pg_indexes
+--  WHERE tablename = 'user_subscriptions'
+--    AND indexname = 'user_subscriptions_user_id_key';
+-- Expected: 0 rows
+
+-- 4. Confirm row count is unchanged (compare with preflight snapshot).
 -- SELECT COUNT(*) AS total_rows FROM user_subscriptions;
 
--- 4. Confirm webhook_events table exists and is empty (no rows yet).
+-- 5. Confirm webhook_events table exists.
 -- SELECT COUNT(*) FROM webhook_events;
+-- Expected: 0 rows (no events yet)
 
--- 5. No single-column unique constraint on user_id should remain.
--- SELECT conname, contype
---   FROM pg_constraint
+-- 6. Confirm FK and non-unique user_id index are intact (must not be dropped).
+-- SELECT conname, contype FROM pg_constraint
 --  WHERE conrelid = 'user_subscriptions'::regclass
---    AND contype = 'u';
--- Expected: only the new compound index name appears.
+--    AND contype = 'f';
+-- Expected: user_subscriptions_user_id_fkey
+-- SELECT indexname FROM pg_indexes
+--  WHERE tablename = 'user_subscriptions'
+--    AND indexname = 'user_subscriptions_user_id_idx';
+-- Expected: 1 row

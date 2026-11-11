@@ -1,5 +1,6 @@
 import 'server-only'
 import { prisma } from '@/lib/prisma'
+import type { UserSubscription } from '@prisma/client'
 import type { EffectiveTier } from './config'
 
 export interface Entitlement {
@@ -39,10 +40,11 @@ const FREE_ENTITLEMENT: Entitlement = {
  *
  * Resolution order (highest wins):
  *   1. trainer tier    — active TrainerSubscription
- *   2. plus tier       — active personal UserSubscription
- *   3. trial tier      — active UserSubscription in trial
+ *   2. plus tier       — active personal UserSubscription (any billing source)
+ *   3. trial tier      — active UserSubscription in trial (manual source)
  *   4. trainer_sponsored — active UserEntitlement from a trainer
- *   5. free            — fallback
+ *   5. admin_grant     — active UserEntitlement from an admin
+ *   6. free            — fallback
  *
  * Never trust client-supplied tier claims — always call this.
  */
@@ -72,8 +74,8 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
 
   const now = new Date()
 
-  const [sub, trainerSub, sponsoredEntitlements, adminEntitlements] = await Promise.all([
-    prisma.userSubscription.findUnique({ where: { userId } }).catch(() => null),
+  const [subs, trainerSub, sponsoredEntitlements, adminEntitlements] = await Promise.all([
+    prisma.userSubscription.findMany({ where: { userId } }).catch((): UserSubscription[] => []),
     prisma.trainerSubscription.findUnique({ where: { userId } }).catch(() => null),
     prisma.userEntitlement.findMany({
       where: {
@@ -111,50 +113,53 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
     }
   }
 
-  if (sub) {
-    // 2. Active paid Plus subscription
-    if (sub.status === 'active' && sub.tier === 'plus') {
+  // 2. Active paid Plus subscription — check all billing sources
+  const activePlus = subs.find(s => s.status === 'active' && s.tier === 'plus')
+  if (activePlus) {
+    return {
+      tier: 'plus',
+      status: 'active',
+      trialEndsAt: null,
+      trialDaysRemaining: null,
+      currentPeriodEnd: activePlus.currentPeriodEnd,
+      cancelAtPeriodEnd: activePlus.cancelAtPeriodEnd,
+      isPlus: true,
+      isTrial: false,
+      isFree: false,
+      isTrainer: false,
+      isTrainerSponsored: false,
+      isAdminGrant: false,
+    }
+  }
+
+  // 3. Trial in progress — always from manual billing source
+  const trialSub = subs.find(s => s.billingSource === 'manual' && s.status === 'trialing')
+  if (trialSub) {
+    if (trialSub.trialEndsAt && trialSub.trialEndsAt <= now) {
+      // Expire server-side
+      await Promise.all([
+        prisma.userSubscription.updateMany({
+          where: { userId, billingSource: 'manual', status: 'trialing' },
+          data: { status: 'expired' },
+        }).catch(() => null),
+        prisma.profile.update({ where: { id: userId }, data: { subscriptionTier: 'free' } }).catch(() => null),
+      ])
+    } else {
+      const msLeft = (trialSub.trialEndsAt?.getTime() ?? 0) - now.getTime()
+      const daysLeft = Math.max(0, Math.ceil(msLeft / 86_400_000))
       return {
-        tier: 'plus',
-        status: 'active',
-        trialEndsAt: null,
-        trialDaysRemaining: null,
-        currentPeriodEnd: sub.currentPeriodEnd,
-        cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
-        isPlus: true,
-        isTrial: false,
+        tier: 'trial',
+        status: 'trialing',
+        trialEndsAt: trialSub.trialEndsAt,
+        trialDaysRemaining: daysLeft,
+        currentPeriodEnd: trialSub.trialEndsAt,
+        cancelAtPeriodEnd: false,
+        isPlus: false,
+        isTrial: true,
         isFree: false,
         isTrainer: false,
         isTrainerSponsored: false,
         isAdminGrant: false,
-      }
-    }
-
-    // 3. Trial in progress
-    if (sub.status === 'trialing') {
-      if (sub.trialEndsAt && sub.trialEndsAt <= now) {
-        // Expire server-side
-        await Promise.all([
-          prisma.userSubscription.update({ where: { userId }, data: { status: 'expired' } }).catch(() => null),
-          prisma.profile.update({ where: { id: userId }, data: { subscriptionTier: 'free' } }).catch(() => null),
-        ])
-      } else {
-        const msLeft = (sub.trialEndsAt?.getTime() ?? 0) - now.getTime()
-        const daysLeft = Math.max(0, Math.ceil(msLeft / 86_400_000))
-        return {
-          tier: 'trial',
-          status: 'trialing',
-          trialEndsAt: sub.trialEndsAt,
-          trialDaysRemaining: daysLeft,
-          currentPeriodEnd: sub.trialEndsAt,
-          cancelAtPeriodEnd: false,
-          isPlus: false,
-          isTrial: true,
-          isFree: false,
-          isTrainer: false,
-          isTrainerSponsored: false,
-          isAdminGrant: false,
-        }
       }
     }
   }
@@ -162,8 +167,6 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
   // 4. Active trainer-sponsored entitlement — dual-validated
   // Both the trainer's subscription AND the TrainerClientRelationship must be
   // currently active. An orphaned UserEntitlement row alone is not sufficient.
-  // cancelAtPeriodEnd=true with status=active is still valid — the billing
-  // system updates status when the period ends; we do not add a grace period.
   if (sponsoredEntitlements.length > 0) {
     const trainerIds = [...new Set(
       sponsoredEntitlements
@@ -175,7 +178,6 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
       const bypassIds = (process.env.TRAINER_USER_IDS ?? '')
         .split(',').map(s => s.trim()).filter(Boolean)
 
-      // Single round-trip: batch both checks in parallel.
       const [activeTrainerSubs, activeRels] = await Promise.all([
         prisma.trainerSubscription.findMany({
           where:  { userId: { in: trainerIds }, status: 'active' },
@@ -215,7 +217,6 @@ export async function getUserEntitlement(userId: string): Promise<Entitlement> {
         }
       }
     }
-    // No valid sponsorship — fall through to admin_grant
   }
 
   // 5. Admin grant
