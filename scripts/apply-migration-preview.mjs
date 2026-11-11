@@ -60,17 +60,27 @@ for (const name of enumMigrations) {
   // ── Reconcile step (DATABASE_URL pooler, plain DML) ───────────────────────
   // Marks the migration as applied in _prisma_migrations so `migrate deploy`
   // does not attempt to re-run the ALTER TYPE inside a transaction on future runs.
-  console.log(`apply-migration-preview: reconcile — marking ${name} as applied`)
-  try {
-    execFileSync('npx', ['prisma', 'migrate', 'resolve', '--applied', name], {
-      stdio: 'inherit',
-      cwd:   root,
-    })
-    console.log(`apply-migration-preview: reconcile OK — ${name}`)
-  } catch {
-    // Expected on re-deploy if migration is already recorded as applied.
-    // Also fires if _prisma_migrations table does not exist (schema not yet initialised
-    // via migrate deploy). Both cases are non-fatal.
-    console.warn(`apply-migration-preview: reconcile WARN — ${name} (already applied, or _prisma_migrations absent)`)
+  //
+  // Prisma CLI schema operations use directUrl when set, which is the blocked direct
+  // connection. Override DIRECT_URL = DATABASE_URL for this subprocess so Prisma
+  // uses the pooler (accessible from Vercel build machines) for this DML-only step.
+  const databaseUrl = process.env.DATABASE_URL
+  if (!databaseUrl) {
+    console.warn('apply-migration-preview: reconcile WARN — DATABASE_URL not set, skipping')
+  } else {
+    console.log(`apply-migration-preview: reconcile — marking ${name} as applied`)
+    try {
+      execFileSync('npx', ['prisma', 'migrate', 'resolve', '--applied', name], {
+        stdio: 'inherit',
+        cwd:   root,
+        env:   { ...process.env, DIRECT_URL: databaseUrl },
+      })
+      console.log(`apply-migration-preview: reconcile OK — ${name}`)
+    } catch {
+      // Expected on re-deploy if migration is already recorded as applied.
+      // Also fires if _prisma_migrations table does not exist (schema not yet initialised
+      // via migrate deploy). Both cases are non-fatal.
+      console.warn(`apply-migration-preview: reconcile WARN — ${name} (already applied, or _prisma_migrations absent)`)
+    }
   }
 }
