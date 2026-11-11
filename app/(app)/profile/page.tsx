@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { User, Settings, ChevronRight, Trophy, Target, LogOut, Sparkles, Camera, Plus, Trash2, Loader2, X, Lock, FileText, HelpCircle, Shield } from 'lucide-react'
+import { User, Settings, ChevronRight, Trophy, Target, LogOut, Sparkles, Camera, Plus, Trash2, Loader2, X, Lock, FileText, HelpCircle, Shield, RotateCcw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
+import { Capacitor } from '@capacitor/core'
 import type { Entitlement } from '@/lib/subscription/entitlements'
+import { restorePurchases } from '@/lib/revenuecat/purchases'
 
 interface ProgressPhoto {
   id: string
@@ -44,6 +46,7 @@ export default function ProfilePage() {
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [deleteStage, setDeleteStage] = useState<'idle' | 'confirming' | 'deleting'>('idle')
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [restoreStatus, setRestoreStatus] = useState<'idle' | 'restoring' | 'found' | 'not_found' | 'error'>('idle')
 
   useEffect(() => {
     const supabase = createClient()
@@ -119,6 +122,18 @@ export default function ProfilePage() {
     setLightboxPhoto(null)
     fetchPhotos()
     setDeletingId(null)
+  }
+
+  const handleRestorePurchases = async () => {
+    setRestoreStatus('restoring')
+    const result = await restorePurchases()
+    if (!result.ok) {
+      setRestoreStatus('error')
+      return
+    }
+    const data = await fetch('/api/subscription').then(r => r.ok ? r.json() : null).catch(() => null)
+    if (data) setEntitlement(data as Entitlement)
+    setRestoreStatus(result.hadActiveSubscription ? 'found' : 'not_found')
   }
 
   const handleSignOut = async () => {
@@ -378,15 +393,41 @@ export default function ProfilePage() {
       ))}
 
       {/* Subscription management */}
-      {entitlement?.isPlus && (
+      {(entitlement?.isPlus || Capacitor.isNativePlatform()) && (
         <div className="mb-6">
           <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400">Subscription</p>
           <Card className="p-0 overflow-hidden">
-            <Link href="/plus" className="w-full flex items-center gap-3 px-5 py-4 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
-              <Sparkles className="size-5 text-zinc-400 shrink-0" />
-              Manage Involved+
-              <ChevronRight className="ml-auto size-4 text-zinc-300 dark:text-zinc-600" />
-            </Link>
+            {entitlement?.isPlus && (
+              <Link
+                href="/plus"
+                className="w-full flex items-center gap-3 px-5 py-4 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-100 dark:border-zinc-800 last:border-0"
+              >
+                <Sparkles className="size-5 text-zinc-400 shrink-0" />
+                Manage Involved+
+                <ChevronRight className="ml-auto size-4 text-zinc-300 dark:text-zinc-600" />
+              </Link>
+            )}
+            {Capacitor.isNativePlatform() && (
+              <button
+                onClick={handleRestorePurchases}
+                disabled={restoreStatus === 'restoring'}
+                className="w-full flex items-center gap-3 px-5 py-4 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+              >
+                {restoreStatus === 'restoring'
+                  ? <Loader2 className="size-5 text-zinc-400 shrink-0 animate-spin" />
+                  : <RotateCcw className="size-5 text-zinc-400 shrink-0" />}
+                {restoreStatus === 'restoring' ? 'Restoring…' : 'Restore purchases'}
+                {restoreStatus === 'found' && (
+                  <span className="ml-auto text-xs text-emerald-500">Restored</span>
+                )}
+                {restoreStatus === 'not_found' && (
+                  <span className="ml-auto text-xs text-zinc-400">No purchases found</span>
+                )}
+                {restoreStatus === 'error' && (
+                  <span className="ml-auto text-xs text-red-500">Error — try again</span>
+                )}
+              </button>
+            )}
           </Card>
         </div>
       )}

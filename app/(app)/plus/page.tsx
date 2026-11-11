@@ -3,11 +3,19 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, Sparkles, Loader2, X, Users, Clock } from 'lucide-react'
+import { Capacitor } from '@capacitor/core'
 import {
   PRICING, TRIAL_DAYS, annualSavings, PLUS_HIGHLIGHTS,
   TRAINER_TIERS, TRAINER_HIGHLIGHTS, type TrainerTierKey,
 } from '@/lib/subscription/config'
 import type { Entitlement } from '@/lib/subscription/entitlements'
+import type { PurchasesOffering } from '@revenuecat/purchases-capacitor'
+import {
+  initializePurchases, fetchOfferings, getPackageForPlan,
+  purchasePackage as rcPurchasePackage,
+  restorePurchases as rcRestorePurchases,
+} from '@/lib/revenuecat/purchases'
+import { createClient } from '@/lib/supabase/client'
 
 type Plan = 'monthly' | 'annual'
 
@@ -17,12 +25,75 @@ function fmt(n: number) {
 
 const TRAINER_TIER_KEYS = Object.keys(TRAINER_TIERS) as TrainerTierKey[]
 
+function RcSubscribeBlock({
+  plan, rcOffering, purchasing, restoring, purchaseError, onPurchase, onRestore,
+}: {
+  plan: Plan
+  rcOffering: PurchasesOffering | null
+  purchasing: boolean
+  restoring: boolean
+  purchaseError: string | null
+  onPurchase: () => void
+  onRestore: () => void
+}) {
+  const activePackage = rcOffering ? getPackageForPlan(rcOffering, plan) : undefined
+  const isNative = Capacitor.isNativePlatform()
+
+  if (!isNative || !activePackage) {
+    return (
+      <>
+        <button
+          disabled
+          className="w-full rounded-2xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-4 font-black text-base opacity-40"
+        >
+          Subscribe — coming soon
+        </button>
+        <p className="text-xs text-zinc-400 mt-3 text-center">
+          In-app billing is being set up. You&apos;ll be notified when it&apos;s ready.
+        </p>
+      </>
+    )
+  }
+
+  return (
+    <>
+      {purchaseError && (
+        <div className="flex items-center gap-2 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 px-4 py-3 mb-3">
+          <X className="size-4 text-red-500 shrink-0" />
+          <p className="text-sm text-red-700 dark:text-red-400">{purchaseError}</p>
+        </div>
+      )}
+      <button
+        onClick={onPurchase}
+        disabled={purchasing || restoring}
+        className="w-full flex items-center justify-center gap-2 rounded-2xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-4 font-black text-base hover:opacity-90 transition-opacity disabled:opacity-50"
+      >
+        {purchasing
+          ? <Loader2 className="size-5 animate-spin" />
+          : <Sparkles className="size-5" />}
+        {purchasing ? 'Processing…' : `Subscribe — ${activePackage.product.priceString}`}
+      </button>
+      <button
+        onClick={onRestore}
+        disabled={purchasing || restoring}
+        className="w-full text-center text-xs text-zinc-400 mt-3 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors disabled:opacity-50"
+      >
+        {restoring ? 'Restoring…' : 'Restore purchases'}
+      </button>
+    </>
+  )
+}
+
 export default function PlusPage() {
   const router = useRouter()
   const [plan, setPlan] = useState<Plan>('annual')
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [rcOffering, setRcOffering] = useState<PurchasesOffering | null>(null)
+  const [purchasing, setPurchasing] = useState(false)
+  const [purchaseError, setPurchaseError] = useState<string | null>(null)
+  const [restoring, setRestoring] = useState(false)
 
   const savings = annualSavings()
 
@@ -31,6 +102,17 @@ export default function PlusPage() {
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data) setEntitlement(data as Entitlement) })
       .catch(() => null)
+    if (Capacitor.isNativePlatform()) {
+      // React effects run bottom-up (child before parent), so this useEffect
+      // fires before RevenueCatInit's useEffect in the layout configures the SDK.
+      // Chaining init → fetchOfferings here ensures configure completes first.
+      const supabase = createClient()
+      supabase.auth.getUser()
+        .then(({ data: { user } }) => user ? initializePurchases(user.id) : undefined)
+        .then(() => fetchOfferings())
+        .then(o => { if (o) setRcOffering(o) })
+        .catch(() => null)
+    }
   }, [])
 
   const handleStartTrial = async () => {
@@ -57,6 +139,40 @@ export default function PlusPage() {
     } finally {
       setStarting(false)
     }
+  }
+
+  const handlePurchase = async () => {
+    if (!rcOffering) return
+    const pkg = getPackageForPlan(rcOffering, plan)
+    if (!pkg) return
+    setPurchasing(true)
+    setPurchaseError(null)
+    const result = await rcPurchasePackage(pkg)
+    if (result.ok) {
+      router.push('/today')
+      return
+    }
+    if (!result.cancelled) {
+      setPurchaseError(result.message)
+    }
+    setPurchasing(false)
+  }
+
+  const handleRestorePurchases = async () => {
+    setRestoring(true)
+    setPurchaseError(null)
+    const result = await rcRestorePurchases()
+    if (result.ok) {
+      const data = await fetch('/api/subscription').then(r => r.ok ? r.json() : null).catch(() => null)
+      if (data) setEntitlement(data as Entitlement)
+      if (result.hadActiveSubscription) {
+        router.push('/today')
+        return
+      }
+    } else {
+      setPurchaseError(result.message)
+    }
+    setRestoring(false)
   }
 
   const isTrainer   = entitlement?.isTrainer
@@ -211,33 +327,33 @@ export default function PlusPage() {
           )}
 
           {isTrial && (
-            <div className="text-center py-4">
-              <p className="text-sm text-zinc-500 mb-4">
+            <div className="py-4">
+              <p className="text-center text-sm text-zinc-500 mb-4">
                 You&apos;re already in your trial. Subscribe to keep Involved+ after it ends.
               </p>
-              <button
-                disabled
-                className="w-full rounded-2xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-4 font-black text-base opacity-40"
-              >
-                Subscribe — coming soon
-              </button>
-              <p className="text-xs text-zinc-400 mt-3">
-                In-app billing is being set up. You&apos;ll be notified when it&apos;s ready.
-              </p>
+              <RcSubscribeBlock
+                plan={plan}
+                rcOffering={rcOffering}
+                purchasing={purchasing}
+                restoring={restoring}
+                purchaseError={purchaseError}
+                onPurchase={handlePurchase}
+                onRestore={handleRestorePurchases}
+              />
             </div>
           )}
 
           {trialUsed && (
-            <div className="text-center py-4">
-              <button
-                disabled
-                className="w-full rounded-2xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-4 font-black text-base opacity-40"
-              >
-                Subscribe — coming soon
-              </button>
-              <p className="text-xs text-zinc-400 mt-3">
-                In-app billing is being set up. You&apos;ll be notified when it&apos;s ready.
-              </p>
+            <div className="py-4">
+              <RcSubscribeBlock
+                plan={plan}
+                rcOffering={rcOffering}
+                purchasing={purchasing}
+                restoring={restoring}
+                purchaseError={purchaseError}
+                onPurchase={handlePurchase}
+                onRestore={handleRestorePurchases}
+              />
             </div>
           )}
         </>
