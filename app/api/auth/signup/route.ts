@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { prisma } from '@/lib/prisma'
 import type { Database } from '@/lib/types/database'
 
 export async function POST(req: NextRequest) {
@@ -81,6 +82,14 @@ export async function POST(req: NextRequest) {
   if (signInError) {
     return NextResponse.json({ error: 'Account created but sign-in failed. Try logging in.' }, { status: 500 })
   }
+
+  // Ensure a profile row exists before onboarding writes to it.
+  // DB triggers are not reliably configured in all environments.
+  await prisma.profile.upsert({
+    where:  { id: created.user.id },
+    create: { id: created.user.id, displayName: name?.trim() ?? null },
+    update: {},
+  }).catch(() => null)
 
   return NextResponse.json({ success: true })
 }

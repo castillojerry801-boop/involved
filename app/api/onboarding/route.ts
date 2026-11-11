@@ -33,10 +33,17 @@ export async function POST(req: NextRequest) {
   const weeklyWorkouts = Math.max(1, Math.min(7, Math.round(body.weeklyWorkouts ?? 3)))
 
   await Promise.all([
-    // 1. Update profile
-    prisma.profile.update({
-      where: { id: user.id },
-      data: {
+    // 1. Upsert profile — create if missing (e.g. no DB trigger in sandbox)
+    prisma.profile.upsert({
+      where:  { id: user.id },
+      create: {
+        id:           user.id,
+        displayName:  body.displayName.trim(),
+        fitnessLevel: body.fitnessLevel,
+        weightKg:     body.weightKg   ?? null,
+        heightCm:     body.heightCm   ?? null,
+      },
+      update: {
         displayName:  body.displayName.trim(),
         fitnessLevel: body.fitnessLevel,
         weightKg:     body.weightKg   ?? null,
