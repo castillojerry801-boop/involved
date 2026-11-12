@@ -109,6 +109,7 @@ export default function OnboardingPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const [form, setForm] = useState<FormState>({
     displayName:    '',
@@ -133,8 +134,9 @@ export default function OnboardingPage() {
 
   async function finish() {
     setSaving(true)
+    setSaveError(null)
     try {
-      await fetch('/api/onboarding', {
+      const res = await fetch('/api/onboarding', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -148,7 +150,17 @@ export default function OnboardingPage() {
           heightCm:       form.heightCm ?? undefined,
         }),
       })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string }
+        setSaveError(data.error ?? 'Something went wrong. Please try again.')
+        return
+      }
+      // router.refresh() clears the RSC cache so Today's Server Component
+      // re-renders with the freshly written profile rather than a stale snapshot.
       router.push('/today')
+      router.refresh()
+    } catch {
+      setSaveError('Something went wrong. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -328,6 +340,9 @@ export default function OnboardingPage() {
             />
           </div>
 
+          {saveError && (
+            <p className="text-sm text-red-500 text-center mt-4">{saveError}</p>
+          )}
           <button
             onClick={finish}
             disabled={saving}

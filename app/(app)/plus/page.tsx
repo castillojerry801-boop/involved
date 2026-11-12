@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Check, Sparkles, Loader2, X, Users, Clock } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import {
-  PRICING, TRIAL_DAYS, annualSavings, PLUS_HIGHLIGHTS,
+  PRICING, annualSavings, PLUS_HIGHLIGHTS,
   TRAINER_TIERS, TRAINER_HIGHLIGHTS, type TrainerTierKey,
 } from '@/lib/subscription/config'
 import type { Entitlement } from '@/lib/subscription/entitlements'
@@ -88,8 +88,6 @@ export default function PlusPage() {
   const router = useRouter()
   const [plan, setPlan] = useState<Plan>('annual')
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null)
-  const [starting, setStarting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [rcOffering, setRcOffering] = useState<PurchasesOffering | null>(null)
   const [purchasing, setPurchasing] = useState(false)
   const [purchaseError, setPurchaseError] = useState<string | null>(null)
@@ -114,32 +112,6 @@ export default function PlusPage() {
         .catch(() => null)
     }
   }, [])
-
-  const handleStartTrial = async () => {
-    setStarting(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/subscription', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'start_trial' }),
-      })
-      const data = await res.json() as { success?: boolean; error?: string }
-      if (!res.ok || !data.success) {
-        const msg =
-          data.error === 'trial_already_used' ? 'You have already used your free trial.' :
-          data.error === 'already_subscribed'  ? 'You already have an active subscription.' :
-          'Something went wrong. Please try again.'
-        setError(msg)
-        return
-      }
-      router.push('/today')
-    } catch {
-      setError('Something went wrong. Please try again.')
-    } finally {
-      setStarting(false)
-    }
-  }
 
   const handlePurchase = async () => {
     if (!rcOffering) return
@@ -178,7 +150,6 @@ export default function PlusPage() {
   const isTrainer   = entitlement?.isTrainer
   const alreadyPlus = entitlement?.isPlus && !isTrainer
   const isTrial     = entitlement?.isTrial
-  const trialUsed   = entitlement !== null && !entitlement.isFree && !entitlement.isPlus && !entitlement.isTrial
 
   return (
     <div className="mx-auto max-w-lg px-4 py-10 md:py-16">
@@ -299,63 +270,23 @@ export default function PlusPage() {
             </div>
           </div>
 
-          {/* Trial CTA */}
-          {!trialUsed && !isTrial && (
-            <div className="space-y-3">
-              {error && (
-                <div className="flex items-center gap-2 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 px-4 py-3">
-                  <X className="size-4 text-red-500 shrink-0" />
-                  <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
-                </div>
-              )}
-              <button
-                onClick={handleStartTrial}
-                disabled={starting}
-                className="w-full flex items-center justify-center gap-2 rounded-2xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 py-4 font-black text-base hover:opacity-90 transition-opacity disabled:opacity-50"
-              >
-                {starting ? (
-                  <Loader2 className="size-5 animate-spin" />
-                ) : (
-                  <Sparkles className="size-5" />
-                )}
-                Start {TRIAL_DAYS}-Day Free Trial
-              </button>
-              <p className="text-center text-xs text-zinc-400">
-                No credit card required. After {TRIAL_DAYS} days, choose a plan or stay on the free tier.
-              </p>
-            </div>
-          )}
-
-          {isTrial && (
-            <div className="py-4">
+          {/* Subscribe CTA — shown to all non-Plus non-Trainer users */}
+          <div className="py-4">
+            {isTrial && entitlement?.trialDaysRemaining !== null && (
               <p className="text-center text-sm text-zinc-500 mb-4">
-                You&apos;re already in your trial. Subscribe to keep Involved+ after it ends.
+                You&apos;re in your trial. Subscribe now to keep Involved+ after it ends.
               </p>
-              <RcSubscribeBlock
-                plan={plan}
-                rcOffering={rcOffering}
-                purchasing={purchasing}
-                restoring={restoring}
-                purchaseError={purchaseError}
-                onPurchase={handlePurchase}
-                onRestore={handleRestorePurchases}
-              />
-            </div>
-          )}
-
-          {trialUsed && (
-            <div className="py-4">
-              <RcSubscribeBlock
-                plan={plan}
-                rcOffering={rcOffering}
-                purchasing={purchasing}
-                restoring={restoring}
-                purchaseError={purchaseError}
-                onPurchase={handlePurchase}
-                onRestore={handleRestorePurchases}
-              />
-            </div>
-          )}
+            )}
+            <RcSubscribeBlock
+              plan={plan}
+              rcOffering={rcOffering}
+              purchasing={purchasing}
+              restoring={restoring}
+              purchaseError={purchaseError}
+              onPurchase={handlePurchase}
+              onRestore={handleRestorePurchases}
+            />
+          </div>
         </>
       )}
 

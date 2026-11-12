@@ -56,7 +56,11 @@ function SignupForm() {
       // Session is set via cookie by the server.
       // If a next param was provided (e.g. an invite link), honour it;
       // otherwise send new users through onboarding.
+      // router.refresh() clears the RSC cache so the next Server Component
+      // render picks up the newly established session rather than a stale
+      // pre-auth snapshot.
       router.push(next ?? '/onboarding')
+      router.refresh()
     } finally {
       setLoading(false)
     }
