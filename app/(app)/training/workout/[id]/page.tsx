@@ -297,14 +297,16 @@ function SetRow({
         <button
           onClick={handleComplete}
           disabled={done || saving}
-          className={cn(
-            'flex size-10 shrink-0 items-center justify-center rounded-full transition-all active:scale-95',
+          className="group flex size-[44px] shrink-0 items-center justify-center transition-all active:scale-95"
+        >
+          <div className={cn(
+            'flex size-9 items-center justify-center rounded-full',
             done
               ? 'bg-emerald-500 text-white shadow-sm'
-              : 'border-2 border-zinc-200 dark:border-zinc-600 text-zinc-300 hover:border-emerald-400 hover:text-emerald-400'
-          )}
-        >
-          {saving ? <Loader2 className="size-4 animate-spin" /> : done ? <CheckCircle2 className="size-4" /> : <Circle className="size-4" />}
+              : 'border-2 border-zinc-200 dark:border-zinc-600 text-zinc-300 group-hover:border-emerald-400 group-hover:text-emerald-400'
+          )}>
+            {saving ? <Loader2 className="size-4 animate-spin" /> : done ? <CheckCircle2 className="size-4" /> : <Circle className="size-4" />}
+          </div>
         </button>
       </div>
 
