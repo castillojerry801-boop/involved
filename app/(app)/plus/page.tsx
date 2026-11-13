@@ -23,7 +23,7 @@ import { runRcDiagnostic } from '@/lib/revenuecat/diagnostic'
 type Plan = 'monthly' | 'annual'
 
 // DIAGNOSTIC — remove this constant after RC issue is identified
-const RC_DIAGNOSTIC_EMAIL = 'castillojerry801@gmail.com'
+const RC_DIAGNOSTIC_EMAIL = 'jerry@burtonbball.com'
 
 function fmt(n: number) {
   return `${PRICING.currencySymbol}${n.toFixed(2)}`

@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { runRcDiagnostic, type RcDiagnosticDeps } from '@/lib/revenuecat/diagnostic'
 import type { PurchasesOffering, PurchasesPackage } from '@revenuecat/purchases-capacitor'
 
-const TEST_EMAIL = 'test@example.com'
+const TEST_EMAIL = 'jerry@burtonbball.com'
 
 function makePackage(packageType: string, productId: string): PurchasesPackage {
   return {
