@@ -38,22 +38,27 @@ export function OAuthDeepLinkHandler() {
         return
       }
 
-      // --- Diagnostic 1 / 2: classify what the callback contains ---
+      // Parse callback params once — reused for classification, code extraction, and next redirect.
+      let params: URLSearchParams
       try {
-        const params = new URL(url).searchParams
-        const errorCode = params.get('error')
-        if (errorCode) {
-          // OAuth error codes (e.g. 'access_denied', 'server_error') are not sensitive.
-          // error_description may contain readable text; truncate to avoid inadvertent leakage.
-          const desc = (params.get('error_description') ?? '').slice(0, 100)
-          console.log(`[OAuth] Callback: error — code: ${errorCode}${desc ? `, description: ${desc}` : ''}`)
-        } else if (params.has('code')) {
-          console.log('[OAuth] Callback: authorization_code present (value not logged)')
-        } else {
-          console.log(`[OAuth] Callback: no error or code — param keys: ${[...params.keys()].join(', ') || '(none)'}`)
-        }
+        params = new URL(url).searchParams
       } catch {
         console.log('[OAuth] Callback: could not parse URL params')
+        router.push('/login?error=oauth_failed')
+        return
+      }
+
+      // --- Diagnostic 1 / 2: classify what the callback contains ---
+      const errorCode = params.get('error')
+      if (errorCode) {
+        // OAuth error codes (e.g. 'access_denied', 'server_error') are not sensitive.
+        // error_description may contain readable text; truncate to avoid inadvertent leakage.
+        const desc = (params.get('error_description') ?? '').slice(0, 100)
+        console.log(`[OAuth] Callback: error — code: ${errorCode}${desc ? `, description: ${desc}` : ''}`)
+      } else if (params.has('code')) {
+        console.log('[OAuth] Callback: authorization_code present (value not logged)')
+      } else {
+        console.log(`[OAuth] Callback: no error or code — param keys: ${[...params.keys()].join(', ') || '(none)'}`)
       }
 
       try {
@@ -62,8 +67,18 @@ export function OAuthDeepLinkHandler() {
         // Browser might already be closed
       }
 
+      // exchangeCodeForSession expects the bare authorization code, not the full callback URL.
+      // Passing the full URL causes the server to look up a PKCE flow state keyed by the entire
+      // URL string, find nothing, and return "invalid flow state, no valid flow state found".
+      const code = params.get('code')
+      if (!code) {
+        console.log('[OAuth] Cannot exchange — no code in callback URL')
+        router.push('/login?error=oauth_failed')
+        return
+      }
+
       const supabase = createClient()
-      const { data, error } = await supabase.auth.exchangeCodeForSession(url)
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
       if (error) {
         // --- Diagnostic 2: exchange failed ---
@@ -83,8 +98,7 @@ export function OAuthDeepLinkHandler() {
         return
       }
 
-      const urlObj = new URL(url)
-      const next = urlObj.searchParams.get('next')
+      const next = params.get('next')
       const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : '/today'
       console.log(`[OAuth] Navigating to: ${safeNext}`)
       router.push(safeNext)
