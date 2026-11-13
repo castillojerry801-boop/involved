@@ -224,9 +224,9 @@ function SetRow({
   }
 
   return (
-    <div className="border-b border-zinc-100 dark:border-zinc-800 last:border-0">
-      <div className={cn('flex min-h-[44px] items-center gap-2 py-1', done && 'opacity-60')}>
-        <span className="w-6 text-xs text-zinc-400 shrink-0 text-center">{set.setNumber}</span>
+    <div className={cn('border-b border-zinc-100 dark:border-zinc-800 last:border-0 transition-colors', done && 'bg-zinc-50/50 dark:bg-zinc-800/20')}>
+      <div className={cn('flex min-h-[44px] items-center gap-1.5 py-1', done && 'opacity-65')}>
+        <span className="w-5 text-xs text-zinc-400 shrink-0 text-center">{set.setNumber}</span>
 
         {showWeight && (
           <input
@@ -235,7 +235,7 @@ function SetRow({
             onChange={e => setWeight(e.target.value)}
             disabled={done}
             placeholder={set.targetWeightKg ? toDisplay(set.targetWeightKg) : unit}
-            className="w-16 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
+            className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
           />
         )}
 
@@ -246,7 +246,7 @@ function SetRow({
             onChange={e => setReps(e.target.value)}
             disabled={done}
             placeholder={targetRepsDisplay || 'reps'}
-            className="w-16 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
+            className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
           />
         )}
 
@@ -257,19 +257,19 @@ function SetRow({
             onChange={e => setDuration(e.target.value)}
             disabled={done}
             placeholder={set.targetDurationSeconds ? `${set.targetDurationSeconds}s` : 'sec'}
-            className="w-16 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
+            className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
           />
         )}
 
-        {/* Optional RPE/RIR toggle — h-11 gives 44px touch target height */}
+        {/* RPE/RIR toggle — ml-auto pushes it right, keeping inputs left-anchored */}
         {!done && (trackingType === 'strength' || trackingType === 'bodyweight' || trackingType === 'assisted') && (
           <button
             onClick={() => setShowEffort(v => !v)}
             className={cn(
-              'ml-auto flex h-11 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-bold transition-colors',
+              'ml-auto flex h-9 shrink-0 items-center justify-center rounded-lg px-2 text-[10px] font-bold tracking-wide transition-colors',
               showEffort
-                ? 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'
-                : 'text-zinc-300 dark:text-zinc-600 hover:text-zinc-500'
+                ? 'bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200'
+                : 'text-zinc-300 dark:text-zinc-600 hover:text-zinc-500 dark:hover:text-zinc-400'
             )}
             title="Rate of Perceived Exertion / Reps in Reserve"
           >
@@ -295,9 +295,9 @@ function SetRow({
           onClick={handleComplete}
           disabled={done || saving}
           className={cn(
-            'flex size-11 shrink-0 items-center justify-center rounded-full transition-colors',
+            'flex size-10 shrink-0 items-center justify-center rounded-full transition-all active:scale-95',
             done
-              ? 'bg-emerald-500 text-white'
+              ? 'bg-emerald-500 text-white shadow-sm'
               : 'border-2 border-zinc-200 dark:border-zinc-600 text-zinc-300 hover:border-emerald-400 hover:text-emerald-400'
           )}
         >
@@ -307,37 +307,37 @@ function SetRow({
 
       {/* PR badges rendered below the input row to avoid overflowing the card */}
       {Object.keys(prs).length > 0 && (
-        <div className="pb-1 pl-8">
+        <div className="pb-1.5 pl-7">
           <PRBadges prs={prs} />
         </div>
       )}
 
       {/* Effort inputs — shown inline below the set row */}
       {showEffort && !done && (
-        <div className="flex items-center gap-3 pb-2 pl-8 pr-2">
+        <div className="flex items-center gap-3 pb-2 pl-7 pr-2">
           <div className="flex items-center gap-1.5">
-            <label className="text-[10px] text-zinc-400 w-8">RPE</label>
+            <label className="text-[10px] font-semibold text-zinc-400 w-8">RPE</label>
             <input
               type="number"
               min="1" max="10"
               value={rpe}
               onChange={e => setRpe(e.target.value)}
               placeholder="1–10"
-              className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-center text-xs text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
+              className="w-12 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-center text-xs text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
             />
           </div>
           <div className="flex items-center gap-1.5">
-            <label className="text-[10px] text-zinc-400 w-6">RIR</label>
+            <label className="text-[10px] font-semibold text-zinc-400 w-6">RIR</label>
             <input
               type="number"
               min="0" max="5"
               value={rir}
               onChange={e => setRir(e.target.value)}
               placeholder="0–5"
-              className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1 text-center text-xs text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
+              className="w-12 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1 text-center text-xs text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400"
             />
           </div>
-          <span className="text-[10px] text-zinc-400">Optional</span>
+          <span className="text-[10px] text-zinc-400 italic">optional</span>
         </div>
       )}
     </div>
@@ -480,10 +480,13 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove, onRefresh }: {
         </div>
         <button onClick={() => setCollapsed(c => !c)} className="flex items-center gap-3 flex-1 text-left min-w-0">
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm text-zinc-900 dark:text-white truncate">
+            <p
+              className="font-semibold text-sm text-zinc-900 dark:text-white line-clamp-2 leading-snug"
+              title={ex.exercise?.name ?? ex.exerciseId}
+            >
               {ex.exercise?.name ?? ex.exerciseId}
             </p>
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-zinc-400 mt-0.5 truncate">
               {ex.exercise?.bodyPart} · {ex.exercise?.equipment}
             </p>
             {prev && (
@@ -492,8 +495,15 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove, onRefresh }: {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-xs font-medium text-zinc-400">{completedCount}/{sets.length}</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className={cn(
+              'text-xs font-semibold tabular-nums transition-colors',
+              completedCount > 0 && completedCount === sets.length
+                ? 'text-emerald-500'
+                : 'text-zinc-400'
+            )}>
+              {completedCount}/{sets.length}
+            </span>
             {collapsed ? <ChevronDown className="size-4 text-zinc-300" /> : <ChevronUp className="size-4 text-zinc-300" />}
           </div>
         </button>
@@ -612,11 +622,11 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove, onRefresh }: {
           )}
 
           {/* Today's sets headers */}
-          <div className="flex items-center gap-2 py-2">
-            <span className="w-6 text-[10px] text-zinc-400 text-center">SET</span>
-            {showWeight && <span className="w-16 text-[10px] text-zinc-400 text-center">{unit.toUpperCase()}</span>}
-            {showReps && <span className="w-16 text-[10px] text-zinc-400 text-center">REPS</span>}
-            {showDuration && <span className="w-16 text-[10px] text-zinc-400 text-center">SEC</span>}
+          <div className="flex items-center gap-1.5 py-2 border-b border-zinc-50 dark:border-zinc-800/50 mb-0.5">
+            <span className="w-5 text-[10px] font-bold text-zinc-400 text-center tracking-wider">SET</span>
+            {showWeight && <span className="w-14 text-[10px] font-bold text-zinc-400 text-center tracking-wider">{unit.toUpperCase()}</span>}
+            {showReps && <span className="w-14 text-[10px] font-bold text-zinc-400 text-center tracking-wider">REPS</span>}
+            {showDuration && <span className="w-14 text-[10px] font-bold text-zinc-400 text-center tracking-wider">SEC</span>}
           </div>
 
           {sets.map(s => (
@@ -983,7 +993,7 @@ export default function WorkoutPage() {
   const totalSets = workout.exercises.reduce((n, ex) => n + Math.max(ex.sets.length, ex.targetSets ?? 1), 0)
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-6 md:px-8">
+    <div className={cn("mx-auto max-w-2xl px-4 pt-6 pb-28 md:px-8 md:pb-10", restTimer && 'pb-60')}>
 
       {/* Header */}
       <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500 bg-zinc-900/80 backdrop-blur-sm px-4 py-3">
