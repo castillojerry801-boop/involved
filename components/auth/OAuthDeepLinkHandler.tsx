@@ -24,7 +24,37 @@ export function OAuthDeepLinkHandler() {
     if (!Capacitor.isNativePlatform()) return
 
     const listener = App.addListener('appUrlOpen', async ({ url }: URLOpenListenerEvent) => {
-      if (!url.startsWith('com.involved.app://auth/callback')) return
+      // --- Diagnostic 4: did a URL arrive at all? ---
+      // Log scheme + path only — never query params (may contain codes/tokens).
+      try {
+        const { protocol, pathname } = new URL(url)
+        console.log(`[OAuth] appUrlOpen — scheme: ${protocol.replace(':', '')}, path: ${pathname}`)
+      } catch {
+        console.log('[OAuth] appUrlOpen — unparseable URL')
+      }
+
+      if (!url.startsWith('com.involved.app://auth/callback')) {
+        console.log('[OAuth] URL does not match auth/callback — ignoring')
+        return
+      }
+
+      // --- Diagnostic 1 / 2: classify what the callback contains ---
+      try {
+        const params = new URL(url).searchParams
+        const errorCode = params.get('error')
+        if (errorCode) {
+          // OAuth error codes (e.g. 'access_denied', 'server_error') are not sensitive.
+          // error_description may contain readable text; truncate to avoid inadvertent leakage.
+          const desc = (params.get('error_description') ?? '').slice(0, 100)
+          console.log(`[OAuth] Callback: error — code: ${errorCode}${desc ? `, description: ${desc}` : ''}`)
+        } else if (params.has('code')) {
+          console.log('[OAuth] Callback: authorization_code present (value not logged)')
+        } else {
+          console.log(`[OAuth] Callback: no error or code — param keys: ${[...params.keys()].join(', ') || '(none)'}`)
+        }
+      } catch {
+        console.log('[OAuth] Callback: could not parse URL params')
+      }
 
       try {
         await Browser.close()
@@ -33,17 +63,30 @@ export function OAuthDeepLinkHandler() {
       }
 
       const supabase = createClient()
-      const { error } = await supabase.auth.exchangeCodeForSession(url)
+      const { data, error } = await supabase.auth.exchangeCodeForSession(url)
 
       if (error) {
+        // --- Diagnostic 2: exchange failed ---
+        console.log(`[OAuth] Session exchange failed — ${error.message}`)
         router.push(`/login?error=oauth_failed`)
         return
       }
 
-      // Determine where to send the user
+      // --- Diagnostic 3: exchange succeeded — check session presence ---
+      const sessionPresent = !!data?.session
+      const userPresent    = !!data?.session?.user
+      console.log(`[OAuth] Session exchange succeeded — session: ${sessionPresent}, user: ${userPresent}`)
+
+      if (!sessionPresent) {
+        console.log('[OAuth] Warning: exchange returned no session')
+        router.push('/login?error=oauth_failed')
+        return
+      }
+
       const urlObj = new URL(url)
       const next = urlObj.searchParams.get('next')
       const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : '/today'
+      console.log(`[OAuth] Navigating to: ${safeNext}`)
       router.push(safeNext)
       router.refresh()
     })

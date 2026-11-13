@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,6 +31,19 @@ function LoginForm() {
     urlError ? 'Sign-in failed. Please try again.' : null
   )
   const [loading, setLoading] = useState(false)
+
+  // useState initializes once at mount — if already on /login and router.push('/login?error=...')
+  // is called (e.g. from OAuthDeepLinkHandler), the component doesn't remount so the initial
+  // value never re-runs. This effect syncs URL error params to state on soft navigations.
+  useEffect(() => {
+    if (!urlError) return
+    const msg =
+      urlError === 'oauth_canceled' ? 'Sign-in was canceled.' :
+      urlError === 'oauth_failed'   ? 'Sign-in failed. Please try again.' :
+      urlError === 'auth_failed'    ? 'Authentication failed. Please try again.' :
+      'Sign-in failed. Please try again.'
+    setError(msg)
+  }, [urlError])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
