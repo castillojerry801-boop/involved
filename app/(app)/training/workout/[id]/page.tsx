@@ -261,12 +261,15 @@ function SetRow({
           />
         )}
 
-        {/* RPE/RIR toggle — ml-auto pushes it right, keeping inputs left-anchored */}
+        {/* Spacer — pushes action buttons to the right edge regardless of how many inputs are shown */}
+        <div className="flex-1" />
+
+        {/* RPE/RIR toggle */}
         {!done && (trackingType === 'strength' || trackingType === 'bodyweight' || trackingType === 'assisted') && (
           <button
             onClick={() => setShowEffort(v => !v)}
             className={cn(
-              'ml-auto flex h-9 shrink-0 items-center justify-center rounded-lg px-2 text-[10px] font-bold tracking-wide transition-colors',
+              'flex h-9 shrink-0 items-center justify-center rounded-lg px-2 text-[10px] font-bold tracking-wide transition-colors',
               showEffort
                 ? 'bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200'
                 : 'text-zinc-300 dark:text-zinc-600 hover:text-zinc-500 dark:hover:text-zinc-400'
@@ -468,76 +471,85 @@ function ExerciseCard({ ex, workoutId, onUpdate, onRemove, onRefresh }: {
 
   return (
     <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
-      {/* Exercise header */}
-      <div className="flex items-center gap-0 px-4 py-3">
-        {/* Thumbnail outside the collapse button — prevents nested <button> elements */}
-        <div className="size-12 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center mr-3">
-          {ex.exercise && !isCustomExerciseId(ex.exerciseId) ? (
-            <ExerciseMedia exerciseId={ex.exerciseId} exerciseName={ex.exercise.name} className="h-full w-full" showVideo videoModal />
-          ) : (
-            <Dumbbell className="size-5 text-zinc-300" />
-          )}
-        </div>
-        <button onClick={() => setCollapsed(c => !c)} className="flex items-center gap-3 flex-1 text-left min-w-0">
-          <div className="flex-1 min-w-0">
-            <p
-              className="font-semibold text-sm text-zinc-900 dark:text-white line-clamp-2 leading-snug"
-              title={ex.exercise?.name ?? ex.exerciseId}
-            >
+      {/* Exercise header — two-row layout so names never truncate */}
+      <div className="flex flex-col px-4 pt-3 pb-2 gap-1">
+
+        {/* Row 1: thumbnail + exercise name + collapse chevron */}
+        <div className="flex items-start gap-3">
+          {/* Thumbnail is not a button — ExerciseMedia's play overlay handles its own click */}
+          <div className="size-12 shrink-0 rounded-xl bg-zinc-50 dark:bg-zinc-800 overflow-hidden flex items-center justify-center mt-0.5">
+            {ex.exercise && !isCustomExerciseId(ex.exerciseId) ? (
+              <ExerciseMedia exerciseId={ex.exerciseId} exerciseName={ex.exercise.name} className="h-full w-full" showVideo videoModal />
+            ) : (
+              <Dumbbell className="size-5 text-zinc-300" />
+            )}
+          </div>
+          {/* Collapse button — only wraps name + chevron, no nested buttons */}
+          <button onClick={() => setCollapsed(c => !c)} className="flex items-start flex-1 min-w-0 text-left gap-2 py-0.5">
+            <p className="flex-1 min-w-0 font-semibold text-sm text-zinc-900 dark:text-white leading-snug">
               {ex.exercise?.name ?? ex.exerciseId}
             </p>
-            <p className="text-xs text-zinc-400 mt-0.5 truncate">
+            <div className="shrink-0 mt-0.5">
+              {collapsed ? <ChevronDown className="size-4 text-zinc-300" /> : <ChevronUp className="size-4 text-zinc-300" />}
+            </div>
+          </button>
+        </div>
+
+        {/* Row 2: metadata + action icons + set count — left-aligned with name text */}
+        {/* pl-[60px] = thumbnail 48px + gap-3 12px */}
+        <div className="flex items-center gap-1 pl-[60px]">
+          <div className="flex-1 min-w-0 mr-1">
+            <p className="text-xs text-zinc-400 truncate leading-tight">
               {ex.exercise?.bodyPart} · {ex.exercise?.equipment}
             </p>
             {prev && (
-              <p className="text-[11px] text-zinc-400 mt-0.5">
+              <p className="text-[11px] text-zinc-400 mt-0.5 leading-tight">
                 Last {formatDate(prev.completedAt)} · {prev.sets.length} set{prev.sets.length !== 1 ? 's' : ''}
               </p>
             )}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className={cn(
-              'text-xs font-semibold tabular-nums transition-colors',
-              completedCount > 0 && completedCount === sets.length
-                ? 'text-emerald-500'
-                : 'text-zinc-400'
-            )}>
-              {completedCount}/{sets.length}
-            </span>
-            {collapsed ? <ChevronDown className="size-4 text-zinc-300" /> : <ChevronUp className="size-4 text-zinc-300" />}
-          </div>
-        </button>
-        {/* Action buttons */}
-        <div className="flex items-center gap-0 ml-2 shrink-0">
-          <button
-            onClick={() => setShowNotes(v => !v)}
-            className={cn(
-              'flex size-7 items-center justify-center rounded-full transition-colors',
-              notes ? 'text-sky-400' : 'text-zinc-300 dark:text-zinc-600 hover:text-zinc-500'
-            )}
-            title="Exercise notes"
-          >
-            <MessageSquare className="size-3.5" />
-          </button>
-          {!isCustomExerciseId(ex.exerciseId) && (
+          {/* Action buttons */}
+          <div className="flex items-center gap-0 shrink-0">
             <button
-              onClick={handleSubstitute}
-              disabled={substituting}
-              className="flex size-7 items-center justify-center rounded-full text-zinc-300 dark:text-zinc-600 hover:text-indigo-400 transition-colors"
-              title="Find substitute"
+              onClick={() => setShowNotes(v => !v)}
+              className={cn(
+                'flex size-7 items-center justify-center rounded-full transition-colors',
+                notes ? 'text-sky-400' : 'text-zinc-300 dark:text-zinc-600 hover:text-zinc-500'
+              )}
+              title="Exercise notes"
             >
-              {substituting ? <Loader2 className="size-3.5 animate-spin" /> : <Shuffle className="size-3.5" />}
+              <MessageSquare className="size-3.5" />
             </button>
-          )}
-          <button
-            onClick={handleRemove}
-            disabled={removing}
-            className="flex size-7 items-center justify-center rounded-full text-zinc-200 dark:text-zinc-700 hover:text-red-400 transition-colors"
-            title="Remove exercise"
-          >
-            {removing ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-          </button>
+            {!isCustomExerciseId(ex.exerciseId) && (
+              <button
+                onClick={handleSubstitute}
+                disabled={substituting}
+                className="flex size-7 items-center justify-center rounded-full text-zinc-300 dark:text-zinc-600 hover:text-indigo-400 transition-colors"
+                title="Find substitute"
+              >
+                {substituting ? <Loader2 className="size-3.5 animate-spin" /> : <Shuffle className="size-3.5" />}
+              </button>
+            )}
+            <button
+              onClick={handleRemove}
+              disabled={removing}
+              className="flex size-7 items-center justify-center rounded-full text-zinc-200 dark:text-zinc-700 hover:text-red-400 transition-colors"
+              title="Remove exercise"
+            >
+              {removing ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+            </button>
+          </div>
+          {/* Set count */}
+          <span className={cn(
+            'text-xs font-semibold tabular-nums transition-colors ml-0.5 shrink-0',
+            completedCount > 0 && completedCount === sets.length
+              ? 'text-emerald-500'
+              : 'text-zinc-400'
+          )}>
+            {completedCount}/{sets.length}
+          </span>
         </div>
+
       </div>
 
       {/* Notes editor */}
@@ -993,7 +1005,7 @@ export default function WorkoutPage() {
   const totalSets = workout.exercises.reduce((n, ex) => n + Math.max(ex.sets.length, ex.targetSets ?? 1), 0)
 
   return (
-    <div className={cn("mx-auto max-w-2xl px-4 pt-6 pb-28 md:px-8 md:pb-10", restTimer && 'pb-60')}>
+    <div className={cn("mx-auto max-w-2xl px-4 pt-6 pb-28 md:px-8 md:pb-10", restTimer && 'pb-72')}>
 
       {/* Header */}
       <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500 bg-zinc-900/80 backdrop-blur-sm px-4 py-3">

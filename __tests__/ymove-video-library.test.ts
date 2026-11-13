@@ -317,8 +317,8 @@ describe('Workout card thumbnail — nested button fix', () => {
     expect(thumbnailIdx).toBeLessThan(collapseButtonIdx)
   })
 
-  it('thumbnail div has mr-3 spacing since it is now outside the button gap', () => {
-    expect(workoutPageSrc).toContain('mr-3')
+  it('thumbnail row uses gap-3 spacing since thumbnail is outside the collapse button', () => {
+    expect(workoutPageSrc).toContain('gap-3')
   })
 
   it('ExerciseMedia videoModal prop is still on the workout card', () => {
