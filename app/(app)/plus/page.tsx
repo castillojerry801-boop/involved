@@ -16,8 +16,14 @@ import {
   restorePurchases as rcRestorePurchases,
 } from '@/lib/revenuecat/purchases'
 import { createClient } from '@/lib/supabase/client'
+// DIAGNOSTIC — remove next two imports after RC issue is identified
+import { Purchases } from '@revenuecat/purchases-capacitor'
+import { runRcDiagnostic } from '@/lib/revenuecat/diagnostic'
 
 type Plan = 'monthly' | 'annual'
+
+// DIAGNOSTIC — remove this constant after RC issue is identified
+const RC_DIAGNOSTIC_EMAIL = 'castillojerry801@gmail.com'
 
 function fmt(n: number) {
   return `${PRICING.currencySymbol}${n.toFixed(2)}`
@@ -92,6 +98,8 @@ export default function PlusPage() {
   const [purchasing, setPurchasing] = useState(false)
   const [purchaseError, setPurchaseError] = useState<string | null>(null)
   const [restoring, setRestoring] = useState(false)
+  // DIAGNOSTIC — remove next line after RC issue is identified
+  const [rcDiagnostic, setRcDiagnostic] = useState<string | null>(null)
 
   const savings = annualSavings()
 
@@ -112,6 +120,22 @@ export default function PlusPage() {
         .catch(() => null)
     }
   }, [])
+
+  // DIAGNOSTIC — remove this entire useEffect after RC issue is identified
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    const supabase = createClient()
+    runRcDiagnostic({
+      getUser: async () => {
+        const { data: { user } } = await supabase.auth.getUser()
+        return user ? { id: user.id, email: user.email ?? null } : null
+      },
+      initialize: initializePurchases,
+      getOfferings: () => Purchases.getOfferings(),
+      testEmail: RC_DIAGNOSTIC_EMAIL,
+    }).then(msg => { if (msg !== null) setRcDiagnostic(msg) }).catch(() => null)
+  }, [])
+  // END DIAGNOSTIC
 
   const handlePurchase = async () => {
     if (!rcOffering) return
@@ -269,6 +293,14 @@ export default function PlusPage() {
               </ul>
             </div>
           </div>
+
+          {/* DIAGNOSTIC — remove this block after RC issue is identified */}
+          {rcDiagnostic && Capacitor.isNativePlatform() && (
+            <div className="mb-4 rounded-xl bg-zinc-100 dark:bg-zinc-800 px-4 py-3 font-mono text-xs text-zinc-500 break-all">
+              {rcDiagnostic}
+            </div>
+          )}
+          {/* END DIAGNOSTIC */}
 
           {/* Subscribe CTA — shown to all non-Plus non-Trainer users */}
           <div className="py-4">
