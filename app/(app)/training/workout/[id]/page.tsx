@@ -235,7 +235,7 @@ function SetRow({
             onChange={e => setWeight(e.target.value)}
             disabled={done}
             placeholder={set.targetWeightKg ? toDisplay(set.targetWeightKg) : unit}
-            className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
+            className="w-14 min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
           />
         )}
 
@@ -246,7 +246,7 @@ function SetRow({
             onChange={e => setReps(e.target.value)}
             disabled={done}
             placeholder={targetRepsDisplay || 'reps'}
-            className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
+            className="w-14 min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
           />
         )}
 
@@ -257,7 +257,7 @@ function SetRow({
             onChange={e => setDuration(e.target.value)}
             disabled={done}
             placeholder={set.targetDurationSeconds ? `${set.targetDurationSeconds}s` : 'sec'}
-            className="w-14 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
+            className="w-14 min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-1.5 py-1.5 text-center text-sm text-zinc-900 dark:text-white focus:outline-none focus:border-zinc-400 disabled:opacity-50"
           />
         )}
 
@@ -297,7 +297,7 @@ function SetRow({
         <button
           onClick={handleComplete}
           disabled={done || saving}
-          className="group flex size-[44px] shrink-0 items-center justify-center transition-all active:scale-95"
+          className="group flex size-[44px] shrink-0 items-center justify-center transition-all active:scale-95 mr-2"
         >
           <div className={cn(
             'flex size-9 items-center justify-center rounded-full',
