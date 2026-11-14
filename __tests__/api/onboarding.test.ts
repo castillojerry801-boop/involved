@@ -8,26 +8,50 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
 // ── Prisma mock ───────────────────────────────────────────────────────────────
 // vi.mock is hoisted before variable declarations, so fns must be created inside
 // the factory. Retrieve them via the imported prisma after the mock is set up.
+//
+// POST uses prisma.$transaction(async (tx) => { ... }) — the transaction mock
+// executes the callback with a mock tx object (txOps) that exposes the same
+// vi.fn() references we can assert on below.
+//
+// GET uses prisma.profile.findUnique directly (outside any transaction).
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
-    profile:          { upsert: vi.fn(), findUnique: vi.fn() },
+vi.mock('@/lib/prisma', () => {
+  const txOps = {
+    profile:          { upsert: vi.fn() },
     goal:             { create: vi.fn() },
     weeklyTarget:     { upsert: vi.fn() },
     equipmentProfile: { create: vi.fn() },
-  },
-}))
+  }
+  return {
+    prisma: {
+      // Expose txOps via a non-standard key so tests can reach the inner mocks.
+      _txOps:       txOps,
+      $transaction: vi.fn(async (fn: (tx: typeof txOps) => Promise<void>) => fn(txOps)),
+      profile:      { findUnique: vi.fn() },
+    },
+  }
+})
 
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import { POST, GET } from '@/app/api/onboarding/route'
 
-const mockCreateClient     = createClient as ReturnType<typeof vi.fn>
-const mockProfileUpsert    = prisma.profile.upsert    as ReturnType<typeof vi.fn>
-const mockProfileFindUnique = prisma.profile.findUnique as ReturnType<typeof vi.fn>
-const mockGoalCreate       = prisma.goal.create        as ReturnType<typeof vi.fn>
-const mockWeeklyTargetUpsert = prisma.weeklyTarget.upsert as ReturnType<typeof vi.fn>
-const mockEquipmentCreate  = prisma.equipmentProfile.create as ReturnType<typeof vi.fn>
+const mockCreateClient = createClient as ReturnType<typeof vi.fn>
+const mockTransaction   = prisma.$transaction as ReturnType<typeof vi.fn>
+
+// Inner tx operation mocks — retrieved from the factory-exposed _txOps key.
+const txOps             = (prisma as unknown as { _txOps: {
+  profile:          { upsert: ReturnType<typeof vi.fn> }
+  goal:             { create: ReturnType<typeof vi.fn> }
+  weeklyTarget:     { upsert: ReturnType<typeof vi.fn> }
+  equipmentProfile: { create: ReturnType<typeof vi.fn> }
+} })._txOps
+
+const mockProfileUpsert      = txOps.profile.upsert
+const mockGoalCreate         = txOps.goal.create
+const mockWeeklyTargetUpsert = txOps.weeklyTarget.upsert
+const mockEquipmentCreate    = txOps.equipmentProfile.create
+const mockProfileFindUnique  = prisma.profile.findUnique as ReturnType<typeof vi.fn>
 
 function mockAuth(userId: string | null) {
   mockCreateClient.mockResolvedValue({
@@ -58,6 +82,10 @@ const VALID_BODY = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+
+  // Restore default: transaction executes its callback with txOps.
+  mockTransaction.mockImplementation(async (fn: (tx: typeof txOps) => Promise<void>) => fn(txOps))
+
   mockProfileUpsert.mockResolvedValue({ id: 'user-1' })
   mockGoalCreate.mockResolvedValue({ id: 'goal-1' })
   mockWeeklyTargetUpsert.mockResolvedValue({ id: 'wt-1' })
@@ -103,7 +131,8 @@ describe('POST /api/onboarding — validation', () => {
 // against a separate DB connection before profile.upsert committed → P2003.
 //
 // Fix: profile.upsert is now awaited sequentially before the Promise.all that
-// writes goal and weekly_target.
+// writes goal and weekly_target — and all three writes are wrapped in a single
+// $transaction so any failure rolls back the profile commit.
 
 describe('POST /api/onboarding — write ordering (P2003 regression)', () => {
   it('calls profile.upsert before goal.create when user has no profile', async () => {
@@ -198,6 +227,67 @@ describe('POST /api/onboarding — write ordering (P2003 regression)', () => {
     const res = await POST(makePost({ ...VALID_BODY, equipment: ['barbell', 'dumbbell'] }))
     expect(res.status).toBe(200)
     expect(mockEquipmentCreate).toHaveBeenCalledOnce()
+  })
+
+  it('does not include sortOrder in equipment items create data', async () => {
+    mockAuth('user-abc')
+    await POST(makePost({ ...VALID_BODY, equipment: ['barbell'] }))
+    const createCall = mockEquipmentCreate.mock.calls[0][0] as {
+      data: { items: { create: Array<Record<string, unknown>> } }
+    }
+    const item = createCall.data.items.create[0]
+    expect(item).not.toHaveProperty('sortOrder')
+    expect(item).toHaveProperty('equipment', 'barbell')
+  })
+})
+
+// ── Atomicity: transaction roll-back regression ────────────────────────────────
+//
+// Root cause of the broken-state bug: profile.upsert committed before subsequent
+// writes ran, leaving fitnessLevel set even when goal/equipment writes failed.
+// On next app load, today/page.tsx saw fitnessLevel and routed to Today instead
+// of back to onboarding.
+//
+// Fix: all writes now run inside prisma.$transaction. If any write throws, the
+// entire transaction rolls back — the profile is never committed in isolation.
+
+describe('POST /api/onboarding — atomicity (broken-state regression)', () => {
+  it('returns 500 JSON when goal.create throws', async () => {
+    mockAuth('user-1')
+    mockGoalCreate.mockRejectedValue(new Error('DB constraint'))
+    // The transaction mock re-throws when the callback throws.
+    mockTransaction.mockImplementation(async (fn: (tx: typeof txOps) => Promise<void>) => fn(txOps))
+
+    const res = await POST(makePost(VALID_BODY))
+    expect(res.status).toBe(500)
+    const body = await res.json() as { error: string }
+    expect(body.error).toBeTruthy()
+  })
+
+  it('returns 500 JSON when weeklyTarget.upsert throws', async () => {
+    mockAuth('user-1')
+    mockWeeklyTargetUpsert.mockRejectedValue(new Error('unique violation'))
+
+    const res = await POST(makePost(VALID_BODY))
+    expect(res.status).toBe(500)
+    const body = await res.json() as { error: string }
+    expect(body.error).toBeTruthy()
+  })
+
+  it('returns 500 JSON when equipmentProfile.create throws', async () => {
+    mockAuth('user-1')
+    mockEquipmentCreate.mockRejectedValue(new Error('DB error'))
+
+    const res = await POST(makePost({ ...VALID_BODY, equipment: ['barbell'] }))
+    expect(res.status).toBe(500)
+    const body = await res.json() as { error: string }
+    expect(body.error).toBeTruthy()
+  })
+
+  it('wraps all writes in a single $transaction call', async () => {
+    mockAuth('user-abc')
+    await POST(makePost(VALID_BODY))
+    expect(mockTransaction).toHaveBeenCalledOnce()
   })
 })
 

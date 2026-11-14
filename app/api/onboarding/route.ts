@@ -32,59 +32,64 @@ export async function POST(req: NextRequest) {
   const goalType = VALID_GOAL_TYPES.has(body.goalType) ? body.goalType : 'custom'
   const weeklyWorkouts = Math.max(1, Math.min(7, Math.round(body.weeklyWorkouts ?? 3)))
 
-  // 1. Profile MUST be committed before goal/target FK checks run.
-  //    Running this inside Promise.all races the INSERT against FK-dependent writes.
-  await prisma.profile.upsert({
-    where:  { id: user.id },
-    create: {
-      id:           user.id,
-      displayName:  body.displayName.trim(),
-      fitnessLevel: body.fitnessLevel,
-      weightKg:     body.weightKg   ?? null,
-      heightCm:     body.heightCm   ?? null,
-    },
-    update: {
-      displayName:  body.displayName.trim(),
-      fitnessLevel: body.fitnessLevel,
-      weightKg:     body.weightKg   ?? null,
-      heightCm:     body.heightCm   ?? null,
-    },
-  })
-
-  // 2. Profile is now committed — goal and weekly target can reference it safely
-  await Promise.all([
-    prisma.goal.create({
-      data: {
-        userId: user.id,
-        type:   goalType as 'strength' | 'body_comp' | 'endurance' | 'habit' | 'custom' | 'event',
-        title:  body.goalTitle.trim(),
-        status: 'active',
-      },
-    }),
-
-    prisma.weeklyTarget.upsert({
-      where:  { userId_targetType: { userId: user.id, targetType: 'workouts_per_week' } },
-      create: { userId: user.id, targetType: 'workouts_per_week', targetValue: weeklyWorkouts },
-      update: { targetValue: weeklyWorkouts },
-    }),
-  ])
-
-  // 4. Create equipment profile (only if equipment selected)
-  if (body.equipment?.length > 0) {
-    await prisma.equipmentProfile.create({
-      data: {
-        userId:  user.id,
-        name:     'My gym',
-        isActive: true,
-        items: {
-          create: body.equipment.map((eq, i) => ({
-            equipment:        eq,
-            sortOrder:        i,
-            availableWeights: Prisma.DbNull,
-          })),
+  try {
+    await prisma.$transaction(async (tx) => {
+      // 1. Profile first — FK anchor for all subsequent writes inside this transaction.
+      await tx.profile.upsert({
+        where:  { id: user.id },
+        create: {
+          id:           user.id,
+          displayName:  body.displayName.trim(),
+          fitnessLevel: body.fitnessLevel,
+          weightKg:     body.weightKg   ?? null,
+          heightCm:     body.heightCm   ?? null,
         },
-      },
+        update: {
+          displayName:  body.displayName.trim(),
+          fitnessLevel: body.fitnessLevel,
+          weightKg:     body.weightKg   ?? null,
+          heightCm:     body.heightCm   ?? null,
+        },
+      })
+
+      // 2. Goal and weekly target — FK-dependent on profile, safe to run in parallel
+      //    since the profile write above is visible within this transaction.
+      await Promise.all([
+        tx.goal.create({
+          data: {
+            userId: user.id,
+            type:   goalType as 'strength' | 'body_comp' | 'endurance' | 'habit' | 'custom' | 'event',
+            title:  body.goalTitle.trim(),
+            status: 'active',
+          },
+        }),
+
+        tx.weeklyTarget.upsert({
+          where:  { userId_targetType: { userId: user.id, targetType: 'workouts_per_week' } },
+          create: { userId: user.id, targetType: 'workouts_per_week', targetValue: weeklyWorkouts },
+          update: { targetValue: weeklyWorkouts },
+        }),
+      ])
+
+      // 3. Equipment profile (only if equipment selected)
+      if (body.equipment?.length > 0) {
+        await tx.equipmentProfile.create({
+          data: {
+            userId:   user.id,
+            name:     'My gym',
+            isActive: true,
+            items: {
+              create: body.equipment.map((eq) => ({
+                equipment:        eq,
+                availableWeights: Prisma.DbNull,
+              })),
+            },
+          },
+        })
+      }
     })
+  } catch {
+    return Response.json({ error: 'Failed to save your profile. Please try again.' }, { status: 500 })
   }
 
   return Response.json({ ok: true })
