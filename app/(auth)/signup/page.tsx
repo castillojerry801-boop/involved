@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Turnstile } from '@/components/turnstile'
 import { SocialAuthButtons } from '@/components/auth/social-auth-buttons'
+import { MIN_PASSWORD_LENGTH, validatePassword } from '@/lib/auth/password'
 
 function safeRedirect(next: string | null): string | null {
   if (!next || !next.startsWith('/') || next.startsWith('//')) return null
@@ -34,6 +35,12 @@ function SignupForm() {
 
     if (!turnstileToken) {
       setError('Please wait for the security check to complete.')
+      return
+    }
+
+    const passwordError = validatePassword(password)
+    if (passwordError) {
+      setError(passwordError)
       return
     }
 
@@ -120,13 +127,13 @@ function SignupForm() {
         <Input
           label="Password"
           type="password"
-          placeholder="Min. 8 characters"
+          placeholder={`Min. ${MIN_PASSWORD_LENGTH} characters`}
           value={password}
           onChange={e => setPassword(e.target.value)}
           autoComplete="new-password"
-          hint="At least 8 characters"
+          hint={`At least ${MIN_PASSWORD_LENGTH} characters — try a passphrase`}
           required
-          minLength={8}
+          minLength={MIN_PASSWORD_LENGTH}
         />
 
         <Turnstile

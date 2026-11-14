@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 import type { Session } from '@supabase/supabase-js'
+import { MIN_PASSWORD_LENGTH, validatePassword } from '@/lib/auth/password'
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -28,8 +29,9 @@ function ResetPasswordForm() {
     e.preventDefault()
     setError(null)
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
+    const passwordError = validatePassword(password)
+    if (passwordError) {
+      setError(passwordError)
       return
     }
     if (password !== confirm) {
@@ -44,12 +46,19 @@ function ResetPasswordForm() {
       const { error: updateError } = await supabase.auth.updateUser({ password })
 
       if (updateError) {
-        const isExpired = updateError.message.toLowerCase().includes('expired') ||
-                          updateError.message.toLowerCase().includes('session')
+        const msg     = updateError.message.toLowerCase()
+        const reasons = (updateError as { reasons?: string[] }).reasons
+        const isExpired  = msg.includes('expired') || msg.includes('session')
+        const isBreached =
+          reasons?.includes('breached') === true ||
+          msg.includes('breach') ||
+          msg.includes('compromised')
         setError(
           isExpired
             ? 'Your recovery session has expired. Please request a new password recovery email.'
-            : 'Something went wrong. Please try again.'
+            : isBreached
+              ? 'This password has appeared in a known data breach. Please choose a different password.'
+              : 'Something went wrong. Please try again.'
         )
         return
       }
@@ -119,13 +128,13 @@ function ResetPasswordForm() {
         <Input
           label="New password"
           type="password"
-          placeholder="Min. 8 characters"
+          placeholder={`Min. ${MIN_PASSWORD_LENGTH} characters`}
           value={password}
           onChange={e => setPassword(e.target.value)}
           autoComplete="new-password"
-          hint="At least 8 characters"
+          hint={`At least ${MIN_PASSWORD_LENGTH} characters — try a passphrase`}
           required
-          minLength={8}
+          minLength={MIN_PASSWORD_LENGTH}
         />
         <Input
           label="Confirm password"

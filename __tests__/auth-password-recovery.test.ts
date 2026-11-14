@@ -146,17 +146,17 @@ describe('change-password route — guards', () => {
     expect(res.status).toBe(401)
   })
 
-  it('returns 400 when new password is fewer than 8 characters', async () => {
+  it('returns 400 when new password is fewer than 15 characters', async () => {
     mockGetUser.mockResolvedValue({ id: 'u1', email: 'user@example.com' })
     const { POST } = await import('@/app/api/account/change-password/route')
-    const res = await POST(makeChangeReq({ currentPassword: 'oldpassword', newPassword: 'short' }))
+    const res = await POST(makeChangeReq({ currentPassword: 'oldpassword', newPassword: 'fourteenchars!' }))
     expect(res.status).toBe(400)
   })
 
   it('returns 400 when new password equals current password', async () => {
     mockGetUser.mockResolvedValue({ id: 'u1', email: 'user@example.com' })
     const { POST } = await import('@/app/api/account/change-password/route')
-    const res = await POST(makeChangeReq({ currentPassword: 'samepassword', newPassword: 'samepassword' }))
+    const res = await POST(makeChangeReq({ currentPassword: 'same-long-password', newPassword: 'same-long-password' }))
     expect(res.status).toBe(400)
   })
 
@@ -177,7 +177,7 @@ describe('change-password route — authentication', () => {
   it('returns 401 when current password is wrong', async () => {
     mockSignIn.mockResolvedValue({ error: { message: 'Invalid login credentials' } })
     const { POST } = await import('@/app/api/account/change-password/route')
-    const res = await POST(makeChangeReq({ currentPassword: 'wrongpass', newPassword: 'newpassword123' }))
+    const res = await POST(makeChangeReq({ currentPassword: 'wrongpass', newPassword: 'newlongpassword1!' }))
     expect(res.status).toBe(401)
     const body = await res.json() as { error: string }
     expect(body.error).toBe('Current password is incorrect')
@@ -187,10 +187,10 @@ describe('change-password route — authentication', () => {
     mockSignIn.mockResolvedValue({ error: null })
     mockUpdateUser.mockResolvedValue({ error: null })
     const { POST } = await import('@/app/api/account/change-password/route')
-    await POST(makeChangeReq({ currentPassword: 'correct!Pass1', newPassword: 'newpassword99!' }))
+    await POST(makeChangeReq({ currentPassword: 'correct!LongPass1', newPassword: 'newlongpassword99!' }))
     expect(mockSignIn).toHaveBeenCalledWith({
       email: 'user@example.com',
-      password: 'correct!Pass1',
+      password: 'correct!LongPass1',
     })
   })
 
@@ -198,7 +198,7 @@ describe('change-password route — authentication', () => {
     mockSignIn.mockResolvedValue({ error: null })
     mockUpdateUser.mockResolvedValue({ error: null })
     const { POST } = await import('@/app/api/account/change-password/route')
-    const res = await POST(makeChangeReq({ currentPassword: 'correct!Pass1', newPassword: 'newpassword99!' }))
+    const res = await POST(makeChangeReq({ currentPassword: 'correct!LongPass1', newPassword: 'newlongpassword99!' }))
     expect(res.status).toBe(200)
     const body = await res.json() as { success: boolean }
     expect(body.success).toBe(true)
@@ -208,8 +208,28 @@ describe('change-password route — authentication', () => {
     mockSignIn.mockResolvedValue({ error: null })
     mockUpdateUser.mockResolvedValue({ error: { message: 'DB error' } })
     const { POST } = await import('@/app/api/account/change-password/route')
-    const res = await POST(makeChangeReq({ currentPassword: 'correct!Pass1', newPassword: 'newpassword99!' }))
+    const res = await POST(makeChangeReq({ currentPassword: 'correct!LongPass1', newPassword: 'newlongpassword99!' }))
     expect(res.status).toBe(500)
+  })
+
+  it('returns 422 with a breach-specific message when updateUser reports a compromised password', async () => {
+    mockSignIn.mockResolvedValue({ error: null })
+    mockUpdateUser.mockResolvedValue({
+      error: { message: 'Password has been found in a data breach.', reasons: ['breached'] },
+    })
+    const { POST } = await import('@/app/api/account/change-password/route')
+    const res = await POST(makeChangeReq({ currentPassword: 'correct!LongPass1', newPassword: 'newlongpassword99!' }))
+    expect(res.status).toBe(422)
+    const body = await res.json() as { error: string }
+    expect(body.error).toContain('data breach')
+  })
+
+  it('returns 422 via message-text fallback when reasons array is absent but message mentions breach', async () => {
+    mockSignIn.mockResolvedValue({ error: null })
+    mockUpdateUser.mockResolvedValue({ error: { message: 'Password was found in a compromised data breach.' } })
+    const { POST } = await import('@/app/api/account/change-password/route')
+    const res = await POST(makeChangeReq({ currentPassword: 'correct!LongPass1', newPassword: 'newlongpassword99!' }))
+    expect(res.status).toBe(422)
   })
 })
 

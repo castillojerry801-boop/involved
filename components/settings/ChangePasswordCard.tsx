@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
+import { MIN_PASSWORD_LENGTH, validatePassword } from '@/lib/auth/password'
 
 export function ChangePasswordCard() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
@@ -33,8 +34,9 @@ export function ChangePasswordCard() {
     setError(null)
     setSuccess(false)
 
-    if (newPassword.length < 8) {
-      setError('New password must be at least 8 characters.')
+    const passwordError = validatePassword(newPassword)
+    if (passwordError) {
+      setError(passwordError)
       return
     }
     if (newPassword !== confirmPassword) {
@@ -86,13 +88,13 @@ export function ChangePasswordCard() {
         <Input
           label="New password"
           type="password"
-          placeholder="Min. 8 characters"
+          placeholder={`Min. ${MIN_PASSWORD_LENGTH} characters`}
           value={newPassword}
           onChange={e => setNewPassword(e.target.value)}
           autoComplete="new-password"
-          hint="At least 8 characters"
+          hint={`At least ${MIN_PASSWORD_LENGTH} characters — try a passphrase`}
           required
-          minLength={8}
+          minLength={MIN_PASSWORD_LENGTH}
         />
         <Input
           label="Confirm new password"

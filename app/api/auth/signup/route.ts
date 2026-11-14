@@ -4,6 +4,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { prisma } from '@/lib/prisma'
 import type { Database } from '@/lib/types/database'
+import { validatePassword } from '@/lib/auth/password'
 
 export async function POST(req: NextRequest) {
   const { email, password, name, turnstileToken } = await req.json() as {
@@ -15,6 +16,12 @@ export async function POST(req: NextRequest) {
 
   if (!email || !password) {
     return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
+  }
+
+  // Admin API bypasses Supabase's password policy — enforce length here explicitly.
+  const passwordError = validatePassword(password)
+  if (passwordError) {
+    return NextResponse.json({ error: passwordError }, { status: 400 })
   }
 
   // Verify Turnstile token before creating the account
