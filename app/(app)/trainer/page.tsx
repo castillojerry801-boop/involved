@@ -121,10 +121,7 @@ export default function TrainerDashboard() {
         <Users className="size-7 text-zinc-400" />
       </div>
       <p className="font-bold text-zinc-900 dark:text-white mb-2">Trainer subscription required</p>
-      <p className="text-sm text-zinc-400 mb-6">Upgrade to access the trainer dashboard and manage clients.</p>
-      <Link href="/trainer/upgrade" className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-5 py-2.5 text-sm font-bold hover:opacity-90 transition-opacity">
-        View Plans
-      </Link>
+      <p className="text-sm text-zinc-400">Upgrade to access the trainer dashboard and manage clients.</p>
     </div>
   )
 
