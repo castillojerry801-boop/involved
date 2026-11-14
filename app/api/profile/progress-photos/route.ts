@@ -8,6 +8,8 @@ const BUCKET = 'progress-photos'
 const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
 const FREE_LIMIT = 20
 
+const SIGNED_URL_TTL = 60 * 60 // 1 hour — regenerated on every GET, never stored long-lived
+
 export async function GET() {
   const user = await getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -16,15 +18,33 @@ export async function GET() {
     prisma.progressPhoto.findMany({
       where: { userId: user.id },
       orderBy: { takenAt: 'desc' },
-      select: { id: true, url: true, note: true, takenAt: true },
+      select: { id: true, storageKey: true, note: true, takenAt: true },
     }),
     getUserEntitlement(user.id),
   ])
 
   const isPlus = entitlement.isPlus
 
+  // Generate short-lived signed URLs on each request rather than returning the
+  // 1-year URLs stored at upload time. This limits the exposure window and lets
+  // us revoke access by deleting the storage file.
+  let signedUrls: Array<string | null> = photos.map(() => null)
+  if (photos.length > 0) {
+    const { data } = await getSupabaseAdmin()
+      .storage.from(BUCKET)
+      .createSignedUrls(photos.map(p => p.storageKey), SIGNED_URL_TTL)
+    if (data) signedUrls = data.map(d => d.signedUrl)
+  }
+
+  const photosWithUrls = photos.map((photo, i) => ({
+    id: photo.id,
+    url: signedUrls[i] ?? '',
+    note: photo.note,
+    takenAt: photo.takenAt,
+  }))
+
   return NextResponse.json({
-    photos,
+    photos: photosWithUrls,
     count: photos.length,
     limit: isPlus ? null : FREE_LIMIT,
     canUpload: isPlus || photos.length < FREE_LIMIT,
@@ -69,10 +89,10 @@ export async function POST(req: NextRequest) {
 
   if (uploadError) return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
 
-  // Generate a signed URL valid for 1 year — stored in DB, refreshed on GET if needed
+  // 1-hour URL for the immediate POST response; GET always regenerates fresh URLs
   const { data: signedData } = await getSupabaseAdmin().storage
     .from(BUCKET)
-    .createSignedUrl(key, 60 * 60 * 24 * 365)
+    .createSignedUrl(key, SIGNED_URL_TTL)
 
   const url = signedData?.signedUrl ?? ''
 

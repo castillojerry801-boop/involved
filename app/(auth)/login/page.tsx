@@ -19,6 +19,7 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const next = safeRedirect(searchParams.get('next'))
   const urlError = searchParams.get('error')
+  const urlMessage = searchParams.get('message')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [honeypot, setHoneypot] = useState('')
@@ -30,6 +31,9 @@ function LoginForm() {
     urlError === 'auth_failed'    ? 'Authentication failed. Please try again.' :
     urlError ? 'Sign-in failed. Please try again.' : null
   )
+  const [successMessage, setSuccessMessage] = useState<string | null>(
+    urlMessage === 'password_reset' ? 'Your password has been updated. Please sign in.' : null
+  )
   const [loading, setLoading] = useState(false)
 
   // useState initializes once at mount — if already on /login and router.push('/login?error=...')
@@ -37,6 +41,7 @@ function LoginForm() {
   // value never re-runs. This effect syncs URL error params to state on soft navigations.
   useEffect(() => {
     if (!urlError) return
+    setSuccessMessage(null)
     const msg =
       urlError === 'oauth_canceled' ? 'Sign-in was canceled.' :
       urlError === 'oauth_failed'   ? 'Sign-in failed. Please try again.' :
@@ -44,6 +49,12 @@ function LoginForm() {
       'Sign-in failed. Please try again.'
     setError(msg)
   }, [urlError])
+
+  useEffect(() => {
+    if (urlMessage === 'password_reset') {
+      setSuccessMessage('Your password has been updated. Please sign in.')
+    }
+  }, [urlMessage])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -157,6 +168,7 @@ function LoginForm() {
         {turnstileError && (
           <p className="text-xs text-red-500">Security check failed. Please refresh and try again.</p>
         )}
+        {successMessage && <p className="text-xs text-emerald-600 dark:text-emerald-400">{successMessage}</p>}
         {error && <p className="text-xs text-red-500">{error}</p>}
 
         <Button
