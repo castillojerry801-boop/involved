@@ -1,8 +1,58 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowRight, Dumbbell, Target, TrendingUp, Users, Zap, PersonStanding, Trophy, Activity } from 'lucide-react'
+import { ArrowRight, Dumbbell, Target, TrendingUp, Users, Zap, PersonStanding, Trophy, Activity, Utensils, Smartphone } from 'lucide-react'
 import { InvolvedLogo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
+
+export const metadata: Metadata = {
+  title: {
+    absolute: 'Involved — Fitness App, Workout Tracker & Calorie Counter',
+  },
+  description: 'Free fitness app for Android. Track workouts, count calories, scan food barcodes, monitor your health, and get personalized AI coaching. Build real habits with Involved.',
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    type: 'website',
+    url: 'https://www.involvedfit.com',
+    title: 'Involved — Workout Tracker, Calorie Counter & AI Fitness Coach',
+    description: 'Free fitness app for Android. Scan barcodes to log food, track workouts, monitor your health, and get AI coaching from V. Build lasting fitness habits.',
+    siteName: 'Involved',
+    images: [
+      {
+        url: '/opengraph-image',
+        width: 1200,
+        height: 630,
+        alt: 'Involved — Workout Tracker, Calorie Counter & AI Fitness Coach',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Involved — Workout Tracker, Calorie Counter & AI Fitness Coach',
+    description: 'Free fitness app for Android. Scan barcodes to log food, track workouts, and get AI coaching from V.',
+    images: ['/opengraph-image'],
+  },
+}
+
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.involved.app'
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'MobileApplication',
+  name: 'Involved',
+  url: 'https://www.involvedfit.com',
+  description: 'Free fitness app for Android. Track workouts, count calories with barcode scanning, monitor your health, and get personalized AI coaching. Build lasting fitness habits.',
+  operatingSystem: 'ANDROID',
+  applicationCategory: 'HealthApplication',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+  },
+  installUrl: PLAY_STORE_URL,
+}
 
 const features = [
   {
@@ -33,6 +83,20 @@ const features = [
     color: 'from-amber-500/20 to-amber-600/10',
     iconColor: 'text-amber-400',
   },
+  {
+    icon: Utensils,
+    title: 'Calorie & Nutrition Tracking',
+    description: 'Log meals and scan food barcodes to track calories and macros. With millions of foods in our database, hitting your nutrition targets is fast and accurate.',
+    color: 'from-orange-500/20 to-orange-600/10',
+    iconColor: 'text-orange-400',
+  },
+  {
+    icon: Activity,
+    title: 'Activity & Health Sync',
+    description: 'Syncs with Apple Health to pull in steps, heart rate, and calories burned. See your complete activity picture alongside your workouts, all in one place.',
+    color: 'from-blue-500/20 to-blue-600/10',
+    iconColor: 'text-blue-400',
+  },
 ]
 
 const forWhom = [
@@ -47,6 +111,10 @@ const forWhom = [
 export default function LandingPage() {
   return (
     <div className="flex min-h-screen flex-col">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {/* Nav */}
       <header className="sticky top-0 z-50 border-b border-zinc-200/40 bg-white/70 backdrop-blur-md dark:border-zinc-700/40 dark:bg-zinc-950/70">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
@@ -111,6 +179,17 @@ export default function LandingPage() {
             </div>
 
             <p className="mt-5 text-sm text-zinc-500">Free to start. No credit card required.</p>
+
+            <a
+              href={PLAY_STORE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              <Smartphone className="size-4" />
+              Also available on Android
+              <ArrowRight className="size-3" />
+            </a>
           </div>
         </section>
 
@@ -228,6 +307,7 @@ export default function LandingPage() {
             <Link href="/privacy" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Terms</Link>
             <Link href="/support" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Support</Link>
+            <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Android App</a>
           </div>
           <p>© 2026 GameFloHQ LLC. All rights reserved.</p>
         </div>

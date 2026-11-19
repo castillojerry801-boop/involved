@@ -10,6 +10,7 @@ const geist = Geist({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://www.involvedfit.com'),
   title: {
     default: 'Involved — Real Habits. Real Progress.',
     template: '%s | Involved',
