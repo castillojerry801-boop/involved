@@ -8,8 +8,10 @@ import type { ProgramDraft } from '@/lib/ai/tools/program'
 type TrackingType = 'strength' | 'bodyweight' | 'assisted' | 'cardio' | 'carry' | 'isometric' | 'intervals'
 type SetType = 'working' | 'warmup' | 'amrap'
 
-function inferTrackingType(equipment: string): TrackingType {
+function inferTrackingType(equipment: string, bodyPart?: string): TrackingType {
   const eq = equipment.toLowerCase()
+  // cardio bodyPart (e.g. walking, running) always resolves to cardio regardless of equipment
+  if (bodyPart?.toLowerCase() === 'cardio') return 'cardio'
   if (eq.includes('body weight')) return 'bodyweight'
   if (eq.includes('cardio') || eq.includes('cycle') || eq.includes('treadmill')) return 'cardio'
   return 'strength'
@@ -71,14 +73,15 @@ export async function POST(req: NextRequest) {
               create: day.exercises.map((ex, ei) => ({
                 exerciseId: ex.exercise_id,
                 sortOrder: ei,
-                trackingType: inferTrackingType(ex.exercise.equipment),
+                trackingType: inferTrackingType(ex.exercise.equipment, ex.exercise.bodyPart),
                 restSeconds: ex.rest_seconds,
                 notes: ex.notes ?? null,
                 sets: {
                   create: Array.from({ length: ex.sets }, (_, j) => {
-                    const trackingType = inferTrackingType(ex.exercise.equipment)
+                    const trackingType = inferTrackingType(ex.exercise.equipment, ex.exercise.bodyPart)
                     const isTimedOnly = ex.duration_seconds != null && ex.reps_min == null && ex.reps_max == null
-                    const targetRir = (ex.rpe != null && !isTimedOnly && trackingType !== 'cardio')
+                    const isDistanceOnly = ex.distance_m != null && ex.reps_min == null && ex.reps_max == null && ex.duration_seconds == null
+                    const targetRir = (ex.rpe != null && !isTimedOnly && !isDistanceOnly && trackingType !== 'cardio')
                       ? Math.max(0, Math.min(10, Math.round(10 - ex.rpe)))
                       : undefined
                     return {
@@ -87,6 +90,7 @@ export async function POST(req: NextRequest) {
                       targetRepsMin: ex.reps_min ?? null,
                       targetRepsMax: ex.reps_max ?? null,
                       targetDurationSeconds: ex.duration_seconds ?? null,
+                      targetDistanceM: ex.distance_m ?? null,
                       restSeconds: ex.rest_seconds,
                       ...(targetRir !== undefined ? { targetRir } : {}),
                     }

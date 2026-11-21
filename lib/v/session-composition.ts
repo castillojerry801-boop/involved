@@ -269,6 +269,95 @@ const SESSION_TEMPLATES: Record<string, SessionTemplate> = {
     ],
   },
 
+  // ─── Body-part split session types ─────────────────────────────────────────
+  // These exist for classic "bro split" programming where each day targets
+  // specific muscle groups rather than movement-pattern categories.
+
+  shoulder: {
+    // Shoulder isolation day — overhead pressing is OPTIONAL.
+    // Required role is shoulder_isolation only; vertical_push earns its place
+    // when volume and recovery allow, but is not mandatory.
+    beginner: [
+      { role: 'shoulder_isolation', pattern: 'shoulder_isolation', required: true,  rationale: 'Primary lateral/rear delt volume — lateral raises and rear fly' },
+      { role: 'shoulder_press',     pattern: 'vertical_push',      required: false, rationale: 'Optional overhead press — a beginner shoulder day can be press-free' },
+    ],
+    intermediate: [
+      { role: 'shoulder_isolation_a', pattern: 'shoulder_isolation', required: true,  rationale: 'Lateral delt — cable or dumbbell lateral raise' },
+      { role: 'shoulder_isolation_b', pattern: 'shoulder_isolation', required: true,  rationale: 'Rear delt — face pull, reverse fly, or band pull-apart' },
+      { role: 'shoulder_press',       pattern: 'vertical_push',      required: false, rationale: 'Optional overhead press if not covered elsewhere in the split' },
+    ],
+    advanced: [
+      { role: 'shoulder_isolation_a', pattern: 'shoulder_isolation', required: true,  rationale: 'Lateral delt — cable lateral raise or machine lateral' },
+      { role: 'shoulder_isolation_b', pattern: 'shoulder_isolation', required: true,  rationale: 'Rear delt — face pull or rear fly for shoulder health and balance' },
+      { role: 'shoulder_isolation_c', pattern: 'shoulder_isolation', required: false, rationale: 'Third shoulder isolation angle — machine, cable variation' },
+      { role: 'shoulder_press',       pattern: 'vertical_push',      required: false, rationale: 'Overhead press if not covered in another day of the split' },
+    ],
+  },
+
+  chest_biceps: {
+    beginner: [
+      { role: 'primary_press', pattern: 'horizontal_push', required: true,  rationale: 'Primary chest compound' },
+      { role: 'bicep',         pattern: 'bicep',           required: true,  rationale: 'Elbow flexor work' },
+    ],
+    intermediate: [
+      { role: 'primary_press',   pattern: 'horizontal_push', required: true,  rationale: 'Primary chest compound — flat press' },
+      { role: 'secondary_press', pattern: 'incline_push',    required: true,  rationale: 'Upper chest angle' },
+      { role: 'isolation',       pattern: 'fly',             required: false, rationale: 'Stretch-biased chest work' },
+      { role: 'bicep_primary',   pattern: 'bicep',           required: true,  rationale: 'Primary bicep curl' },
+      { role: 'bicep_secondary', pattern: 'bicep',           required: false, rationale: 'Second curl variation — hammer, cable, or incline' },
+    ],
+    advanced: [
+      { role: 'primary_press',   pattern: 'horizontal_push', required: true,  rationale: 'Primary chest compound' },
+      { role: 'secondary_press', pattern: 'incline_push',    required: true,  rationale: 'Upper chest angle' },
+      { role: 'isolation',       pattern: 'fly',             required: true,  rationale: 'Long-length chest isolation — cable fly or pec deck' },
+      { role: 'bicep_primary',   pattern: 'bicep',           required: true,  rationale: 'Primary bicep curl' },
+      { role: 'bicep_secondary', pattern: 'bicep',           required: true,  rationale: 'Second curl for peak/brachialis — hammer, incline, or cable' },
+    ],
+  },
+
+  back_triceps: {
+    beginner: [
+      { role: 'vertical_pull', pattern: 'vertical_pull',   required: true,  rationale: 'Lat width compound' },
+      { role: 'row',           pattern: 'horizontal_pull', required: true,  rationale: 'Mid-back thickness' },
+      { role: 'tricep',        pattern: 'tricep',          required: true,  rationale: 'Elbow extensor work' },
+    ],
+    intermediate: [
+      { role: 'vertical_pull',    pattern: 'vertical_pull',   required: true,  rationale: 'Primary lat pull — pull-up or lat pulldown' },
+      { role: 'row_primary',      pattern: 'horizontal_pull', required: true,  rationale: 'Mid-back row — barbell or cable' },
+      { role: 'row_secondary',    pattern: 'horizontal_pull', required: false, rationale: 'Second row angle if volume warrants' },
+      { role: 'tricep_primary',   pattern: 'tricep',          required: true,  rationale: 'Primary tricep isolation — pushdown or extension' },
+      { role: 'tricep_secondary', pattern: 'tricep',          required: false, rationale: 'Second tricep variation for complete elbow extensor coverage' },
+    ],
+    advanced: [
+      { role: 'vertical_pull_a',  pattern: 'vertical_pull',   required: true,  rationale: 'Primary lat width — weighted pull-up or cable pulldown' },
+      { role: 'vertical_pull_b',  pattern: 'vertical_pull',   required: false, rationale: 'Second vertical pull — different grip or machine' },
+      { role: 'row_primary',      pattern: 'horizontal_pull', required: true,  rationale: 'Heavy row for mid-back mass' },
+      { role: 'row_secondary',    pattern: 'horizontal_pull', required: true,  rationale: 'Second row angle for mid-back detail' },
+      { role: 'tricep_primary',   pattern: 'tricep',          required: true,  rationale: 'Primary tricep compound (close-grip, dip) or isolation' },
+      { role: 'tricep_secondary', pattern: 'tricep',          required: true,  rationale: 'Second tricep variation for full elbow extensor volume' },
+    ],
+  },
+
+  arms: {
+    beginner: [
+      { role: 'bicep',  pattern: 'bicep',  required: true, rationale: 'Bicep curl' },
+      { role: 'tricep', pattern: 'tricep', required: true, rationale: 'Tricep extension' },
+    ],
+    intermediate: [
+      { role: 'bicep_primary',   pattern: 'bicep',  required: true,  rationale: 'Primary bicep curl' },
+      { role: 'bicep_secondary', pattern: 'bicep',  required: false, rationale: 'Second curl variation — hammer, cable, or concentration' },
+      { role: 'tricep_primary',  pattern: 'tricep', required: true,  rationale: 'Primary tricep isolation — pushdown or extension' },
+      { role: 'tricep_secondary',pattern: 'tricep', required: false, rationale: 'Second tricep variation — overhead, skull crusher' },
+    ],
+    advanced: [
+      { role: 'bicep_primary',    pattern: 'bicep',  required: true,  rationale: 'Primary bicep curl — barbell or EZ-bar' },
+      { role: 'bicep_secondary',  pattern: 'bicep',  required: true,  rationale: 'Second curl variation — hammer or incline for brachialis' },
+      { role: 'bicep_tertiary',   pattern: 'bicep',  required: false, rationale: 'Third curl angle — cable or concentration for peak' },
+      { role: 'tricep_primary',   pattern: 'tricep', required: true,  rationale: 'Primary tricep compound (close-grip bench or dip) or isolation' },
+      { role: 'tricep_secondary', pattern: 'tricep', required: true,  rationale: 'Tricep isolation — pushdown, overhead extension' },
+    ],
+  },
+
   conditioning: {
     beginner: [
       { role: 'aerobic_base', pattern: 'cardio', required: true,  rationale: 'Low-intensity aerobic work — treadmill, bike, rower' },
@@ -312,8 +401,8 @@ A complete workout is not a random list of exercises — it is a purposeful set 
 
 STEP 1: IDENTIFY THE SESSION TYPE
 Determine the session type from the day name and focus:
-  upper_push / push         → chest, shoulder, tricep
-  upper_pull / pull         → back, bicep
+  upper_push / push         → chest, shoulder, tricep (movement-pattern)
+  upper_pull / pull         → back, bicep (movement-pattern)
   upper_full                → full upper body
   lower_quad                → squat-dominant lower
   lower_posterior           → hinge-dominant lower
@@ -322,6 +411,16 @@ Determine the session type from the day name and focus:
   push/pull/legs splits     → PPL structure
   conditioning              → cardio/metcon focus
   sport_specific            → see SPORT PROGRAMMING RULES below
+
+BODY-PART SPLIT TYPES (bro split style):
+  chest_biceps              → "Chest, Biceps" or "Chest & Biceps" day
+  back_triceps              → "Back, Triceps" or "Back & Triceps" day
+  shoulder                  → "Shoulders" or "Shoulder Day" — overhead press is OPTIONAL
+  arms                      → "Arms Day" — biceps and triceps only
+
+CRITICAL: For body-part split programs, choose the matching body-part split type, NOT the
+movement-pattern type. "Shoulder Day" → session_type: "shoulder" (NOT "upper_push").
+Setting "upper_push" on a shoulder day forces a horizontal_push requirement that is wrong.
 
 STEP 2: BUILD ROLES BASED ON EXPERIENCE LEVEL
 Session depth scales with experience level. This is not about hitting a number — it is about whether the trainee can absorb, execute, and recover from the volume.

@@ -100,6 +100,8 @@ export async function POST(req: NextRequest) {
     sport?: string
     sequencing?: string
     constraints?: string
+    /** Explicit flag: caller sets true when the user requested daily walking. */
+    dailyWalkRequired?: boolean
   }
 
   const entitlement = await getUserEntitlement(user.id)
@@ -156,13 +158,54 @@ export async function POST(req: NextRequest) {
     { role: 'user', content: userMessage },
   ]
 
+  // Detect daily walking requirement from the original request, independent of the
+  // AI-generated draft. When set, MISSING_REQUESTED_ACTIVITY fires even if the model
+  // omits all walking activities (0/N days) rather than only detecting partial omission.
+  //   • Explicit flag: caller sets dailyWalkRequired: true in the request body.
+  //   • Constraint text fallback: "daily walk", "walk every day", or similar pattern
+  //     in body.constraints covers callers that haven't adopted the explicit flag yet.
+  const dailyWalkDetected =
+    body.dailyWalkRequired === true ||
+    /daily.{0,15}walk|walk.*every\s+day/i.test(body.constraints ?? '')
+  const requiredDailyActivityIds: string[] | undefined = dailyWalkDetected ? ['9001'] : undefined
+
   const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_PROGRAM_TOOL]
   let pendingProgram: ProgramValidationResult | null = null
   let pendingDraft: ProgramDraft | null = null
-  const MAX_ROUNDS = 12
-  const QUALITY_RETRY_LIMIT = 2
+
+  // Dynamic round budget — scales with program complexity so multi-day splits
+  // don't exhaust the loop before finishing their exercise searches.
+  // Each training day needs ~4 AI completion rounds on average (planning + searches).
+  // Add rounds for propose + quality retries + a planning buffer.
+  const programDays = body.days ?? 3
+  const MAX_ROUNDS = Math.min(Math.max(16, programDays * 4 + 6), 36)
+  // 7-day programs reliably trigger a 2-step correction cycle (MISSING_REQUIRED_ROLE +
+  // NO_STRUCTURED_DELOAD on attempt 1; WEEK_PROGRESSIONS_UNIFORM on attempt 2) that
+  // exhausts 3 retries. 5 retries resolves the cascade without increasing cost on
+  // smaller programs.
+  const QUALITY_RETRY_LIMIT = programDays >= 7 ? 5 : programDays >= 5 ? 3 : 2
+
+  // Token budget guard — prevents runaway expensive sessions regardless of round count.
+  // Input tokens grow quickly with conversation history; output tokens bound generation size.
+  // 7-day programs with week_progressions need more output headroom.
+  // 7-day budget raised from 240k → 320k: walking overlay diagnostic observed a 14-round,
+  // 2-quality-retry run consuming 284k input tokens — within the new 320k limit with ~12% headroom.
+  const TOKEN_BUDGET_INPUT  = programDays >= 7 ? 320_000 : programDays >= 5 ? 240_000 : 120_000
+  const TOKEN_BUDGET_OUTPUT = programDays >= 7 ? 50_000 : 30_000
+  let totalInputTokens  = 0
+  let totalOutputTokens = 0
+
   let qualityRetries = 0
   let qualityFailed = false
+  // Nudge state — gpt-4o occasionally writes a planning text response instead
+  // of calling propose_program directly. Rather than breaking the loop on the
+  // first text-only response, we inject a follow-up directing the model to call
+  // the tool. MAX_NUDGES_PER_EPISODE prevents double-nudging in a single episode
+  // (between tool calls); MAX_NUDGES_TOTAL is the absolute lifetime cap.
+  let nudgesThisEpisode = 0
+  let totalNudges = 0
+  const MAX_NUDGES_PER_EPISODE = 1
+  const MAX_NUDGES_TOTAL = 2
   const allowedEquipment = ctx.equipment?.items
   const requestLogs: PendingRequestLog[] = []
 
@@ -176,7 +219,7 @@ export async function POST(req: NextRequest) {
         messages,
         tools,
         tool_choice: 'auto',
-        max_tokens: 4000,
+        max_tokens: programDays >= 7 ? 8000 : 4000,
         temperature: 0.7,
       })
 
@@ -184,10 +227,41 @@ export async function POST(req: NextRequest) {
       if (response.usage) {
         const opType = qualityRetries > 0 ? 'program_correction' : 'workout_generation'
         requestLogs.push(buildTokenLog(user.id, 'workout_generation', opType, model, response.usage))
+        totalInputTokens  += response.usage.prompt_tokens     ?? 0
+        totalOutputTokens += response.usage.completion_tokens ?? 0
+        const inputPct = totalInputTokens / TOKEN_BUDGET_INPUT
+        if (inputPct >= 0.8 && inputPct < 1) {
+          console.warn('[V budget-warning]', { userId: user.id, totalInputTokens, TOKEN_BUDGET_INPUT, pct: Math.round(inputPct * 100), round })
+        }
+        if (totalInputTokens > TOKEN_BUDGET_INPUT || totalOutputTokens > TOKEN_BUDGET_OUTPUT) {
+          console.warn('[V budget-exceeded]', { userId: user.id, totalInputTokens, totalOutputTokens, round, programDays })
+          break
+        }
       }
       messages.push(choice.message)
 
-      if (!choice.message.tool_calls?.length) break
+      if (!choice.message.tool_calls?.length) {
+        // If we already have a result (valid program or quality exhausted), a text
+        // response is a natural closing message — exit cleanly.
+        // pendingProgram is only set when validation.valid is true, so a non-null
+        // check is equivalent to pendingProgram?.valid here.
+        if (pendingProgram !== null || qualityFailed) break
+        // Otherwise the model wrote a planning or summary text without calling a
+        // tool. Nudge it back to propose_program rather than breaking immediately.
+        if (nudgesThisEpisode < MAX_NUDGES_PER_EPISODE && totalNudges < MAX_NUDGES_TOTAL) {
+          nudgesThisEpisode++
+          totalNudges++
+          console.log('[V nudge]', { userId: user.id, nudgesThisEpisode, totalNudges, round })
+          messages.push({ role: 'user', content: 'Please call propose_program now with the exercises you have already found.' })
+          continue
+        }
+        break
+      }
+
+      // Model called at least one tool — reset per-episode counter so a future
+      // text-only response after tool use starts a fresh episode (can receive
+      // another nudge rather than being blocked by the per-episode cap).
+      nudgesThisEpisode = 0
 
       for (const call of choice.message.tool_calls) {
         const fn = (call as unknown as { function: { name: string; arguments: string } }).function
@@ -200,7 +274,20 @@ export async function POST(req: NextRequest) {
             ? JSON.stringify(exercises)
             : JSON.stringify({ message: 'No exercises found. Try different filters.' })
         } else if (fn.name === 'propose_program') {
-          const draft = JSON.parse(fn.arguments) as ProgramDraft
+          let draft: ProgramDraft
+          try {
+            draft = JSON.parse(fn.arguments) as ProgramDraft
+          } catch {
+            // JSON truncated by max_tokens — the tool arguments string is incomplete.
+            // Push a bounded recovery instruction and continue the round loop; do not
+            // propagate to the outer catch (which returns 503) and do not save a partial draft.
+            result = JSON.stringify({
+              status: 'invalid',
+              errors: ['Output was truncated — the JSON for propose_program is incomplete. Resubmit with fewer week_progressions entries (max 4 per exercise across the entire program). Use progression_model + progression_condition for weeks beyond week 4.'],
+            })
+            messages.push({ role: 'tool', tool_call_id: call.id, content: result })
+            break  // break inner for-of; outer round loop continues
+          }
           const validation = await validateProgramDraft(draft, user.id, prisma, { allowedEquipment })
           if (validation.valid) {
             // Run semantic quality check
@@ -208,6 +295,7 @@ export async function POST(req: NextRequest) {
               sport: body.sport,
               fitnessLevel: ctx.profile.fitnessLevel,
               weeks: body.weeks ?? draft.weeks,
+              requiredDailyActivityIds,
             })
             const hardErrors = qualityIssues.filter(i => i.severity === 'error')
 
@@ -269,6 +357,7 @@ export async function POST(req: NextRequest) {
     sport: body.sport,
     fitnessLevel: ctx.profile.fitnessLevel,
     weeks: body.weeks ?? pendingDraft.weeks,
+    requiredDailyActivityIds,
   })
   const qualityWarnings = [
     ...(pendingProgram.warnings ?? []),

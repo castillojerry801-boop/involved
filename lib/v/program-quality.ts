@@ -1,5 +1,5 @@
 import 'server-only'
-import type { ProgramDraft, ProgressionModel } from '@/lib/ai/tools/program'
+import type { ProgramDraft, ProgressionModel, SessionType } from '@/lib/ai/tools/program'
 import { getSessionRoles } from '@/lib/v/session-composition'
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -25,6 +25,12 @@ export interface QualityContext {
   fitnessLevel?: string | null
   weeks?: number
   readinessState?: string | null
+  /**
+   * Exercise IDs that the user explicitly requested on every program day.
+   * When set, MISSING_REQUESTED_ACTIVITY fires even when the AI omitted the
+   * activity from all days (0/N) — not just when it's on some but not all.
+   */
+  requiredDailyActivityIds?: string[]
 }
 
 const PROGRESSION_KEYWORDS = /\badd\b|\bincrease\b|\bprogress\b|\bweek\b|\bphase\b|\b\d+%\b|\bload\b|\bbuilding\b|\bescalat/i
@@ -59,7 +65,7 @@ function toExperienceLevel(fitnessLevel: string): 'beginner' | 'intermediate' | 
   return null
 }
 
-function inferSessionType(name: string, focus?: string | null): string | null {
+function inferSessionType(name: string, focus?: string | null): SessionType | null {
   const text = (name + ' ' + (focus ?? '')).toLowerCase()
 
   if (/full.?body|total.?body/i.test(text)) return 'full_body'
@@ -75,6 +81,15 @@ function inferSessionType(name: string, focus?: string | null): string | null {
 
   // Generic upper
   if (/\bupper\b/i.test(text)) return 'upper_full'
+
+  // Body-part split types — these check for specific muscle group names
+  // Order matters: check combo patterns before single muscle patterns
+  if (/\b(chest|pec).*\b(bicep|curl|bi\b)|^(chest|pec).*arm/i.test(text)) return 'chest_biceps'
+  if (/\b(back|lat|lats).*\b(tricep|tri\b)|^(back|lat).*arm/i.test(text)) return 'back_triceps'
+  if (/\b(arm\b|arms\b|bicep|curl|tri\b|tricep)/i.test(text) && !/upper|push|pull|back|chest/i.test(text)) return 'arms'
+  if (/\bshoulder/i.test(text) && !/upper|full.?body/i.test(text)) return 'shoulder'
+  if (/\b(chest|pec)/i.test(text) && !/upper|push/i.test(text)) return 'chest_biceps'
+  if (/\b(back|lat\b|lats\b)/i.test(text) && !/upper|pull|lower/i.test(text)) return 'back_triceps'
 
   // Lower specifics before generic "lower"
   if (/quad.?dominant|squat.?focus|quad.?day/i.test(text)) return 'lower_quad'
@@ -326,11 +341,14 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
   }
 
   // EXCESSIVE_CORE_REPETITION: same exercise_id in > 60% of days
+  // Cardio exercises (intended_pattern: 'cardio') are excluded — they are designed
+  // to appear daily (e.g. a programmed daily walk) and do not cause strength stagnation.
   {
     const idCounts = new Map<string, number>()
     for (const day of draft.days) {
       const seenInDay = new Set<string>()
       for (const ex of day.exercises) {
+        if (ex.intended_pattern === 'cardio') continue
         if (!seenInDay.has(ex.exercise_id)) {
           idCounts.set(ex.exercise_id, (idCounts.get(ex.exercise_id) ?? 0) + 1)
           seenInDay.add(ex.exercise_id)
@@ -395,10 +413,12 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
     }
   }
 
-  // ADVANCED_SHALLOW_SESSION: advanced user with < 5 exercises in push/pull/full-body day
+  // ADVANCED_SHALLOW_SESSION: advanced user with < 5 exercises in push/pull/full-body day.
+  // Shoulder, arms, and other body-part isolation days are intentionally excluded —
+  // 3–4 exercises is normal and appropriate for a dedicated shoulder or arms session.
   if (isAdvanced) {
     for (const day of draft.days) {
-      const isDeepDay = /push|pull|upper|full.?body|chest|back|shoulder/i.test(
+      const isDeepDay = /\bpush\b|\bpull\b|\bupper\b|full.?body|chest|back/i.test(
         day.name + ' ' + (day.focus ?? '')
       )
       if (isDeepDay && day.exercises.length < 5) {
@@ -784,6 +804,60 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
         severity: 'warning',
         code: 'CONDITIONING_NO_AEROBIC_MODALITY',
         message: `Day "${day.name}" is labeled as conditioning but contains no exercise with intended_pattern "cardio" or "carry". Add a real conditioning modality (treadmill run, rower, Airdyne, sled push, farmer carry, etc.) or rename the day to reflect its actual content.`,
+      })
+    }
+  }
+
+  // MISSING_REQUESTED_ACTIVITY: an explicitly requested daily activity is absent
+  // from one or more program days. Two enforcement modes:
+  //
+  //   Explicit: ctx.requiredDailyActivityIds lists the exercise ID — the requirement
+  //     was captured from the original user request, independent of the draft. Fires
+  //     even when the AI omitted the activity from all days (0/N complete omission).
+  //
+  //   Inference-fallback: exercise 9001 is on some but not all days, and the caller
+  //     did not declare an explicit requirement. The program itself proves the activity
+  //     was requested; any missing day is a prompt-adherence failure.
+  //
+  // Programs with no walking in the draft and no explicit requirement are unaffected.
+  const reqIds = ctx.requiredDailyActivityIds ?? []
+
+  for (const reqId of reqIds) {
+    const present  = draft.days.filter(d => d.exercises.some(e => e.exercise_id === reqId))
+    const missing  = draft.days.filter(d => !d.exercises.some(e => e.exercise_id === reqId))
+    if (missing.length === 0) continue
+    const label    = reqId === '9001' ? 'Walking' : `Exercise ${reqId}`
+    const entryHint = reqId === '9001'
+      ? '{ exercise_id: "9001", distance_m: 1609, sets: 1, rest_seconds: 0, intended_pattern: "cardio", progression_model: "duration_distance" }'
+      : `{ exercise_id: "${reqId}", ... }`
+    issues.push({
+      severity: 'error',
+      code:     'MISSING_REQUESTED_ACTIVITY',
+      message:  `${label} was requested every day but is missing from ${missing.length} of ${draft.days.length} day(s): ${missing.map(d => `"${d.name}"`).join(', ')}. Add ${entryHint} to each missing day.`,
+      meta: {
+        exerciseId:    reqId,
+        detectionMode: 'explicit',
+        missingDays:   missing.map(d => ({ name: d.name, weekday: d.weekday ?? null })),
+        presentDays:   present.map(d => ({ name: d.name, weekday: d.weekday ?? null })),
+      },
+    })
+  }
+
+  // Inference-fallback: exercise 9001 is on some but not all days, and the explicit
+  // check above did not already report it.
+  if (!reqIds.includes('9001')) {
+    const withWalk    = draft.days.filter(d => d.exercises.some(e => e.exercise_id === '9001'))
+    const withoutWalk = draft.days.filter(d => !d.exercises.some(e => e.exercise_id === '9001'))
+    if (withWalk.length > 0 && withoutWalk.length > 0) {
+      issues.push({
+        severity: 'error',
+        code:     'MISSING_REQUESTED_ACTIVITY',
+        message:  `Walking (exercise 9001) is present on ${withWalk.length} of ${draft.days.length} days but missing from ${withoutWalk.length}: ${withoutWalk.map(d => `"${d.name}"`).join(', ')}. Add { exercise_id: "9001", distance_m: 1609, sets: 1, rest_seconds: 0, intended_pattern: "cardio", progression_model: "duration_distance" } to each missing day.`,
+        meta: {
+          detectionMode: 'inferred',
+          missingDays:   withoutWalk.map(d => ({ name: d.name, weekday: d.weekday ?? null })),
+          presentDays:   withWalk.map(d => ({ name: d.name, weekday: d.weekday ?? null })),
+        },
       })
     }
   }

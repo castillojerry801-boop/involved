@@ -362,3 +362,68 @@ describe('C — SESSION_TYPE_ROLE_MISMATCH', () => {
     expect(mismatch).toBeUndefined()
   })
 })
+
+// ─── D — MISSING_REQUESTED_ACTIVITY: explicit requirement mode ────────────────
+
+describe('D — MISSING_REQUESTED_ACTIVITY: route constraint detection + explicit requirement', () => {
+  // Helper: minimal 3-day program, optionally with walking (exercise 9001) on each day.
+  function makeDraft(walkOnDays: number[]): ProgramDraft {
+    const walk9001 = { exercise_id: '9001', intended_pattern: 'cardio' as const, sets: 1, distance_m: 1609, rest_seconds: 0, progression_model: 'duration_distance' as const }
+    return {
+      program_name: 'Test',
+      days: [0, 1, 2].map(i => ({
+        name: `Day ${i + 1}`,
+        estimated_duration_minutes: 45,
+        exercises: [
+          makeEx('0662', 'horizontal_push'),
+          ...(walkOnDays.includes(i) ? [walk9001] : []),
+        ],
+      })),
+    }
+  }
+
+  it('0/3 walks FAILS with explicit requiredDailyActivityIds (complete omission caught)', () => {
+    const draft = makeDraft([])  // no walking at all
+    const issues = validateProgramQuality(draft, { requiredDailyActivityIds: ['9001'] })
+    const err = issues.find(i => i.code === 'MISSING_REQUESTED_ACTIVITY')
+    expect(err).toBeDefined()
+    expect(err!.severity).toBe('error')
+    expect(err!.meta?.detectionMode).toBe('explicit')
+    expect((err!.meta!.missingDays as Array<unknown>)).toHaveLength(3)
+  })
+
+  it('3/3 walks PASSES with explicit requiredDailyActivityIds', () => {
+    const draft = makeDraft([0, 1, 2])
+    const issues = validateProgramQuality(draft, { requiredDailyActivityIds: ['9001'] })
+    expect(issues.some(i => i.code === 'MISSING_REQUESTED_ACTIVITY')).toBe(false)
+  })
+
+  it('2/3 walks FAILS with explicit requiredDailyActivityIds (names the missing day)', () => {
+    const draft = makeDraft([0, 1])  // Day 3 missing walk
+    const issues = validateProgramQuality(draft, { requiredDailyActivityIds: ['9001'] })
+    const err = issues.find(i => i.code === 'MISSING_REQUESTED_ACTIVITY')
+    expect(err).toBeDefined()
+    expect(err!.meta?.detectionMode).toBe('explicit')
+    const missing = err!.meta!.missingDays as Array<{ name: string }>
+    expect(missing).toHaveLength(1)
+    expect(missing[0].name).toBe('Day 3')
+  })
+
+  it('0/3 walks is silent WITHOUT explicit requirement (non-walking program)', () => {
+    const draft = makeDraft([])  // no walking, no explicit requirement
+    const issues = validateProgramQuality(draft, {})
+    expect(issues.some(i => i.code === 'MISSING_REQUESTED_ACTIVITY')).toBe(false)
+  })
+
+  it('constraint text "walk every day" is detected as a daily walk requirement', () => {
+    // Verifies the route's constraint-text regex against realistic constraint strings.
+    // The route uses: /daily.{0,15}walk|walk.*every\s+day/i on body.constraints
+    const regex = /daily.{0,15}walk|walk.*every\s+day/i
+    expect(regex.test('I want to walk every day')).toBe(true)
+    expect(regex.test('daily walk 1 mile (exercise ID 9001) every day')).toBe(true)
+    expect(regex.test('Daily: walk 1 mile (1609 m) every day')).toBe(true)
+    expect(regex.test('add a daily walk to my program')).toBe(true)
+    expect(regex.test('I walk to work')).toBe(false)   // ← not a daily walk request
+    expect(regex.test('No special constraints')).toBe(false)
+  })
+})

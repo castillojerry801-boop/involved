@@ -58,6 +58,7 @@ export interface ProgramExercise {
   reps_min?: number
   reps_max?: number
   duration_seconds?: number
+  distance_m?: number        // target distance in metres; use for walking/running/rowing activities
   rest_seconds: number
   notes?: string
   rpe?: number               // target RPE (6–10 scale), optional
@@ -92,6 +93,12 @@ export type SessionType =
   | 'endurance'            // steady-state cardio / endurance
   | 'sport_skill'          // sport-specific skill work
   | 'recovery'             // recovery / mobility
+  // body-part split types (bro split style) — added in Phase 0
+  | 'chest_biceps'         // chest + biceps day
+  | 'back_triceps'         // back + triceps day
+  | 'shoulder'             // shoulder isolation day (overhead press optional)
+  | 'arms'                 // biceps + triceps day
+  | 'active_recovery'      // easy movement day (e.g. daily walk, light bike) — no resistance training
   | 'other'
 
 export interface ProgramDayDraft {
@@ -445,8 +452,8 @@ export const PROPOSE_PROGRAM_TOOL = {
               },
               session_type: {
                 type: 'string',
-                enum: ['upper_push', 'upper_pull', 'upper_full', 'lower_quad', 'lower_posterior', 'lower_full', 'full_body', 'push_pull_legs_push', 'push_pull_legs_pull', 'push_pull_legs_legs', 'conditioning', 'endurance', 'sport_skill', 'recovery', 'other'],
-                description: 'REQUIRED for every strength and conditioning day. Explicitly declares the session type so movement-pattern role coverage can be validated. "upper_full" = balanced upper (push + pull). Use "other" only for warm-up-only days.',
+                enum: ['upper_push', 'upper_pull', 'upper_full', 'lower_quad', 'lower_posterior', 'lower_full', 'full_body', 'push_pull_legs_push', 'push_pull_legs_pull', 'push_pull_legs_legs', 'conditioning', 'endurance', 'sport_skill', 'recovery', 'active_recovery', 'chest_biceps', 'back_triceps', 'shoulder', 'arms', 'other'],
+                description: 'REQUIRED for every strength and conditioning day. Explicitly declares the session type so movement-pattern role coverage can be validated. "upper_full" = balanced upper (push + pull). "active_recovery" = easy movement day (e.g. daily walk) with no resistance training. Use "other" only for warm-up-only days.',
               },
               day_rationale: {
                 type: 'string',
@@ -473,7 +480,8 @@ export const PROPOSE_PROGRAM_TOOL = {
                     sets:              { type: 'number', description: 'Sets (1–20) — represents Week 1 baseline' },
                     reps_min:          { type: 'number', description: 'Minimum reps per set (omit for time-based) — Week 1 baseline' },
                     reps_max:          { type: 'number', description: 'Maximum reps per set (omit for time-based) — Week 1 baseline' },
-                    duration_seconds:  { type: 'number', description: 'Duration per set in seconds (omit for rep-based)' },
+                    duration_seconds:  { type: 'number', description: 'Duration per set in seconds (omit for rep-based and distance-based)' },
+                    distance_m:        { type: 'number', description: 'Target distance per set in metres (use for walking, running, rowing). 1 mile = 1609 m. Omit for rep-based or time-based sets.' },
                     rest_seconds:      { type: 'number', description: 'Rest between sets in seconds' },
                     notes:             { type: 'string', description: 'Coaching cue, progression instruction, or form note. For multi-week programs without week_progressions, describe the progression arc here.' },
                     rpe:               { type: 'number', description: 'Target RPE on the 1–10 scale (e.g. 7.5 = 2–3 reps left in tank). Omit if not applicable.' },
