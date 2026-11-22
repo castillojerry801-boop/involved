@@ -1,12 +1,112 @@
 import 'server-only'
 import type { ProgramDraft, ProgressionModel, SessionType } from '@/lib/ai/tools/program'
 import { getSessionRoles } from '@/lib/v/session-composition'
+import type { WeeklySchedule } from '@/lib/v/program-intake'
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 const PUSH_PATTERNS = new Set(['horizontal_push', 'incline_push', 'vertical_push', 'fly'])
 const PULL_PATTERNS = new Set(['vertical_pull', 'horizontal_pull'])
 const LOWER_PATTERNS = new Set(['squat', 'hinge', 'lunge', 'leg_press', 'lower_body'])
+
+// Weekday name ↔ number mapping (0=Mon … 6=Sun), matching ProgramDayDraft.weekday.
+const WEEKDAY_NUMBER: Record<string, number> = {
+  monday: 0, tuesday: 1, wednesday: 2, thursday: 3,
+  friday: 4, saturday: 5, sunday: 6,
+}
+const WEEKDAY_LABEL: Record<number, string> = {
+  0: 'Monday', 1: 'Tuesday', 2: 'Wednesday', 3: 'Thursday',
+  4: 'Friday', 5: 'Saturday', 6: 'Sunday',
+}
+
+// Session types that constitute a resistance-training session. Used to detect
+// when a scheduled rest day has been incorrectly converted into a lifting session.
+const STRENGTH_SESSION_TYPES = new Set<SessionType>([
+  'upper_push', 'upper_pull', 'upper_full',
+  'lower_quad', 'lower_posterior', 'lower_full',
+  'full_body',
+  'push_pull_legs_push', 'push_pull_legs_pull', 'push_pull_legs_legs',
+  'chest_biceps', 'back_triceps', 'shoulder', 'arms',
+])
+
+// Coarse muscle-group family for each session type. Types in the same family
+// are compatible substitutions; types in different families are mismatches.
+function sessionTypeFamily(type: SessionType): string {
+  switch (type) {
+    case 'upper_push':
+    case 'push_pull_legs_push':
+    case 'chest_biceps':
+      return 'push'
+    case 'upper_pull':
+    case 'push_pull_legs_pull':
+    case 'back_triceps':
+      return 'pull'
+    case 'upper_full':
+      return 'upper'
+    case 'shoulder':
+      return 'shoulder'
+    case 'arms':
+      return 'arms'
+    case 'lower_full':
+    case 'lower_quad':
+    case 'lower_posterior':
+    case 'push_pull_legs_legs':
+      return 'lower'
+    case 'full_body':
+      return 'full_body'
+    case 'conditioning':
+    case 'endurance':
+      return 'conditioning'
+    case 'sport_skill':
+    case 'recovery':
+    case 'active_recovery':
+    case 'other':
+      return 'other'
+  }
+}
+
+// Return the SCHEDULE_FOCUS_MISMATCH severity for two session types, or null
+// when they are compatible. Errors fire only for unambiguous cross-family
+// violations; warnings cover borderline cases like push→upper_full.
+function scheduleFocusMismatchSeverity(
+  expected: SessionType,
+  actual: SessionType,
+): 'error' | 'warning' | null {
+  const expFamily = sessionTypeFamily(expected)
+  const actFamily = sessionTypeFamily(actual)
+  if (expFamily === actFamily) return null
+  // Skip when either side is a catch-all or non-strength type
+  if (expFamily === 'other' || actFamily === 'other') return null
+  if (expFamily === 'full_body' || actFamily === 'full_body') return null
+  // Conditioning mismatches are caught by SCHEDULE_CARDIO_DAY_VIOLATED
+  if (expFamily === 'conditioning' || actFamily === 'conditioning') return null
+
+  // Upper body vs lower body — always an error
+  const expIsLower = expFamily === 'lower'
+  const actIsLower = actFamily === 'lower'
+  if (expIsLower !== actIsLower) return 'error'
+
+  // Push vs pull: distinct muscle groups on the same side of the body
+  if ((expFamily === 'push' && actFamily === 'pull') ||
+      (expFamily === 'pull' && actFamily === 'push')) return 'error'
+
+  // Shoulder isolation day vs push/pull compound day
+  if (expFamily === 'shoulder' && (actFamily === 'push' || actFamily === 'pull')) return 'error'
+  if ((expFamily === 'push' || expFamily === 'pull') && actFamily === 'shoulder') return 'error'
+
+  // Push/pull vs upper_full: upper_full covers both; broader but not incompatible
+  if ((expFamily === 'push' || expFamily === 'pull') && actFamily === 'upper') return 'warning'
+  if (expFamily === 'upper' && (actFamily === 'push' || actFamily === 'pull')) return 'warning'
+
+  // Arms isolation vs any other upper body session
+  if (expFamily === 'arms' || actFamily === 'arms') return 'warning'
+
+  // Shoulder vs upper_full: upper_full may include shoulder work
+  if ((expFamily === 'shoulder' && actFamily === 'upper') ||
+      (expFamily === 'upper' && actFamily === 'shoulder')) return 'warning'
+
+  return null
+}
 
 export interface QualityIssue {
   severity: 'error' | 'warning'
@@ -31,6 +131,13 @@ export interface QualityContext {
    * activity from all days (0/N) — not just when it's on some but not all.
    */
   requiredDailyActivityIds?: string[]
+  /**
+   * Explicit weekly schedule parsed from the conversation. When provided,
+   * the validator checks that every scheduled weekday is present in the draft
+   * and that rest days are not silently converted to strength sessions.
+   * Programs without an explicit schedule are unaffected.
+   */
+  explicitSchedule?: WeeklySchedule | null
 }
 
 const PROGRESSION_KEYWORDS = /\badd\b|\bincrease\b|\bprogress\b|\bweek\b|\bphase\b|\b\d+%\b|\bload\b|\bbuilding\b|\bescalat/i
@@ -859,6 +966,141 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
           presentDays:   withWalk.map(d => ({ name: d.name, weekday: d.weekday ?? null })),
         },
       })
+    }
+  }
+
+  // ── Explicit schedule enforcement ─────────────────────────────────────────
+  // When the user spelled out their full weekly schedule in the conversation,
+  // verify that every scheduled weekday is correctly represented in the draft.
+  // Only active when ctx.explicitSchedule is provided — programs without an
+  // explicit schedule are completely unaffected.
+  if (ctx.explicitSchedule && ctx.explicitSchedule.length > 0) {
+    const dailyWalkRequired = (ctx.requiredDailyActivityIds ?? []).includes('9001')
+
+    // Index draft days by weekday number for O(1) lookup.
+    const draftByWeekday = new Map<number, typeof draft.days[number]>()
+    for (const day of draft.days) {
+      if (day.weekday != null) draftByWeekday.set(Number(day.weekday), day)
+    }
+
+    // SCHEDULE_DUPLICATE_WEEKDAY: two draft days share the same weekday slot.
+    {
+      const seen = new Map<number, string>()
+      for (const day of draft.days) {
+        if (day.weekday == null) continue
+        const wk = Number(day.weekday)
+        const label = WEEKDAY_LABEL[wk] ?? String(wk)
+        if (seen.has(wk)) {
+          issues.push({
+            severity: 'error',
+            code: 'SCHEDULE_DUPLICATE_WEEKDAY',
+            message: `Two program days share weekday ${wk} (${label}): "${seen.get(wk)}" and "${day.name}". Each weekday must appear at most once. Remove or reassign the duplicate.`,
+            meta: { weekday: wk, days: [seen.get(wk), day.name] },
+          })
+        } else {
+          seen.set(wk, day.name)
+        }
+      }
+    }
+
+    for (const assignment of ctx.explicitSchedule) {
+      const wk = WEEKDAY_NUMBER[assignment.weekday]
+      if (wk == null) continue
+      const label = WEEKDAY_LABEL[wk] ?? assignment.weekday
+      const draftDay = draftByWeekday.get(wk)
+
+      if (assignment.isRest) {
+        if (draftDay != null) {
+          // A rest day that IS in the draft must not use a strength session type.
+          if (draftDay.session_type != null && STRENGTH_SESSION_TYPES.has(draftDay.session_type as SessionType)) {
+            issues.push({
+              severity: 'error',
+              code: 'SCHEDULE_REST_DAY_VIOLATED',
+              message: `The user marked ${label} as a rest day ("${assignment.focus}") but day "${draftDay.name}" assigns session_type "${draftDay.session_type}" on that weekday. Change session_type to "active_recovery" (or remove the day if no walking is required on rest days).`,
+              meta: { weekday: wk, scheduledFocus: assignment.focus, draftName: draftDay.name, sessionType: draftDay.session_type },
+            })
+          }
+        } else if (dailyWalkRequired) {
+          // Rest day with daily-walk requirement: an active_recovery day must
+          // exist so the walking exercise can be attached. The MISSING_REQUESTED_ACTIVITY
+          // check catches the missing walk; this error explains the missing day structure.
+          issues.push({
+            severity: 'error',
+            code: 'SCHEDULE_MISSING_WEEKDAY',
+            message: `The user requested daily walking and marked ${label} as a rest day, but no program day is assigned to weekday ${wk}. Add an active_recovery day on ${label} (weekday: ${wk}) containing { exercise_id: "9001", distance_m: 1609, sets: 1, rest_seconds: 0, intended_pattern: "cardio", progression_model: "duration_distance" }.`,
+            meta: { weekday: wk, scheduledFocus: assignment.focus, isRest: true, dailyWalkRequired: true },
+          })
+        }
+        // A pure rest day (isRest=true, no daily-walk requirement) may legitimately
+        // be absent from the draft — no error.
+      } else {
+        // Training day: must appear in the draft.
+        if (draftDay == null) {
+          issues.push({
+            severity: 'error',
+            code: 'SCHEDULE_MISSING_WEEKDAY',
+            message: `The user's explicit schedule includes ${label} as a training day ("${assignment.focus}") but no program day is assigned to weekday ${wk}. Add a session on ${label} (weekday: ${wk}) matching the requested focus: ${assignment.focus}.`,
+            meta: { weekday: wk, scheduledFocus: assignment.focus, isRest: false },
+          })
+        } else {
+          const draftSessionType = draftDay.session_type
+
+          // SCHEDULE_CARDIO_DAY_VIOLATED: user requested a cardio-only day but the AI
+          // generated a strength-training session type. Uses explicit session_type only —
+          // inference on a cardio-only slot is unreliable.
+          if (assignment.isCardioOnly && draftSessionType && STRENGTH_SESSION_TYPES.has(draftSessionType)) {
+            issues.push({
+              severity: 'error',
+              code: 'SCHEDULE_CARDIO_DAY_VIOLATED',
+              message: `${label} was scheduled as a cardio-only day ("${assignment.focus}") but day "${draftDay.name}" has session_type "${draftSessionType}", which is a strength-training session. Replace with session_type "conditioning" and use cardio exercises (treadmill, bike, rower, etc.).`,
+              meta: { weekday: wk, scheduledFocus: assignment.focus, draftName: draftDay.name, sessionType: draftSessionType },
+            })
+          }
+
+          // SCHEDULE_FOCUS_MISMATCH: the generated session type is from an incompatible
+          // muscle-group family relative to the requested focus. When session_type is not
+          // explicitly set, falls back to inferring from the day name and focus — the same
+          // approach MISSING_REQUIRED_ROLE already uses.
+          if (!assignment.isCardioOnly) {
+            const effectiveDraftType = draftSessionType ?? inferSessionType(draftDay.name, draftDay.focus)
+            if (effectiveDraftType) {
+              const expectedType = inferSessionType(assignment.focus)
+              if (expectedType) {
+                const mismatchSeverity = scheduleFocusMismatchSeverity(expectedType, effectiveDraftType)
+                if (mismatchSeverity) {
+                  const inferred = !draftSessionType
+                  issues.push({
+                    severity: mismatchSeverity,
+                    code: 'SCHEDULE_FOCUS_MISMATCH',
+                    message: `${label} was scheduled as "${assignment.focus}" (expected session type: ${expectedType}) but day "${draftDay.name}" has session_type "${effectiveDraftType}"${inferred ? ' (inferred from day name)' : ''}. These target different muscle groups. Regenerate this day with session_type "${expectedType}" and re-search for exercises matching the requested focus.`,
+                    meta: { weekday: wk, scheduledFocus: assignment.focus, expectedType, draftName: draftDay.name, actualType: effectiveDraftType, inferred },
+                  })
+                }
+              }
+            }
+          }
+
+          // SCHEDULE_ACCESSORY_MISSING: an explicitly named muscle group in the schedule
+          // focus text has no corresponding exercise in the draft day. Currently checks
+          // for "core" — the gap between chest_biceps/shoulder session templates (which
+          // have no required core pattern) and user requests like "Chest, Biceps, and Core".
+          // Error severity so the correction loop acts on it before the program is accepted.
+          // Accepts any exercise with a core_* intended_pattern — not one specific movement.
+          if (!assignment.isCardioOnly && /\bcore\b/i.test(assignment.focus)) {
+            const hasCoreExercise = draftDay.exercises.some(
+              ex => /^core/.test(ex.intended_pattern ?? '')
+            )
+            if (!hasCoreExercise) {
+              issues.push({
+                severity: 'error',
+                code: 'SCHEDULE_ACCESSORY_MISSING',
+                message: `${label} was scheduled as "${assignment.focus}" which includes core work, but day "${draftDay.name}" has no exercise with a core intended_pattern (core_antiextension, core_rotation, core_antirotation). Add at least one core exercise to this session.`,
+                meta: { weekday: wk, scheduledFocus: assignment.focus, draftName: draftDay.name, missingAccessory: 'core' },
+              })
+            }
+          }
+        }
+      }
     }
   }
 

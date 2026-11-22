@@ -852,6 +852,7 @@ export async function POST(req: NextRequest) {
                   weeks: draft.weeks,
                   readinessState: effectiveReadinessState ?? undefined,
                   requiredDailyActivityIds: intake.dailyWalkRequested ? ['9001'] : undefined,
+                  explicitSchedule: intake.explicitSchedule,
                 })
                 const hardErrors = qualityIssues.filter(i => i.severity === 'error')
 
