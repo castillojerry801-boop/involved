@@ -28,12 +28,28 @@ describe('getModelPricing', () => {
     expect(p!.status).toBe('confirmed')
   })
 
-  it('returns null for unknown models (gpt-6-luna)', () => {
-    expect(getModelPricing('gpt-6-luna')).toBeNull()
+  it('returns confirmed token pricing for gpt-6-luna', () => {
+    const p = getModelPricing('gpt-6-luna')
+    expect(p).not.toBeNull()
+    expect(p!.status).toBe('confirmed')
+    expect(p!.kind).toBe('token')
   })
 
-  it('returns null for gpt-6-sol', () => {
-    expect(getModelPricing('gpt-6-sol')).toBeNull()
+  it('returns confirmed token pricing for gpt-6-sol', () => {
+    const p = getModelPricing('gpt-6-sol')
+    expect(p).not.toBeNull()
+    expect(p!.status).toBe('confirmed')
+    expect(p!.kind).toBe('token')
+  })
+
+  it('gpt-6-luna has longContext rates above 272K threshold', () => {
+    const p = getModelPricing('gpt-6-luna')
+    expect(p!.kind).toBe('token')
+    const tp = p as import('../../lib/ai/pricing').TokenPricing
+    expect(tp.longContext).toBeDefined()
+    expect(tp.longContext!.thresholdInputTokens).toBe(272_000)
+    expect(tp.longContext!.inputPer1M).toBe(0.20)
+    expect(tp.longContext!.outputPer1M).toBe(0.75)
   })
 
   it('returns null for arbitrary unknown model', () => {
@@ -64,16 +80,52 @@ describe('estimateTokenCost', () => {
     expect(result.estimatedCostUsd).toBeCloseTo(inputCost + outputCost, 6)
   })
 
-  it('returns null cost and unknown status for gpt-6-luna', () => {
+  it('calculates short-context cost for gpt-6-luna (≤272K input)', () => {
+    // 15K input + 4K output at short-context rates: $0.10/1M input, $0.50/1M output
     const result = estimateTokenCost('gpt-6-luna', 15_000, 4_000, 0)
-    expect(result.estimatedCostUsd).toBeNull()
-    expect(result.pricingStatus).toBe('unknown')
+    expect(result.pricingStatus).toBe('confirmed')
+    const expected = (15_000 / 1_000_000) * 0.10 + (4_000 / 1_000_000) * 0.50
+    expect(result.estimatedCostUsd).toBeCloseTo(expected, 8)
   })
 
-  it('returns null cost and unknown status for gpt-6-sol', () => {
+  it('calculates short-context cost for gpt-6-luna with cached input', () => {
+    // 15K input, 5K cached, 4K output — cached at $0.01/1M, non-cached at $0.10/1M
+    const result = estimateTokenCost('gpt-6-luna', 15_000, 4_000, 5_000)
+    expect(result.pricingStatus).toBe('confirmed')
+    const expected = (10_000 / 1_000_000) * 0.10 + (5_000 / 1_000_000) * 0.01 + (4_000 / 1_000_000) * 0.50
+    expect(result.estimatedCostUsd).toBeCloseTo(expected, 8)
+  })
+
+  it('switches to long-context rates for gpt-6-luna when inputTokens > 272K', () => {
+    // 300K input at long-context rates: $0.20/1M input, $0.75/1M output
+    const result = estimateTokenCost('gpt-6-luna', 300_000, 4_000, 0)
+    expect(result.pricingStatus).toBe('confirmed')
+    const expected = (300_000 / 1_000_000) * 0.20 + (4_000 / 1_000_000) * 0.75
+    expect(result.estimatedCostUsd).toBeCloseTo(expected, 8)
+  })
+
+  it('uses short-context rates for gpt-6-luna at exactly the 272K threshold', () => {
+    // Exactly 272K input — threshold is strict >272K so short context applies at ==272K
+    const result = estimateTokenCost('gpt-6-luna', 272_000, 1_000, 0)
+    expect(result.pricingStatus).toBe('confirmed')
+    const expected = (272_000 / 1_000_000) * 0.10 + (1_000 / 1_000_000) * 0.50
+    expect(result.estimatedCostUsd).toBeCloseTo(expected, 8)
+  })
+
+  it('calculates short-context cost for gpt-6-sol (≤272K input)', () => {
+    // 30K input + 4K output at short-context rates: $2.00/1M input, $10.00/1M output
     const result = estimateTokenCost('gpt-6-sol', 30_000, 4_000, 0)
-    expect(result.estimatedCostUsd).toBeNull()
-    expect(result.pricingStatus).toBe('unknown')
+    expect(result.pricingStatus).toBe('confirmed')
+    const expected = (30_000 / 1_000_000) * 2.00 + (4_000 / 1_000_000) * 10.00
+    expect(result.estimatedCostUsd).toBeCloseTo(expected, 8)
+  })
+
+  it('switches to long-context rates for gpt-6-sol when inputTokens > 272K', () => {
+    // 300K input at long-context rates: $4.00/1M input, $15.00/1M output
+    const result = estimateTokenCost('gpt-6-sol', 300_000, 4_000, 0)
+    expect(result.pricingStatus).toBe('confirmed')
+    const expected = (300_000 / 1_000_000) * 4.00 + (4_000 / 1_000_000) * 15.00
+    expect(result.estimatedCostUsd).toBeCloseTo(expected, 8)
   })
 
   it('returns zero cost for zero tokens', () => {

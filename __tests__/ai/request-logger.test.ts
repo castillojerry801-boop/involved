@@ -79,24 +79,28 @@ describe('buildTokenLog', () => {
     expect(log.pricingStatus).toBe('confirmed')
   })
 
-  it('sets cost to null and pricingStatus=unknown for gpt-6-luna', () => {
+  it('computes confirmed cost for gpt-6-luna (short-context standard pricing)', () => {
     const log = buildTokenLog(USER_A, 'coach_message', 'program_draft', 'gpt-6-luna', {
       prompt_tokens: 22_000,
       completion_tokens: 4_000,
       total_tokens: 26_000,
     })
-    expect(log.estimatedCostUsd).toBeNull()
-    expect(log.pricingStatus).toBe('unknown')
+    expect(log.pricingStatus).toBe('confirmed')
+    // 22K input at $0.10/1M + 4K output at $0.50/1M
+    const expected = (22_000 / 1_000_000) * 0.10 + (4_000 / 1_000_000) * 0.50
+    expect(log.estimatedCostUsd).toBeCloseTo(expected, 8)
   })
 
-  it('sets cost to null and pricingStatus=unknown for gpt-6-sol', () => {
+  it('computes confirmed cost for gpt-6-sol (short-context standard pricing)', () => {
     const log = buildTokenLog(USER_A, 'coach_message', 'quality_escalation', 'gpt-6-sol', {
       prompt_tokens: 30_000,
       completion_tokens: 4_000,
       total_tokens: 34_000,
     })
-    expect(log.estimatedCostUsd).toBeNull()
-    expect(log.pricingStatus).toBe('unknown')
+    expect(log.pricingStatus).toBe('confirmed')
+    // 30K input at $2.00/1M + 4K output at $10.00/1M
+    const expected = (30_000 / 1_000_000) * 2.00 + (4_000 / 1_000_000) * 10.00
+    expect(log.estimatedCostUsd).toBeCloseTo(expected, 8)
   })
 
   it('does not include userId of another user (cross-user isolation)', () => {
@@ -206,10 +210,10 @@ describe('multi-round V coach token accounting', () => {
     const totalOutput = rounds.reduce((s, r) => s + (r.outputTokens ?? 0), 0)
     expect(totalInput).toBe(96_000)
     expect(totalOutput).toBe(16_000)
-    // All four rounds use unknown-priced models → cost should remain null
+    // All four rounds have confirmed pricing (gpt-6-luna and gpt-6-sol are now catalogued)
     for (const r of rounds) {
-      expect(r.estimatedCostUsd).toBeNull()
-      expect(r.pricingStatus).toBe('unknown')
+      expect(r.estimatedCostUsd).not.toBeNull()
+      expect(r.pricingStatus).toBe('confirmed')
     }
     // Operation types are distinct
     const opTypes = rounds.map(r => r.operationType)
