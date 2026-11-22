@@ -14,6 +14,7 @@ import type { WorkoutDraft, WorkoutValidationResult } from '@/lib/ai/tools/worko
 import { PROPOSE_PROGRAM_TOOL, validateProgramDraft } from '@/lib/ai/tools/program'
 import type { ProgramDraft, ProgramValidationResult } from '@/lib/ai/tools/program'
 import { validateProgramQuality } from '@/lib/v/program-quality'
+import { runProgramGeneration } from '@/lib/v/generation'
 import { extractEquipmentFromConversation, buildEquipmentCapabilitySummary } from '@/lib/v/equipment-normalize'
 import { parseProgramIntake, missingProgramContext, buildMissingContextPrompt } from '@/lib/v/program-intake'
 import {
@@ -379,8 +380,21 @@ export async function POST(req: NextRequest) {
       return
     }
 
-    // Per-request log entries — flushed to DB in finally.
+    // Per-request log entries — flushed to DB in finally (chat/workout path) or
+    // via cleanup() (program-generation early-return path).
     const requestLogs: PendingRequestLog[] = []
+
+    // Shared teardown for all early-return paths that bypass the try/finally block.
+    // Closes the stream writer and flushes token logs — must be the last async call
+    // before every early return inside the if (programGenerationMode) block.
+    const cleanup = async () => {
+      await writer.close().catch(() => {})
+      try {
+        after(() => flushRequestLogs(requestLogs))
+      } catch {
+        await flushRequestLogs(requestLogs)
+      }
+    }
 
     // Token + timing telemetry, accumulated across all rounds.
     let promptTokens = 0
@@ -628,7 +642,7 @@ export async function POST(req: NextRequest) {
         await streamText(failMsg)
         logModelSummary(missingPrompt ? 'ask_missing_field' : 'generation_failed')
         emitRaw({ type: 'done' })
-        await writer.close().catch(() => {})
+        await cleanup()
         return
       }
 
@@ -675,6 +689,81 @@ export async function POST(req: NextRequest) {
         conversationChars,
         estimatedPromptTokens: Math.round(totalChars / 4),
       })
+
+      // ── Hand off to the extracted generation loop ──────────────────────────
+      // The loop runs propose_program, quality validation, Luna correction, and
+      // Sol escalation. It has no HTTP concerns and returns structured metrics.
+      const tGen = Date.now()
+      const genResult = await runProgramGeneration({
+        userId: user.id,
+        messages: chatMessages,
+        candidateSummaryText,
+        requestSummary,
+        intake: {
+          readinessState: intake.readinessState,
+          dailyWalkRequested: intake.dailyWalkRequested,
+          explicitSchedule: intake.explicitSchedule,
+          fitnessLevel: trainingCtx?.profile.fitnessLevel,
+        },
+        models: { program: programModel, escalation: escalationModel, chat: chatModel },
+        openai,
+        prisma,
+        allowedEquipment,
+        proposeProgramTool: PROPOSE_PROGRAM_TOOL,
+        validateDraft: validateProgramDraft,
+        notify: (_, message) => emitRaw({ type: 'status', message }),
+      })
+      console.log(`[V-perf] generation=${Date.now() - tGen}ms total=${Date.now() - t0}ms`)
+
+      // Merge per-round token logs accumulated in the generation loop
+      for (const r of genResult.roundLogs) {
+        requestLogs.push(buildTokenLog(user.id, 'coach_message', r.opType, r.model, {
+          prompt_tokens: r.usage.promptTokens,
+          completion_tokens: r.usage.completionTokens,
+          ...(r.usage.cachedInputTokens
+            ? { prompt_tokens_details: { cached_tokens: r.usage.cachedInputTokens } }
+            : {}),
+        } as OpenAI.CompletionUsage))
+      }
+      promptTokens += genResult.promptTokens
+      completionTokens += genResult.completionTokens
+
+      if (genResult.outcome === 'model_error') {
+        logModelSummary('model_error')
+        emitRaw({ type: 'text', content: "I couldn't reach the program builder just now. Please try again in a moment." })
+        emitRaw({ type: 'done' })
+        await cleanup()
+        return
+      }
+
+      if (genResult.outcome === 'program_delivered' && genResult.program?.valid) {
+        await streamText(genResult.finalText)
+        if (genResult.program.program) emitRaw({ type: 'program', data: genResult.program.program })
+        console.log(`[V-perf] total=${Date.now() - t0}ms`)
+        logModelSummary('program_delivered')
+        emitRaw({ type: 'done' })
+        await cleanup()
+        return
+      }
+
+      // generation_failed, quality_exhausted, budget_exhausted → freeform guard
+      const missingPrompt = buildMissingContextPrompt(missingContext)
+      let guardMessage = missingPrompt ?? GENERATION_FAILED_MESSAGE
+      if (wouldRepeatLast(guardMessage)) guardMessage = missingPrompt ?? GENERATION_FAILED_ALT_MESSAGE
+      console.log('[V-freeform-guard]', {
+        userId: user.id,
+        genOutcome: genResult.outcome,
+        escalated: genResult.escalated,
+        qualityRetries: genResult.qualityRetries,
+        missing: missingContext.map(m => m.field),
+        action: missingPrompt ? 'ask_missing_field' : 'generation_failed',
+      })
+      await streamText(guardMessage)
+      console.log(`[V-perf] total=${Date.now() - t0}ms`)
+      logModelSummary(missingPrompt ? 'ask_missing_field' : 'generation_failed')
+      emitRaw({ type: 'done' })
+      await cleanup()
+      return
     }
 
     try {
