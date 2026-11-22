@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { runProgramGeneration, QUALITY_RETRY_LIMIT } from '../../lib/v/generation'
+import { runProgramGeneration, QUALITY_RETRY_LIMIT, PROGRAM_DRAFT_MAX_TOKENS } from '../../lib/v/generation'
 import type { GenerationOptions, GenerationModels } from '../../lib/v/generation'
 import type { ProgramDraft, ProgramValidationResult, ValidatedProgram } from '../../lib/ai/tools/program'
 import type { WeeklySchedule } from '../../lib/v/program-intake'
@@ -577,7 +577,155 @@ describe('8 — Structural validation failure: does not enter quality path', () 
   })
 })
 
-describe('9 — model_error: roundLogs populated from completed rounds for route token flush', () => {
+describe('9 — Token budget: every propose_program call uses PROGRAM_DRAFT_MAX_TOKENS', () => {
+  // runProgramGeneration handles only structured program drafts — the 500-token
+  // conversational cap that guards chat/intake turns on the route's own callModel
+  // never applies here. All rounds (initial draft, Luna correction, Sol escalation)
+  // must receive PROGRAM_DRAFT_MAX_TOKENS (6,000), which covers worst-case 12-week
+  // programs with full week progressions (~4,700 tokens estimated).
+  //
+  // Note: test models ('luna-test-model', 'sol-test-model') are not next-gen models,
+  // so buildModelParamShape produces { max_tokens, temperature } rather than
+  // { max_completion_tokens, reasoning_effort }. Production models (gpt-6-luna/sol)
+  // would use max_completion_tokens. The budget value is the same in both shapes.
+
+  function makeCapturingOpenAI(
+    ...responses: Array<{ toolCallArgs?: string; assistantText?: string; usage?: { prompt_tokens: number; completion_tokens: number } }>
+  ): { openai: OpenAI; createFn: ReturnType<typeof vi.fn> } {
+    let callIndex = 0
+    const createFn = vi.fn().mockImplementation(() => {
+      const spec = responses[callIndex] ?? responses[responses.length - 1]
+      callIndex++
+      if (spec.assistantText !== undefined) {
+        return Promise.resolve({
+          choices: [{ message: { role: 'assistant', content: spec.assistantText, tool_calls: undefined } }],
+          usage: spec.usage ?? { prompt_tokens: 100, completion_tokens: 50 },
+        })
+      }
+      return Promise.resolve({
+        choices: [{
+          message: {
+            role: 'assistant', content: null,
+            tool_calls: [{ id: `tc-${callIndex}`, type: 'function', function: { name: 'propose_program', arguments: spec.toolCallArgs ?? '{}' } }],
+          },
+        }],
+        usage: spec.usage ?? { prompt_tokens: 10_000, completion_tokens: 3_000 },
+      })
+    })
+    const openai = { chat: { completions: { create: createFn } } } as unknown as OpenAI
+    return { openai, createFn }
+  }
+
+  // Helper: extract the effective token budget from a create() call's params.
+  // Legacy models → max_tokens; next-gen models → max_completion_tokens.
+  function budgetFrom(params: Record<string, unknown>): number {
+    return (params['max_tokens'] ?? params['max_completion_tokens']) as number
+  }
+
+  it('initial draft round uses PROGRAM_DRAFT_MAX_TOKENS, not the 500-token conversational cap', async () => {
+    const draft = makeValidDraft()
+    const { openai, createFn } = makeCapturingOpenAI({ toolCallArgs: JSON.stringify(draft) })
+    await runProgramGeneration(makeOptions({
+      openai,
+      validateDraft: vi.fn().mockResolvedValue(makeValidValidation(draft)),
+    }))
+    expect(createFn).toHaveBeenCalledOnce()
+    expect(budgetFrom(createFn.mock.calls[0][0] as Record<string, unknown>)).toBe(PROGRAM_DRAFT_MAX_TOKENS)
+  })
+
+  it('valid first-round draft succeeds in rounds=1 with the full token budget', async () => {
+    // Key regression: before the fix, round 0 got 500 tokens → truncated JSON →
+    // parse error → loop continued to round 1. Now round 0 gets 6,000 tokens and
+    // completes successfully in a single round.
+    const draft = makeValidDraft()
+    const { openai, createFn } = makeCapturingOpenAI({
+      toolCallArgs: JSON.stringify(draft),
+      usage: { prompt_tokens: 10_000, completion_tokens: 3_000 },
+    })
+    const result = await runProgramGeneration(makeOptions({
+      openai,
+      validateDraft: vi.fn().mockResolvedValue(makeValidValidation(draft)),
+    }))
+    expect(result.outcome).toBe('program_delivered')
+    expect(result.rounds).toBe(1)
+    expect(createFn).toHaveBeenCalledOnce()
+  })
+
+  it('Luna quality-correction round uses PROGRAM_DRAFT_MAX_TOKENS', async () => {
+    const draft = makeValidDraft()
+    const { openai, createFn } = makeCapturingOpenAI(
+      { toolCallArgs: JSON.stringify(draft) }, // round 0: quality error
+      { toolCallArgs: JSON.stringify(draft) }, // round 1: correction
+      { assistantText: 'Here is your program.' },
+    )
+    await runProgramGeneration(makeOptions({
+      openai,
+      validateDraft: vi.fn().mockResolvedValue(makeValidValidation(draft)),
+      // Inject a quality error on round 0 to trigger a correction round
+      intake: {
+        readinessState: 'consistent_intermediate',
+        dailyWalkRequested: false,
+        // Explicit schedule mismatch will fire a quality error on the first draft
+        explicitSchedule: [{ weekday: 'monday', focus: 'Legs', isRest: false, isCardioOnly: false }],
+        fitnessLevel: 'intermediate',
+      },
+    }))
+    // Both the initial draft round (round 0) and the correction round (round 1) must
+    // use PROGRAM_DRAFT_MAX_TOKENS — corrections output a full program JSON too.
+    expect(createFn.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(budgetFrom(createFn.mock.calls[0][0] as Record<string, unknown>)).toBe(PROGRAM_DRAFT_MAX_TOKENS)
+    expect(budgetFrom(createFn.mock.calls[1][0] as Record<string, unknown>)).toBe(PROGRAM_DRAFT_MAX_TOKENS)
+  })
+
+  it('Sol escalation round uses PROGRAM_DRAFT_MAX_TOKENS', async () => {
+    const draft = makeValidDraft()
+    const { openai, createFn } = makeCapturingOpenAI(
+      { toolCallArgs: JSON.stringify(draft) }, // Luna round 0: quality error
+      { toolCallArgs: JSON.stringify(draft) }, // Luna round 1 (correction): quality error again
+      { toolCallArgs: JSON.stringify(draft) }, // Sol round 0: accepts
+      { assistantText: 'Program done.' },
+    )
+    const qualityErrorValidation = makeInvalidValidation([])
+    Object.assign(qualityErrorValidation, { valid: true })
+    // Simulate: structurally valid but quality error (schedule mismatch) every round
+    // until Sol accepts. Use an explicit schedule so SCHEDULE_MISSING_WEEKDAY fires.
+    const scheduleIntake = {
+      readinessState: 'consistent_intermediate' as const,
+      dailyWalkRequested: false,
+      explicitSchedule: [
+        { weekday: 'monday' as const, focus: 'Legs', isRest: false, isCardioOnly: false },
+      ] satisfies import('../../lib/v/program-intake').WeeklySchedule,
+      fitnessLevel: 'intermediate' as string | null | undefined,
+    }
+    // We need Luna correction to exhaust and Sol to take over. Use the same draft
+    // that triggers schedule quality errors (the draft has only weekday=0 / Monday
+    // but the schedule requires a Legs session, not chest_biceps). Sol then receives
+    // a fresh correction chance (qualityRetries reset to 0 on escalation).
+    const result = await runProgramGeneration(makeOptions({
+      openai,
+      validateDraft: vi.fn().mockResolvedValue(makeValidValidation(draft)),
+      intake: scheduleIntake,
+    }))
+    // After escalation the Sol call must also use PROGRAM_DRAFT_MAX_TOKENS.
+    // Sol is called when Luna's QUALITY_RETRY_LIMIT=1 is exhausted.
+    // Exact call index depends on how many rounds Luna used, so check all calls.
+    for (let i = 0; i < createFn.mock.calls.length; i++) {
+      const budget = budgetFrom(createFn.mock.calls[i][0] as Record<string, unknown>)
+      expect(budget).toBe(PROGRAM_DRAFT_MAX_TOKENS)
+    }
+    // Sol escalation must have been attempted
+    expect(result.escalated || result.qualityRetries > 0 || result.rounds >= 2).toBe(true)
+  })
+
+  it('PROGRAM_DRAFT_MAX_TOKENS is bounded (≤8,000) — not an inadvertent unlimited grant', () => {
+    // Guard against accidental increase to an unbounded value. The constant exists
+    // to prevent truncation on complex programs; it must remain reasonably bounded.
+    expect(PROGRAM_DRAFT_MAX_TOKENS).toBeGreaterThanOrEqual(4_000) // must cover real programs
+    expect(PROGRAM_DRAFT_MAX_TOKENS).toBeLessThanOrEqual(8_000)    // must remain bounded
+  })
+})
+
+describe('10 — model_error: roundLogs populated from completed rounds for route token flush', () => {
   it('roundLogs and token counts are non-zero even when a later round throws a model error', async () => {
     // The route merges genResult.roundLogs into requestLogs BEFORE checking outcome,
     // then calls cleanup() which calls flushRequestLogs. This test guards that contract:

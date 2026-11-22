@@ -23,8 +23,19 @@ import { validateProgramQuality } from '@/lib/v/program-quality'
 import { buildModelParamShape, describeOpenAIError } from '@/lib/ai/models'
 import { MAX_ORCHESTRATION_TOKENS } from '@/lib/v/search-orchestration'
 
-// ─── Re-export so tests can reference the production constant ─────────────────
+// ─── Re-export so tests can reference the production constants ────────────────
 export const QUALITY_RETRY_LIMIT = 1
+
+// Output-token budget for every propose_program call (initial draft, correction,
+// and Sol escalation). runProgramGeneration handles only structured program drafts —
+// the 500-token conversational cap that guards chat/intake turns never applies here.
+//
+// Sizing: an 8-week 7-day program with week progressions uses ~2,900 output tokens
+// (observed). A 12-week worst case (7 days × 5 exercises × 4 progressions) estimates
+// ~4,700 tokens. 6,000 provides ~25% headroom above that, bounded well below any
+// model context limit. Correction and escalation rounds need the same budget — they
+// also output a full program JSON.
+export const PROGRAM_DRAFT_MAX_TOKENS = 6_000
 const MAX_ROUNDS = 12
 
 // ─── Prompts used in the generation loop ─────────────────────────────────────
@@ -190,15 +201,13 @@ export async function runProgramGeneration(
 
   const callModel = async (messages: OpenAI.Chat.ChatCompletionMessageParam[]) => {
     const selectedModel = toolRoundModel()
-    const hasToolHistory = messages.some(m => m.role === 'tool')
-    const maxTokens = hasToolHistory ? 4000 : 500
     const params = {
       model: selectedModel,
       messages,
       tools: [proposeProgramTool],
       tool_choice: { type: 'function' as const, function: { name: 'propose_program' } },
       parallel_tool_calls: false,
-      ...buildModelParamShape(selectedModel, true, maxTokens),
+      ...buildModelParamShape(selectedModel, true, PROGRAM_DRAFT_MAX_TOKENS),
     } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming
 
     for (let attempt = 0; attempt < 3; attempt++) {
