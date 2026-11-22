@@ -24,6 +24,7 @@ import {
 } from '@/lib/v/search-orchestration'
 import type { QualityIssue } from '@/lib/v/program-quality'
 import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL, GET_MEAL_LOG_TOOL } from './constants'
+import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
 import { calculateNutrition } from '@/lib/v/tools/calculate-nutrition'
 import type { CalculateNutritionArgs } from '@/lib/v/tools/calculate-nutrition'
 import { getMealLog } from '@/lib/v/tools/get-meal-log'
@@ -548,6 +549,35 @@ export async function POST(req: NextRequest) {
       }
       hadSearchCalls = true
 
+      // ── Walking overlay — inject exercise 9001 when daily walk is requested ──
+      // The deterministic search plan covers only resistance-training movement
+      // patterns (squat, hinge, horizontal_push, etc.). Exercise 9001 (walking,
+      // bodyPart: "cardio") would never appear in those results, so without this
+      // step Luna would be told to use ONLY pool IDs while 9001 is absent —
+      // causing MISSING_REQUESTED_ACTIVITY to fire unrepairably in correction rounds.
+      // Conditioning exercises bypass equipment filtering (exerciseRole === 'conditioning'),
+      // so this search is safe regardless of the user's equipment profile.
+      if (intake.dailyWalkRequested) {
+        searchTurn++
+        const cardioRaw = await executeExerciseSearchAsync({ bodyPart: 'cardio', query: 'walking', limit: 3 }, prisma)
+        const cardioFiltered = filterCandidatesByEquipment(cardioRaw, allowedEquipment)
+        const addedCount = addCandidates(candidatePool, cardioFiltered)
+        console.log('[V-search-turn]', {
+          userId: user.id,
+          outerRound: 0,
+          searchTurn,
+          pattern: 'cardio_walking',
+          core: false,
+          toolCallsThisTurn: 1,
+          resultCount: cardioFiltered.length,
+          newCandidateCount: addedCount,
+          candidateCount: candidatePool.byId.size,
+          coveredPatterns: coveredCorePatterns(candidatePool),
+          missingPatterns: missingCorePatterns(candidatePool),
+          decision: 'walking_overlay',
+        })
+      }
+
       // ── Deterministic candidate compaction ──────────────────────────────────
       // 14 searches can return ~80+ candidates; Luna does not need them all, and
       // resending the full pool on every correction round is the main prompt-bloat
@@ -604,21 +634,32 @@ export async function POST(req: NextRequest) {
 
       // Immutable request constraints, reused verbatim in correction rounds so a
       // cheap correction prompt still carries everything Luna must honour.
+      const scheduleSuffix = intake.explicitSchedule
+        ? ` Weekly schedule: ${intake.explicitSchedule.map(d => `${d.weekday}=${d.isRest ? 'rest' : d.focus}`).join(', ')}.`
+        : ''
+      const walkSuffix = intake.dailyWalkRequested ? ' Daily walk (exercise 9001) required every day.' : ''
       requestSummary =
         `${intake.weeks ?? '?'}-week program, ${intake.trainingDaysPerWeek ?? '?'} days/week. ` +
         `Goal: ${intake.primaryGoal ?? 'general fitness'}${intake.secondaryGoals.length ? ' + ' + intake.secondaryGoals.join(', ') : ''}. ` +
         `Training background: ${intake.readinessState ?? 'unspecified'}. ` +
-        `Equipment: ${allowedEquipment?.length ? allowedEquipment.join(', ') : 'full gym'}.`
+        `Equipment: ${allowedEquipment?.length ? allowedEquipment.join(', ') : 'full gym'}.` +
+        scheduleSuffix + walkSuffix
 
       // Hand the compacted candidate pool to Luna and FORCE propose_program below.
       genPhase = 'draft'
+      const scheduleInstruction = intake.explicitSchedule
+        ? `\n\nMUST FOLLOW THIS EXACT WEEKLY SCHEDULE:\n` +
+          intake.explicitSchedule.map(d => `${d.weekday.charAt(0).toUpperCase() + d.weekday.slice(1)}: ${d.focus}`).join('\n')
+        : ''
       chatMessages.push({
         role: 'system',
         content:
           `EXERCISE CANDIDATE POOL — ${compactedPool.byId.size} validated exercises for the user's equipment. ` +
           `Build the full ${intake.weeks ?? 'requested'}-week program NOW by calling propose_program, using ONLY these exercise IDs:\n` +
           candidateSummaryText +
-          `\n\nYou have sufficient candidates. Do NOT request more searches. If a minor accessory role lacks an ideal match, pick the closest appropriate candidate above.`,
+          `\n\nThe search phase is complete. Do NOT request more searches. Use ONLY these exercise IDs. If a minor accessory role lacks an ideal match, pick the closest appropriate candidate above.` +
+          scheduleInstruction +
+          `\n\n${PROGRAM_INTELLIGENCE_PROMPT}`,
       })
 
       // Context-size telemetry — reveals where the draft prompt budget goes.
@@ -810,6 +851,7 @@ export async function POST(req: NextRequest) {
                   fitnessLevel: trainingCtx?.profile.fitnessLevel,
                   weeks: draft.weeks,
                   readinessState: effectiveReadinessState ?? undefined,
+                  requiredDailyActivityIds: intake.dailyWalkRequested ? ['9001'] : undefined,
                 })
                 const hardErrors = qualityIssues.filter(i => i.severity === 'error')
 
@@ -1098,10 +1140,13 @@ export async function POST(req: NextRequest) {
       // model's final text is untrusted — it may be an improvised outline or
       // "I'll use common movements" fallback. Instead of streaming it, decide what
       // to say from the STRUCTURED INTAKE STATE, not a hardcoded question.
+      // Note: programAccepted extracted explicitly to avoid TypeScript narrowing
+      // pendingProgram to 'never' inside the OR expression after the for loop.
+      const programAccepted = pendingProgram !== null && pendingProgram.valid
       const generationFailed =
         qualityExhausted ||
-        (proposeProgramAttempted && !pendingProgram?.valid) ||
-        (conversationHasProgramIntent && hadSearchCalls && !pendingProgram?.valid && !pendingWorkout?.valid)
+        (proposeProgramAttempted && !programAccepted) ||
+        (conversationHasProgramIntent && hadSearchCalls && !programAccepted && !pendingWorkout?.valid)
 
       if (generationFailed) {
         // Prefer asking for a genuinely-missing field. Only if nothing is missing

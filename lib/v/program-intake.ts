@@ -2,6 +2,23 @@ import 'server-only'
 import { extractEquipmentFromConversation } from './equipment-normalize'
 import type { VTrainingContext, ReadinessState } from './training-context'
 
+// ─── Explicit weekly schedule types ──────────────────────────────────────────
+
+export type Weekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+
+export interface DayAssignment {
+  weekday: Weekday
+  /** Raw focus text as supplied by the user: "Chest, Biceps, and Core" */
+  focus: string
+  /** True when the user marked this day as rest ("Rest from lifting", "Rest", "Active recovery") */
+  isRest: boolean
+  /** True when the day is cardio-only with no resistance-training mention */
+  isCardioOnly: boolean
+}
+
+/** An ordered explicit weekly schedule extracted from the conversation. */
+export type WeeklySchedule = DayAssignment[]
+
 /**
  * Structured program-intake state.
  *
@@ -22,6 +39,10 @@ export interface ProgramIntakeState {
   /** Canonical equipment list. null = not yet resolved. Empty-but-resolved is impossible; "body weight" always present once resolved. */
   equipmentProfile: string[] | null
   weeks: number | null
+  /** Explicit day-by-day schedule when the user spelled out their week. Null when only a frequency was given. */
+  explicitSchedule: WeeklySchedule | null
+  /** True when the user requested daily walking (every day, all 7 days). */
+  dailyWalkRequested: boolean
 }
 
 export type IntakeField =
@@ -60,6 +81,11 @@ export function extractReadiness(text: string): ReadinessState | null {
   if (/\breturning\b|\bcoming back\b|\bback (?:after|into training|to (?:lifting|training|the gym))\b|\bafter a (?:long )?break\b|\btime off\b|\bhaven'?t trained\b|\bused to (?:train|lift|work ?out)\b|\bgot out of (?:shape|the habit|training)\b/.test(t)) {
     return 'detrained'
   }
+  // Explicit fitness-level labels map to their canonical ReadinessState equivalents.
+  // "advanced" is the highest tier; "intermediate" maps to consistent_intermediate
+  // (they train regularly). Both are more specific than recreationally_active.
+  if (/\badvanced\b/i.test(t)) return 'advanced'
+  if (/\bintermediate\b/i.test(t)) return 'consistent_intermediate'
   // Currently training / active
   if (/\bcurrently training\b|\bstill training\b|\btraining consistently\b|\btrain regularly\b|\bactively (?:training|lifting)\b|\bi (?:train|lift) \d/.test(t)) {
     return 'recreationally_active'
@@ -124,6 +150,78 @@ export function detectActiveField(assistantText: string): IntakeField | null {
   if (/what equipment|equipment.*available|equipment do you have|equipment.*at home/.test(t)) return 'equipment'
   if (/main focus|main goal|primary goal|build muscle.*lose fat|what.*your goal/.test(t)) return 'goal'
   return null
+}
+
+// ─── Explicit weekly-schedule extraction ─────────────────────────────────────
+
+const WEEKDAY_MAP: Record<string, Weekday> = {
+  monday: 'monday', mon: 'monday',
+  tuesday: 'tuesday', tue: 'tuesday', tues: 'tuesday',
+  wednesday: 'wednesday', wed: 'wednesday',
+  thursday: 'thursday', thu: 'thursday', thur: 'thursday', thurs: 'thursday',
+  friday: 'friday', fri: 'friday',
+  saturday: 'saturday', sat: 'saturday',
+  sunday: 'sunday', sun: 'sunday',
+}
+
+/**
+ * Extract an explicit weekday schedule from a single text block.
+ * Matches lines of the form "Monday: Chest, Biceps" or "Tuesday - Rest from lifting".
+ * Returns null when fewer than 2 days are matched (too few to be a real schedule).
+ */
+export function extractExplicitSchedule(text: string): WeeklySchedule | null {
+  const linePattern =
+    /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\s*[:–—\-]\s*([^\n\r]+)/gi
+
+  const assignments: DayAssignment[] = []
+  const seen = new Set<Weekday>()
+
+  let match: RegExpExecArray | null
+  while ((match = linePattern.exec(text)) !== null) {
+    const dayKey = match[1].toLowerCase()
+    const weekday = WEEKDAY_MAP[dayKey]
+    if (!weekday || seen.has(weekday)) continue
+    seen.add(weekday)
+
+    const focus = match[2].trim().replace(/[.;,]$/, '')
+    const focusLower = focus.toLowerCase()
+    const isRest = /\brest\b/.test(focusLower)
+    // Cardio-only: contains "cardio" but no resistance-training body-part or movement
+    const isCardioOnly =
+      !isRest &&
+      /\bcardio\b/.test(focusLower) &&
+      !/\b(chest|back|legs?|shoulder|arm|bicep|tricep|core|strength|push|pull|squat|deadlift|bench|row|press|lunge|curl|dip|fly|flye)\b/.test(focusLower)
+
+    assignments.push({ weekday, focus, isRest, isCardioOnly })
+  }
+
+  return assignments.length >= 2 ? assignments : null
+}
+
+/**
+ * Scan conversation messages in order and return the most recent complete
+ * explicit schedule (≥ 2 days). Later messages can override earlier ones
+ * when the user provides a full corrected schedule in a follow-up turn.
+ */
+export function extractConversationSchedule(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+): WeeklySchedule | null {
+  let schedule: WeeklySchedule | null = null
+  for (const m of messages) {
+    if (m.role !== 'user') continue
+    const s = extractExplicitSchedule(m.content)
+    if (s && s.length >= 2) schedule = s
+  }
+  return schedule
+}
+
+/**
+ * Returns true when the user has requested daily walking across all days
+ * of the week (every day, all 7 days). Distinct from incidental mention of
+ * walking on some days.
+ */
+export function extractDailyWalkRequested(text: string): boolean {
+  return /\bwalk(?:ing)?\b.*\bevery\s+day\b|\bevery\s+day\b.*\bwalk\b|\bdaily\s+walk(?:ing)?\b|\bwalk(?:ing)?\b.*\b(?:all\s+7|7)\s+days?\b/i.test(text)
 }
 
 /**
@@ -246,15 +344,28 @@ export function parseProgramIntake(
   const readinessSource: ProgramIntakeState['readinessSource'] =
     convReadiness ? 'conversation' : (dbReadinessIsCurrent ? 'profile' : null)
 
-  // Training days — CONTEXT-AWARE per-message extraction (the fix for the loop).
-  // Strong signals ("4 days", "4x/week") are read from any user message. A bare
-  // answer ("4", "four") is only accepted when the immediately preceding assistant
-  // turn asked for training availability — so a stray number elsewhere in the
-  // conversation cannot silently mutate the field.
-  const convDays = extractConversationDays(messages)
-  const trainingDaysPerWeek = convDays ?? dbCtx?.profile.weeklyWorkoutTarget ?? null
-  const trainingDaysSource: ProgramIntakeState['trainingDaysSource'] =
-    convDays != null ? 'conversation' : (dbCtx?.profile.weeklyWorkoutTarget != null ? 'profile' : null)
+  // Explicit weekly schedule — scan conversation for "Monday: Chest, ..." lines.
+  const explicitSchedule = extractConversationSchedule(messages)
+
+  // Daily walk — scan user messages for "walk every day" / "daily walk" etc.
+  const dailyWalkRequested = extractDailyWalkRequested(userText)
+
+  // Training days — explicit schedule is the strongest signal: derive the count
+  // from non-rest days. Fall back to natural-language extraction, then DB.
+  let convDays: number | null = null
+  let trainingDaysSource: ProgramIntakeState['trainingDaysSource'] = null
+  if (explicitSchedule !== null) {
+    convDays = explicitSchedule.filter(d => !d.isRest).length
+    trainingDaysSource = 'conversation'
+  } else {
+    convDays = extractConversationDays(messages)
+    trainingDaysSource = convDays != null ? 'conversation' : null
+  }
+  const trainingDaysPerWeek =
+    convDays ?? dbCtx?.profile.weeklyWorkoutTarget ?? null
+  if (trainingDaysSource === null && dbCtx?.profile.weeklyWorkoutTarget != null) {
+    trainingDaysSource = 'profile'
+  }
 
   // Location.
   const trainingLocation = extractLocation(userText)
@@ -296,6 +407,8 @@ export function parseProgramIntake(
     secondaryGoals,
     equipmentProfile,
     weeks,
+    explicitSchedule,
+    dailyWalkRequested,
   }
 }
 
