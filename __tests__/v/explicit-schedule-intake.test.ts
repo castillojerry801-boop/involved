@@ -3,16 +3,19 @@
  * where V asked "How many days per week can you train?" even though the user
  * provided a complete Monday–Sunday schedule with named muscle-group focus.
  *
- * Production reproduction message (verbatim):
- *   "Build me an 8-week intermediate strength & conditioning program.
+ * Production reproduction message (verbatim, confirmed from session transcript):
+ *   "I'm an intermediate lifter. Build me a strength and conditioning program.
  *    Monday: Chest, Biceps, and Core
  *    Tuesday: Back and Triceps
- *    Wednesday: Legs and Shoulders
- *    Thursday: Rest from lifting, but active recovery
- *    Friday: Chest, Biceps, and Core
- *    Saturday: Back and Triceps
- *    Sunday: Rest from lifting, but active recovery
- *    I also want to walk 1 mile every day."
+ *    Wednesday: Rest
+ *    Thursday: Shoulders and Core
+ *    Friday: Legs
+ *    Saturday: Cardio
+ *    Sunday: Rest
+ *    I also want to walk one mile every day, including rest days."
+ *
+ * Critical schedule invariant: Wednesday = Rest, Thursday = training (Shoulders and Core).
+ * Any parser change that swaps these must fail here first.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -30,15 +33,19 @@ import type { VTrainingContext } from '../../lib/v/training-context'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-const PRODUCTION_MSG = `Build me an 8-week intermediate strength & conditioning program.
+const PRODUCTION_MSG = `I'm an intermediate lifter. Build me a strength and conditioning program.
+
 Monday: Chest, Biceps, and Core
 Tuesday: Back and Triceps
-Wednesday: Legs and Shoulders
-Thursday: Rest from lifting, but active recovery
-Friday: Chest, Biceps, and Core
-Saturday: Back and Triceps
-Sunday: Rest from lifting, but active recovery
-I also want to walk 1 mile every day.`
+Wednesday: Rest
+Thursday: Shoulders and Core
+Friday: Legs
+Saturday: Cardio
+Sunday: Rest
+
+I also want to walk one mile every day, including rest days.
+
+Build a progressive program with exercises, sets, reps, rest periods, and weekly progression.`
 
 function emptyCtx(overrides: Partial<VTrainingContext> = {}): VTrainingContext {
   return {
@@ -80,12 +87,26 @@ describe('extractExplicitSchedule', () => {
     expect(weekdays).toContain('sunday')
   })
 
-  it('marks Thursday and Sunday as rest days', () => {
+  it('marks Wednesday and Sunday as rest days (not Thursday)', () => {
     const schedule = extractExplicitSchedule(PRODUCTION_MSG)!
+    const wed = schedule.find(d => d.weekday === 'wednesday')
     const thu = schedule.find(d => d.weekday === 'thursday')
     const sun = schedule.find(d => d.weekday === 'sunday')
-    expect(thu?.isRest).toBe(true)
+    expect(wed?.isRest).toBe(true)
     expect(sun?.isRest).toBe(true)
+    // Thursday is a training day (Shoulders and Core) — must NOT be rest
+    expect(thu?.isRest).toBe(false)
+  })
+
+  it('REGRESSION — Wed/Thu swap: Thursday is training, Wednesday is rest', () => {
+    const schedule = extractExplicitSchedule(PRODUCTION_MSG)!
+    const wed = schedule.find(d => d.weekday === 'wednesday')
+    const thu = schedule.find(d => d.weekday === 'thursday')
+    // If these assertions flip, the parser is swapping Wednesday and Thursday.
+    expect(wed?.isRest).toBe(true)
+    expect(wed?.focus.toLowerCase()).toContain('rest')
+    expect(thu?.isRest).toBe(false)
+    expect(thu?.focus.toLowerCase()).toMatch(/shoulder/)
   })
 
   it('preserves focus text for training days', () => {
@@ -132,7 +153,7 @@ describe('extractReadiness — fitness level labels', () => {
     expect(extractReadiness('I am an advanced athlete')).toBe('advanced')
   })
 
-  it('production message "intermediate strength & conditioning" extracts consistent_intermediate', () => {
+  it('production message "intermediate lifter" phrase extracts consistent_intermediate', () => {
     expect(extractReadiness(PRODUCTION_MSG)).toBe('consistent_intermediate')
   })
 
@@ -312,7 +333,6 @@ describe('Walking + explicit schedule quality integration', () => {
       weeks: 1,
       progression_strategy: 'Linear',
       phases: [{ name: 'Base', weeks: '1', focus: 'Foundation' }],
-      week_progressions: [{ week: 1, focus: 'Volume', expected_rpe: '7' }],
       days: [{
         name: 'Monday — Chest, Biceps, and Core',
         session_type: 'chest_biceps' as SessionType,
@@ -336,7 +356,6 @@ describe('Walking + explicit schedule quality integration', () => {
       weeks: 1,
       progression_strategy: 'None',
       phases: [{ name: 'Base', weeks: '1', focus: 'Recovery' }],
-      week_progressions: [{ week: 1, focus: 'Recovery', expected_rpe: '3' }],
       days: [{
         name: 'Thursday — Active Recovery',
         session_type: 'active_recovery' as SessionType,
@@ -361,7 +380,6 @@ describe('Walking + explicit schedule quality integration', () => {
       weeks: 1,
       progression_strategy: 'Linear',
       phases: [{ name: 'Base', weeks: '1', focus: 'Foundation' }],
-      week_progressions: [{ week: 1, focus: 'Volume', expected_rpe: '7' }],
       days: [{
         name: 'Monday',
         session_type: 'chest_biceps' as SessionType,
@@ -388,7 +406,6 @@ describe('Walking + explicit schedule quality integration', () => {
       weeks: 1,
       progression_strategy: 'Linear',
       phases: [{ name: 'Base', weeks: '1', focus: 'Foundation' }],
-      week_progressions: [{ week: 1, focus: 'Volume', expected_rpe: '7' }],
       days: [{
         name: 'Monday',
         session_type: 'chest_biceps' as SessionType,

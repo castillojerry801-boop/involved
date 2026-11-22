@@ -2,17 +2,18 @@
  * V Coach — Live Explicit-Schedule End-to-End Test
  *
  * Verifies the FULL pipeline for the exact production request that caused
- * "How many days per week can you train?" to fire incorrectly:
+ * "How many days per week can you train?" to fire incorrectly
+ * (confirmed from session transcript 99546c19):
  *
- *   "Build me an 8-week intermediate strength & conditioning program.
+ *   "I'm an intermediate lifter. Build me a strength and conditioning program.
  *    Monday: Chest, Biceps, and Core
  *    Tuesday: Back and Triceps
- *    Wednesday: Legs and Shoulders
- *    Thursday: Rest from lifting, but active recovery
- *    Friday: Chest, Biceps, and Core
- *    Saturday: Back and Triceps
- *    Sunday: Rest from lifting, but active recovery
- *    I also want to walk 1 mile every day."
+ *    Wednesday: Rest                       ← rest day
+ *    Thursday: Shoulders and Core          ← training day (NOT rest)
+ *    Friday: Legs
+ *    Saturday: Cardio
+ *    Sunday: Rest
+ *    I also want to walk one mile every day, including rest days."
  *
  * This test mirrors the EXACT steps the coach route takes:
  *   1. parseProgramIntake → verify 5 days, consistent_intermediate, dailyWalk=true
@@ -20,14 +21,14 @@
  *   3. Build system prompt with scheduleInstruction (the same way coach route does)
  *   4. Run generation loop with real OpenAI
  *   5. Verify exercise 9001 (walking) on all 7 days
- *   6. Verify Thursday + Sunday are active_recovery days
- *   7. Verify 8 weeks
+ *   6. Verify Wednesday + Sunday are active_recovery days (not Thursday)
+ *   7. Verify weekly progression present
  *   8. Report rounds, tokens, cost, latency
  *
  * Guard: LIVE_AI_TEST=true
  * Run:   LIVE_AI_TEST=true npx vitest run __tests__/v/live-explicit-schedule.test.ts
  *
- * Cost estimate: ~$0.25–0.50 (gpt-4o, 7-day 8-week program)
+ * Cost estimate: ~$0.25–0.50 (gpt-4o, 7-day program)
  */
 
 import { describe, it, expect, beforeAll } from 'vitest'
@@ -74,15 +75,19 @@ const LIVE = process.env.LIVE_AI_TEST === 'true'
 
 // ─── Production message ───────────────────────────────────────────────────────
 
-const PRODUCTION_MSG = `Build me an 8-week intermediate strength & conditioning program.
+const PRODUCTION_MSG = `I'm an intermediate lifter. Build me a strength and conditioning program.
+
 Monday: Chest, Biceps, and Core
 Tuesday: Back and Triceps
-Wednesday: Legs and Shoulders
-Thursday: Rest from lifting, but active recovery
-Friday: Chest, Biceps, and Core
-Saturday: Back and Triceps
-Sunday: Rest from lifting, but active recovery
-I also want to walk 1 mile every day.`
+Wednesday: Rest
+Thursday: Shoulders and Core
+Friday: Legs
+Saturday: Cardio
+Sunday: Rest
+
+I also want to walk one mile every day, including rest days.
+
+Build a progressive program with exercises, sets, reps, rest periods, and weekly progression.`
 
 // ─── Synthetic DB context (equipment from profile, no weekly target set) ─────
 
@@ -115,9 +120,11 @@ describe('Deterministic intake verification — production message', () => {
     expect(intake.readinessState).toBe('consistent_intermediate')
   })
 
-  it('parseProgramIntake: weeks=8', () => {
+  it('parseProgramIntake: weeks=null (message specifies no explicit duration)', () => {
+    // The actual production message does not say "8-week" or any week count.
+    // V must ask for duration or receive it in a follow-up — this is correct behavior.
     const intake = parseProgramIntake([{ role: 'user', content: PRODUCTION_MSG }], DB_CTX)
-    expect(intake.weeks).toBe(8)
+    expect(intake.weeks).toBeNull()
   })
 
   it('parseProgramIntake: dailyWalkRequested=true', () => {
@@ -222,15 +229,16 @@ ${PROGRAM_INTELLIGENCE_PROMPT}
 
 REQUEST (immutable): ${requestSummary}`
 
+  const weeksLabel = intake.weeks ? `${intake.weeks}-week` : 'requested'
   const candidatePoolMsg =
-    `Build the full 8-week program NOW by calling propose_program, using ONLY exercise IDs from search results. ` +
+    `Build the full ${weeksLabel} program NOW by calling propose_program, using ONLY exercise IDs from search results. ` +
     `You have sufficient candidates. Do NOT request more searches.` +
     scheduleInstruction
 
   type ChatMessage = OpenAI.Chat.ChatCompletionMessageParam
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
-    { role: 'user',   content: PRODUCTION_MSG + '\n\nSearch for exercises for each day, then propose the full 8-week program.' },
+    { role: 'user',   content: PRODUCTION_MSG + '\n\nSearch for exercises for each day, then propose the full program.' },
   ]
 
   const tools = [SEARCH_EXERCISES_TOOL, PROPOSE_PROGRAM_TOOL]
@@ -417,8 +425,10 @@ describe.skipIf(!LIVE)('Live E2E — production explicit-schedule request (gpt-4
     expect(result.success).toBe(true)
   })
 
-  it('REQ-2: produced an 8-week program', () => {
-    expect(result.program?.weeks).toBe(8)
+  it('REQ-2: produced a multi-week program (weeks defined and > 0)', () => {
+    // The production message does not specify a week count; V chooses an appropriate duration.
+    expect(result.program?.weeks).toBeDefined()
+    expect((result.program?.weeks ?? 0)).toBeGreaterThan(0)
   })
 
   it('REQ-3: program has exactly 7 days', () => {
@@ -431,12 +441,13 @@ describe.skipIf(!LIVE)('Live E2E — production explicit-schedule request (gpt-4
     expect(daysWithWalk.length).toBe(7)
   })
 
-  it('REQ-5: Thursday is rest or active_recovery (user said "rest from lifting")', () => {
-    const thu = result.program?.days.find(d => String(d.weekday) === 'thursday')
-    expect(thu).toBeDefined()
-    const sessionType = String(thu!.session_type ?? '')
+  it('REQ-5: Wednesday is rest or active_recovery (user said "Rest")', () => {
+    // Wednesday = "Rest" in the production message; Thursday = "Shoulders and Core" (training).
+    const wed = result.program?.days.find(d => String(d.weekday) === 'wednesday')
+    expect(wed).toBeDefined()
+    const sessionType = String(wed!.session_type ?? '')
     const isRestDay = sessionType === 'active_recovery' || sessionType === 'rest'
-    const onlyWalking = thu!.exercises.every(ex => ex.exercise_id === '9001')
+    const onlyWalking = wed!.exercises.every(ex => ex.exercise_id === '9001')
     expect(isRestDay || onlyWalking).toBe(true)
   })
 
