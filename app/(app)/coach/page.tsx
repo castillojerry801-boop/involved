@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Send, Lock, Loader2, User, Dumbbell, Sparkles, CalendarDays, ChevronDown } from 'lucide-react'
+import { Send, Lock, Loader2, User, Dumbbell, Sparkles, CalendarDays, ChevronDown, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
@@ -14,6 +14,7 @@ import { VoiceMicInput } from '@/components/v/VoiceMicInput'
 import { HealthSyncTrigger } from '@/components/today/HealthSyncTrigger'
 import { MealLogConfirmCard } from '@/components/v/MealLogConfirmCard'
 import type { MealLogPendingData } from '@/components/v/MealLogConfirmCard'
+import { CoachResearchPanel } from '@/components/v/CoachResearchPanel'
 
 interface TextMessage { role: 'user' | 'assistant'; content: string; type: 'text' }
 interface WorkoutMessage {
@@ -478,6 +479,7 @@ export default function CoachPage() {
   const [usage, setUsage] = useState<Usage | null>(null)
   const [limitReached, setLimitReached] = useState(false)
   const [programModalOpen, setProgramModalOpen] = useState(false)
+  const [showResearch, setShowResearch] = useState(false)
   // Tracks the most recent signed calculationToken from calculate_nutrition so it can be
   // forwarded to the next turn. This lets V call prepare_meal_log without re-running the
   // food lookup when the user says "log that" in a follow-up message.
@@ -607,6 +609,7 @@ export default function CoachPage() {
     <>
     <HealthSyncTrigger />
     <GenerateProgramModal open={programModalOpen} onOpenChange={setProgramModalOpen} />
+    {showResearch && <CoachResearchPanel onClose={() => setShowResearch(false)} />}
     <div className="flex flex-col h-[calc(100vh-4rem)] md:h-screen max-w-2xl mx-auto px-4 md:px-8">
 
       {/* Header */}
@@ -627,6 +630,14 @@ export default function CoachPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowResearch(true)}
+            aria-label="Research basis"
+            title="Research basis"
+            className="flex items-center justify-center size-8 rounded-lg border border-white bg-white dark:bg-transparent dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <Info className="size-3.5" />
+          </button>
           <button
             onClick={() => setProgramModalOpen(true)}
             className="flex items-center gap-1 rounded-lg border border-white bg-white dark:bg-transparent dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
@@ -732,6 +743,10 @@ export default function CoachPage() {
 
       {/* Input */}
       <div className="shrink-0 pb-4 md:pb-6">
+        <p className="text-[10px] text-zinc-400 text-center mb-2 leading-relaxed px-2">
+          General fitness guidance only — not medical diagnosis or treatment.
+          Consult a healthcare professional for medical advice.
+        </p>
         <div className="flex items-end gap-2 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3 focus-within:border-zinc-400 dark:focus-within:border-zinc-500 transition-colors shadow-sm">
           <textarea
             ref={inputRef}

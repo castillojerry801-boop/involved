@@ -10,6 +10,7 @@ import {
   trainingPercentages,
   kgToLbs,
 } from '@/lib/calculators/one-rm'
+import { CalculatorSources } from '@/components/calculators/calculator-sources'
 
 const REPS_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
@@ -217,6 +218,11 @@ export default function OneRepMaxPage() {
               target. Always use a spotter or safety equipment when training near your maximum capacity.
             </p>
           </div>
+
+          <CalculatorSources sources={[
+            { label: 'Epley B (1985) — 1RM estimation from submaximal reps (Predicting Barbell Velocity)', href: 'https://www.sciencedirect.com/science/article/abs/pii/0360310985900282' },
+            { label: 'ACSM/NSCA roundtable on resistance exercise testing (J Strength Cond Res, 2009)', href: 'https://journals.lww.com/nsca-jscr/fulltext/2009/08000/american_college_of_sports_medicine_roundtable.aspx' },
+          ]} />
         </div>
       )}
 

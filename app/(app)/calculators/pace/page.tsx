@@ -15,6 +15,7 @@ import {
   secondsToHms,
   STANDARD_DISTANCES,
 } from '@/lib/calculators/pace'
+import { CalculatorSources } from '@/components/calculators/calculator-sources'
 
 type CalcMode = 'pace' | 'finish_time' | 'race_projection'
 
@@ -428,6 +429,9 @@ export default function PacePage() {
                   effort and training. Real race times depend on course, conditions, fitness, and strategy.
                 </p>
               </div>
+              <CalculatorSources sources={[
+                { label: 'Riegel PS (1981) — athletic records and human endurance (American Scientist)', href: 'https://www.jstor.org/stable/27851786' },
+              ]} />
             </>
           )
         })()}

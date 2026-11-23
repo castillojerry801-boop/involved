@@ -561,54 +561,56 @@ function ConnectSection() {
           )}
         </div>
 
-        {/* ── Health Connect card ── */}
-        <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Smartphone className="size-5 text-zinc-600 dark:text-zinc-300" />
-            <span className="font-semibold text-sm">Health Connect</span>
-          </div>
-          <p className="text-xs text-zinc-500 mb-2">
-            Android platform integration — syncs activity, heart rate, and body metrics.
-          </p>
-          {hcStatus === 'checking' && (
-            <div className="h-5 w-28 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
-          )}
-          {hcStatus === 'unavailable' && (
-            <Badge variant="warning" className="text-xs">Requires native Android app</Badge>
-          )}
-          {hcStatus === 'not_connected' && (
-            <div className="space-y-1.5">
-              <button
-                onClick={handleHCConnect}
-                className="rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-4 py-2 text-xs font-semibold hover:bg-zinc-700 dark:hover:bg-zinc-100 transition-colors"
-              >
-                Connect
-              </button>
-              {hcError && <p className="text-xs text-red-500">{hcError}</p>}
+        {/* ── Health Connect card — Android only ── */}
+        {platform !== 'ios' && (
+          <div className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Smartphone className="size-5 text-zinc-600 dark:text-zinc-300" />
+              <span className="font-semibold text-sm">Health Connect</span>
             </div>
-          )}
-          {hcStatus === 'connecting' && (
-            <div className="flex items-center gap-2">
-              <Loader2 className="size-4 animate-spin text-zinc-400" />
-              <span className="text-xs text-zinc-400">Connecting…</span>
-            </div>
-          )}
-          {hcStatus === 'connected' && (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Check className="size-3.5 text-emerald-500" />
-                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Connected</span>
+            <p className="text-xs text-zinc-500 mb-2">
+              Android platform integration — syncs activity, heart rate, and body metrics.
+            </p>
+            {hcStatus === 'checking' && (
+              <div className="h-5 w-28 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+            )}
+            {hcStatus === 'unavailable' && (
+              <Badge variant="warning" className="text-xs">Requires native Android app</Badge>
+            )}
+            {hcStatus === 'not_connected' && (
+              <div className="space-y-1.5">
+                <button
+                  onClick={handleHCConnect}
+                  className="rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 px-4 py-2 text-xs font-semibold hover:bg-zinc-700 dark:hover:bg-zinc-100 transition-colors"
+                >
+                  Connect
+                </button>
+                {hcError && <p className="text-xs text-red-500">{hcError}</p>}
               </div>
-              <button
-                onClick={handleHCDisconnect}
-                disabled={hcDisconnecting}
-                className="text-xs text-zinc-400 hover:text-red-500 transition-colors disabled:opacity-50"
-              >
-                {hcDisconnecting ? 'Disconnecting…' : 'Disconnect'}
-              </button>
-            </div>
-          )}
-        </div>
+            )}
+            {hcStatus === 'connecting' && (
+              <div className="flex items-center gap-2">
+                <Loader2 className="size-4 animate-spin text-zinc-400" />
+                <span className="text-xs text-zinc-400">Connecting…</span>
+              </div>
+            )}
+            {hcStatus === 'connected' && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Check className="size-3.5 text-emerald-500" />
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Connected</span>
+                </div>
+                <button
+                  onClick={handleHCDisconnect}
+                  disabled={hcDisconnecting}
+                  className="text-xs text-zinc-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                >
+                  {hcDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
 
         {/* ── Strava card ── */}

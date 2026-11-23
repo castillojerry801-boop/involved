@@ -1,15 +1,16 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowRight, Dumbbell, Target, TrendingUp, Users, Zap, PersonStanding, Trophy, Activity, Utensils, Smartphone } from 'lucide-react'
+import { ArrowRight, Dumbbell, Target, TrendingUp, Users, Zap, PersonStanding, Trophy, Activity, Utensils } from 'lucide-react'
 import { InvolvedLogo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
+import { AndroidHeroBadge, AndroidFooterLink } from '@/components/marketing/AndroidDownloadLink'
 
 export const metadata: Metadata = {
   title: {
     absolute: 'Involved — Fitness App, Workout Tracker & Calorie Counter',
   },
-  description: 'Free fitness app for Android. Track workouts, count calories, scan food barcodes, monitor your health, and get personalized AI coaching. Build real habits with Involved.',
+  description: 'Free fitness app for iOS and Android. Track workouts, count calories, scan food barcodes, monitor your health, and get personalized AI coaching. Build real habits with Involved.',
   alternates: {
     canonical: '/',
   },
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
     type: 'website',
     url: 'https://www.involvedfit.com',
     title: 'Involved — Workout Tracker, Calorie Counter & AI Fitness Coach',
-    description: 'Free fitness app for Android. Scan barcodes to log food, track workouts, monitor your health, and get AI coaching from V. Build lasting fitness habits.',
+    description: 'Free fitness app for iOS and Android. Scan barcodes to log food, track workouts, monitor your health, and get AI coaching from V. Build lasting fitness habits.',
     siteName: 'Involved',
     images: [
       {
@@ -31,27 +32,27 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Involved — Workout Tracker, Calorie Counter & AI Fitness Coach',
-    description: 'Free fitness app for Android. Scan barcodes to log food, track workouts, and get AI coaching from V.',
+    description: 'Free fitness app for iOS and Android. Scan barcodes to log food, track workouts, and get AI coaching from V.',
     images: ['/opengraph-image'],
   },
 }
 
-const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.involved.app'
+const APP_STORE_URL = 'https://apps.apple.com/app/involved/id6479923631'
 
 const jsonLd = {
   '@context': 'https://schema.org',
   '@type': 'MobileApplication',
   name: 'Involved',
   url: 'https://www.involvedfit.com',
-  description: 'Free fitness app for Android. Track workouts, count calories with barcode scanning, monitor your health, and get personalized AI coaching. Build lasting fitness habits.',
-  operatingSystem: 'ANDROID',
+  description: 'Free fitness app for iOS and Android. Track workouts, count calories with barcode scanning, monitor your health, and get personalized AI coaching. Build lasting fitness habits.',
+  operatingSystem: 'iOS, ANDROID',
   applicationCategory: 'HealthApplication',
   offers: {
     '@type': 'Offer',
     price: '0',
     priceCurrency: 'USD',
   },
-  installUrl: PLAY_STORE_URL,
+  installUrl: APP_STORE_URL,
 }
 
 const features = [
@@ -180,16 +181,7 @@ export default function LandingPage() {
 
             <p className="mt-5 text-sm text-zinc-500">Free to start. No credit card required.</p>
 
-            <a
-              href={PLAY_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
-            >
-              <Smartphone className="size-4" />
-              Also available on Android
-              <ArrowRight className="size-3" />
-            </a>
+            <AndroidHeroBadge />
           </div>
         </section>
 
@@ -307,7 +299,7 @@ export default function LandingPage() {
             <Link href="/privacy" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Terms</Link>
             <Link href="/support" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Support</Link>
-            <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" className="hover:text-zinc-900 dark:hover:text-white transition-colors">Android App</a>
+            <AndroidFooterLink />
           </div>
           <p>© 2026 GameFloHQ LLC. All rights reserved.</p>
         </div>

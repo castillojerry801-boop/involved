@@ -11,6 +11,7 @@ import {
   GAIN_RATE_OPTIONS_KG,
   type WeightGoalDirection,
 } from '@/lib/calculators/weight-goal'
+import { CalculatorSources } from '@/components/calculators/calculator-sources'
 
 const LBS_PER_KG = 2.20462
 
@@ -360,6 +361,11 @@ export default function WeightGoalPage() {
                 Not medical advice. Consult a healthcare provider before starting any weight-change program.
               </p>
             </div>
+
+            <CalculatorSources sources={[
+              { label: 'Hall KD et al. (2011) — quantification of caloric intake for body-weight change (PubMed)', href: 'https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3302369/' },
+              { label: 'Healthy weight loss rate — CDC Healthy Weight guidance', href: 'https://www.cdc.gov/healthy-weight/losing-weight/index.html' },
+            ]} />
           </>
         )}
       </div>

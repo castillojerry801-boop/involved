@@ -21,6 +21,7 @@ import {
   FALLBACK_TARGET,
   type FullNutritionTarget,
 } from '@/lib/calculators/apply-targets'
+import { CalculatorSources } from '@/components/calculators/calculator-sources'
 
 type ProfileBioSex = 'male' | 'female' | 'prefer_not_to_say'
 
@@ -422,6 +423,10 @@ export default function TDEEPage() {
               All values are statistical estimates derived from the Mifflin–St Jeor equation (1990).
               Actual energy needs depend on factors this formula does not capture.
             </p>
+            <CalculatorSources sources={[
+              { label: 'Mifflin MD et al. (1990) — original BMR equation paper (PubMed)', href: 'https://pubmed.ncbi.nlm.nih.gov/2305711/' },
+              { label: 'Activity multipliers — ACSM Physical Activity Guidelines', href: 'https://www.acsm.org/education-resources/trending-topics-resources/physical-activity-guidelines' },
+            ]} />
           </>
         )}
       </div>

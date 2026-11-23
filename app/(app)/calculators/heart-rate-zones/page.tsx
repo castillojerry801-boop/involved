@@ -9,6 +9,7 @@ import {
   calcHRZonesAdvanced,
   estimateMaxHR,
 } from '@/lib/calculators/heart-rate-zones'
+import { CalculatorSources } from '@/components/calculators/calculator-sources'
 
 type Mode = 'basic' | 'advanced'
 
@@ -283,6 +284,11 @@ export default function HeartRateZonesPage() {
                 for your specific physiology.
               </p>
             </div>
+
+            <CalculatorSources sources={[
+              { label: 'Tanaka H et al. (2001) — age-predicted max HR formula (AHA Journals)', href: 'https://www.ahajournals.org/doi/10.1161/01.cir.103.6.820' },
+              { label: 'Karvonen method — target heart rate zones (American Heart Association)', href: 'https://www.heart.org/en/healthy-living/fitness/fitness-basics/target-heart-rates' },
+            ]} />
           </>
         )}
       </div>

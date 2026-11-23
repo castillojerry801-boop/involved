@@ -16,6 +16,7 @@ import {
   MACRO_SPLITS,
   type MacroGoal,
 } from '@/lib/calculators/macros'
+import { CalculatorSources } from '@/components/calculators/calculator-sources'
 import {
   buildMacroPayload,
   FALLBACK_TARGET,
@@ -339,6 +340,10 @@ function MacrosContent() {
             Gram values are calculated from 4 kcal/g protein, 4 kcal/g carbohydrate, and 9 kcal/g fat.
             These are estimates — individual needs vary.
           </p>
+          <CalculatorSources sources={[
+            { label: 'Protein caloric density — USDA Dietary Reference Intakes (4 kcal/g protein/carb, 9 kcal/g fat)', href: 'https://www.nal.usda.gov/human-nutrition-and-food-safety/dri-calculator' },
+            { label: 'Protein intake for muscle gain — ACSM/AND/DC Joint Position Statement (2016)', href: 'https://pubmed.ncbi.nlm.nih.gov/26891166/' },
+          ]} />
         </div>
       )}
 

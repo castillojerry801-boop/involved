@@ -78,7 +78,7 @@ export default function Image() {
           }}
         >
           <span style={{ fontSize: 18, color: '#10b981', fontWeight: 700 }}>
-            Free on Android
+            Free on iOS &amp; Android
           </span>
         </div>
       </div>
