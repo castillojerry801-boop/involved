@@ -161,9 +161,11 @@ export function filterCandidatesByEquipment(
   }
 
   return results.filter(e => {
-    // Conditioning exercises use cardio equipment (treadmill, bike, rower) that is
-    // never listed in strength profiles — always treat them as available.
-    if (e.exerciseRole === 'conditioning') return true
+    // Bodyweight conditioning (walking, running, calisthenics) is always available.
+    // Machine-dependent cardio (stationary bike, treadmill, elliptical) requires the
+    // user to have gym/machine access — falls through to the standard equipment check.
+    if (e.exerciseRole === 'conditioning' &&
+        normalizeExdbEquipment(e.equipment) === 'bodyweight') return true
 
     // Bridge: YMove "machine" and ExDB "leverage machine" both normalise to EqFamily
     // "machine", so the profile allows YMove exercises regardless of catalog vocabulary.

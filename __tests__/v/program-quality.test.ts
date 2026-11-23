@@ -589,7 +589,7 @@ describe('Scenario 14 — taper:true on final week_progressions entry satisfies 
   })
 })
 
-// ─── Scenario 15 — CONDITIONING_NO_AEROBIC_MODALITY warning ──────────────────
+// ─── Scenario 15 — CONDITIONING_NO_AEROBIC_MODALITY (error when session_type=conditioning) ──────
 
 describe('Scenario 15 — conditioning day with no cardio pattern → CONDITIONING_NO_AEROBIC_MODALITY', () => {
   const makeResistanceDay = (name: string) =>
@@ -599,7 +599,7 @@ describe('Scenario 15 — conditioning day with no cardio pattern → CONDITIONI
       makeExercise('3470', 'lunge'),
     ])
 
-  it('fires CONDITIONING_NO_AEROBIC_MODALITY when session_type=conditioning has no cardio exercise', async () => {
+  it('fires CONDITIONING_NO_AEROBIC_MODALITY as error when session_type=conditioning has no cardio exercise', async () => {
     const draft: ProgramDraft = {
       program_name: 'Conditioning Mislabeled',
       weeks: 6,
@@ -618,7 +618,7 @@ describe('Scenario 15 — conditioning day with no cardio pattern → CONDITIONI
       ],
     }
     const issues = validateProgramQuality(draft, { weeks: 6 })
-    expect(issues.find(i => i.code === 'CONDITIONING_NO_AEROBIC_MODALITY')?.severity).toBe('warning')
+    expect(issues.find(i => i.code === 'CONDITIONING_NO_AEROBIC_MODALITY')?.severity).toBe('error')
   })
 
   it('does NOT fire when conditioning day has a cardio exercise', async () => {

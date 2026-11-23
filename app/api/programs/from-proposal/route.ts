@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
                       targetRepsMin: ex.reps_min ?? null,
                       targetRepsMax: ex.reps_max ?? null,
                       targetDurationSeconds: ex.duration_seconds ?? null,
+                      targetDistanceM: ex.distance_m ?? null,
                       // Base load (kg) and base target RIR — the week resolver layers overrides on top.
                       targetWeightKg: startingLoadKg,
                       targetRir: ex.target_rir ?? null,

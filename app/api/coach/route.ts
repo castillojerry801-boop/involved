@@ -565,15 +565,16 @@ export async function POST(req: NextRequest) {
 
       // ── Walking overlay — inject exercise 9001 when daily walk is requested ──
       // The deterministic search plan covers only resistance-training movement
-      // patterns (squat, hinge, horizontal_push, etc.). Exercise 9001 (walking,
-      // bodyPart: "cardio") would never appear in those results, so without this
-      // step Luna would be told to use ONLY pool IDs while 9001 is absent —
-      // causing MISSING_REQUESTED_ACTIVITY to fire unrepairably in correction rounds.
-      // Conditioning exercises bypass equipment filtering (exerciseRole === 'conditioning'),
-      // so this search is safe regardless of the user's equipment profile.
+      // patterns (squat, hinge, horizontal_push, etc.). Exercise 9001 (walking)
+      // would never appear in those results, so without this step Luna would be
+      // told to use ONLY pool IDs while 9001 is absent — causing
+      // MISSING_REQUESTED_ACTIVITY to fire unrepairably in correction rounds.
+      // Uses movementPattern: 'cardio' (classifier-derived) rather than bodyPart: 'cardio'
+      // (raw DB field) which returned 0 results in production when 9001's DB bodyPart
+      // did not match the literal string "cardio". The classifier's output is authoritative.
       if (intake.dailyWalkRequested) {
         searchTurn++
-        const cardioRaw = await executeExerciseSearchAsync({ bodyPart: 'cardio', query: 'walking', limit: 3 }, prisma)
+        const cardioRaw = await executeExerciseSearchAsync({ movementPattern: 'cardio', query: 'walking', limit: 3 }, prisma)
         const cardioFiltered = filterCandidatesByEquipment(cardioRaw, allowedEquipment)
         const addedCount = addCandidates(candidatePool, cardioFiltered)
         console.log('[V-search-turn]', {
@@ -589,6 +590,41 @@ export async function POST(req: NextRequest) {
           coveredPatterns: coveredCorePatterns(candidatePool),
           missingPatterns: missingCorePatterns(candidatePool),
           decision: 'walking_overlay',
+        })
+      }
+
+      // ── Conditioning overlay — inject cardio exercises when conditioning day is scheduled ──
+      // The deterministic resistance search never covers cardio/conditioning modalities
+      // (stationary bike, rower, treadmill, etc.). When the user explicitly schedules
+      // a cardio or conditioning day, run a targeted search to populate the pool with
+      // real aerobic alternatives beyond just the daily walk. Without this, Luna has
+      // no conditioning exercises to place on Saturday and defaults to exercise 9001,
+      // which triggers CONDITIONING_WALK_ONLY since the walk is already on other days.
+      // Equipment filtering applies to conditioning exercises: bodyweight cardio (walking,
+      // running) is always available; machine-dependent cardio (stationary bike, treadmill,
+      // elliptical) requires gym/machine access in the user's equipment profile.
+      const hasExplicitConditioningDay = intake.explicitSchedule?.some(d =>
+        !d.isRest && /cardio|conditioning|aerobic|endurance/i.test(d.focus ?? '')
+      ) ?? false
+
+      if (hasExplicitConditioningDay) {
+        searchTurn++
+        const conditioningRaw = await executeExerciseSearchAsync({ movementPattern: 'cardio', limit: 8 }, prisma)
+        const conditioningFiltered = filterCandidatesByEquipment(conditioningRaw, allowedEquipment)
+        const addedCount = addCandidates(candidatePool, conditioningFiltered)
+        console.log('[V-search-turn]', {
+          userId: user.id,
+          outerRound: 0,
+          searchTurn,
+          pattern: 'conditioning_aerobic',
+          core: false,
+          toolCallsThisTurn: 1,
+          resultCount: conditioningFiltered.length,
+          newCandidateCount: addedCount,
+          candidateCount: candidatePool.byId.size,
+          coveredPatterns: coveredCorePatterns(candidatePool),
+          missingPatterns: missingCorePatterns(candidatePool),
+          decision: 'conditioning_day_overlay',
         })
       }
 

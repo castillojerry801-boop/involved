@@ -907,10 +907,45 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
       ex.intended_pattern === 'cardio' || ex.intended_pattern === 'carry'
     )
     if (!hasAerobicExercise && day.exercises.length > 0) {
+      // Escalate to error when session_type is explicitly 'conditioning' — that
+      // indicates the user requested a dedicated conditioning day, so strength-only
+      // content is a prompt-adherence failure, not just a labeling inconsistency.
+      const severity: 'error' | 'warning' = day.session_type === 'conditioning' ? 'error' : 'warning'
       issues.push({
-        severity: 'warning',
+        severity,
         code: 'CONDITIONING_NO_AEROBIC_MODALITY',
-        message: `Day "${day.name}" is labeled as conditioning but contains no exercise with intended_pattern "cardio" or "carry". Add a real conditioning modality (treadmill run, rower, Airdyne, sled push, farmer carry, etc.) or rename the day to reflect its actual content.`,
+        message: severity === 'error'
+          ? `Day "${day.name}" is an explicitly scheduled conditioning session but contains only strength exercises (no intended_pattern "cardio" or "carry"). Add at least one cardio exercise from the conditioning pool — stationary bike, rower, Airdyne, treadmill run, or walking (exercise 9001, intended_pattern "cardio") with a distance or duration target.`
+          : `Day "${day.name}" is labeled as conditioning but contains no exercise with intended_pattern "cardio" or "carry". Add a real conditioning modality (treadmill run, rower, Airdyne, sled push, farmer carry, etc.) or rename the day to reflect its actual content.`,
+      })
+    }
+  }
+
+  // CONDITIONING_WALK_ONLY: conditioning day's only cardio is the daily walk (9001),
+  // which is also programmed on other days. The walk doesn't substitute for a real
+  // conditioning modality — the day needs an additional aerobic exercise.
+  for (const day of draft.days) {
+    const isConditioningDay2 =
+      day.session_type === 'conditioning' ||
+      /\bcondition|metcon|\bcardio\b|\baerob/i.test(day.name + ' ' + (day.focus ?? ''))
+    if (!isConditioningDay2) continue
+
+    const aerobicExs = day.exercises.filter(ex =>
+      ex.intended_pattern === 'cardio' || ex.intended_pattern === 'carry'
+    )
+    if (aerobicExs.length === 0) continue // already flagged by CONDITIONING_NO_AEROBIC_MODALITY
+
+    const onlyWalkCardio = aerobicExs.every(ex => ex.exercise_id === '9001')
+    const isRequiredDailyWalk = (ctx.requiredDailyActivityIds ?? []).includes('9001')
+    const walkOnMultipleDays =
+      draft.days.filter(d => d.exercises.some(e => e.exercise_id === '9001')).length > 1
+
+    if (onlyWalkCardio && (isRequiredDailyWalk || walkOnMultipleDays)) {
+      issues.push({
+        severity: 'error',
+        code: 'CONDITIONING_WALK_ONLY',
+        message: `Day "${day.name}" is a conditioning session but its only cardio activity is the daily walk (exercise 9001), which is also programmed on other days. Add a dedicated conditioning exercise (stationary bike, rower, treadmill, or other cardio from the pool) to this day — the daily walk alone does not constitute a conditioning session.`,
+        meta: { dayName: day.name },
       })
     }
   }

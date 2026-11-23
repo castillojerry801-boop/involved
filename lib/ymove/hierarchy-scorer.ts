@@ -121,6 +121,9 @@ const EXDB_EQ_MAP: Record<string, EqFamily> = {
   'cable':            'cable',
   'kettlebell':       'kettlebell',
   'leverage machine': 'machine',
+  'stationary bike':  'machine',  // cardio machine — requires gym access
+  'elliptical machine': 'machine',
+  'stepmill machine': 'machine',
   'band':             'band',
   'resistance band':  'band',
   'body weight':      'bodyweight',

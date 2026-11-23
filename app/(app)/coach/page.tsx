@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Send, Lock, Loader2, User, Dumbbell, Sparkles, CalendarDays } from 'lucide-react'
+import { Send, Lock, Loader2, User, Dumbbell, Sparkles, CalendarDays, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ExerciseMedia } from '@/components/training/ExerciseMedia'
 import { getInvolvedDisplayName } from '@/lib/exercises/canonical'
@@ -33,11 +33,22 @@ interface WorkoutMessage {
     }>
   }
 }
+interface WeekProgressionEntry {
+  week: number
+  sets?: number
+  reps_min?: number
+  reps_max?: number
+  deload?: boolean
+  taper?: boolean
+  load_note?: string
+  distance_m?: number
+}
 interface ProgramMessage {
   role: 'assistant'; type: 'program'
   data: {
     program_name: string
     description?: string
+    weeks?: number
     days: Array<{
       name: string
       estimated_duration_minutes: number
@@ -47,8 +58,11 @@ interface ProgramMessage {
         reps_min?: number
         reps_max?: number
         duration_seconds?: number
+        distance_m?: number
         rest_seconds: number
         notes?: string
+        progression_model?: string
+        week_progressions?: WeekProgressionEntry[]
         exercise: { id: string; name: string; bodyPart: string; equipment: string; target: string }
       }>
     }>
@@ -244,6 +258,12 @@ function ProgramCard({ data }: { data: ProgramMessage['data'] }) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showProgressions, setShowProgressions] = useState(false)
+
+  const hasWeekProgressions = data.days.some(d =>
+    d.exercises.some(ex => ex.week_progressions && ex.week_progressions.length > 0)
+  )
+  const durationWeeks = data.weeks ?? null
 
   const handleSave = async () => {
     setSaving(true)
@@ -277,9 +297,16 @@ function ProgramCard({ data }: { data: ProgramMessage['data'] }) {
             <p className="font-bold text-zinc-900 dark:text-white">{data.program_name}</p>
             {data.description && <p className="text-xs text-zinc-500 mt-0.5">{data.description}</p>}
           </div>
-          <span className="shrink-0 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-2 py-1 text-xs text-zinc-500">
-            {data.days.length} days
-          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {durationWeeks && (
+              <span className="rounded-lg bg-emerald-100 dark:bg-emerald-900/30 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-400">
+                {durationWeeks} wks
+              </span>
+            )}
+            <span className="rounded-lg bg-zinc-100 dark:bg-zinc-800 px-2 py-1 text-xs text-zinc-500">
+              {data.days.length} days
+            </span>
+          </div>
         </div>
         <p className="text-xs text-zinc-400 mt-1">{totalExercises} exercises total</p>
       </div>
@@ -302,8 +329,10 @@ function ProgramCard({ data }: { data: ProgramMessage['data'] }) {
                       {ex.sets} sets ·{' '}
                       {ex.reps_min != null && ex.reps_max != null
                         ? ex.reps_min === ex.reps_max ? `${ex.reps_min} reps` : `${ex.reps_min}–${ex.reps_max} reps`
-                        : ex.duration_seconds ? `${ex.duration_seconds}s` : '—'}
-                      {' · '}{ex.rest_seconds}s rest
+                        : ex.distance_m != null
+                          ? `${(ex.distance_m / 1609).toFixed(1)} mi`
+                          : ex.duration_seconds ? `${ex.duration_seconds}s` : '—'}
+                      {ex.rest_seconds > 0 ? ` · ${ex.rest_seconds}s rest` : ''}
                     </p>
                   </div>
                 </div>
@@ -312,6 +341,56 @@ function ProgramCard({ data }: { data: ProgramMessage['data'] }) {
           </div>
         ))}
       </div>
+      {hasWeekProgressions && (
+        <>
+          <button
+            onClick={() => setShowProgressions(p => !p)}
+            className="w-full flex items-center justify-center gap-1.5 py-2 text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors border-t border-zinc-100 dark:border-zinc-800"
+          >
+            <ChevronDown className={cn('size-3 transition-transform', showProgressions && 'rotate-180')} />
+            {showProgressions ? 'Hide progression' : `View ${durationWeeks ? `${durationWeeks}-week` : ''} progression plan`}
+          </button>
+          {showProgressions && (
+            <div className="px-4 pb-3 space-y-3 border-t border-zinc-100 dark:border-zinc-800">
+              {data.days.flatMap((day, di) =>
+                day.exercises
+                  .filter(ex => ex.week_progressions && ex.week_progressions.length > 0)
+                  .map((ex, ei) => (
+                    <div key={`${di}-${ei}`}>
+                      <p className="text-[10px] font-semibold text-zinc-500 mb-1 mt-2">
+                        {day.name} — {getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)}
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {ex.week_progressions!.map(wp => (
+                          <span
+                            key={wp.week}
+                            className={cn(
+                              'inline-flex items-center rounded px-1.5 py-0.5 text-[10px]',
+                              wp.deload
+                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                : wp.taper
+                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                  : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
+                            )}
+                          >
+                            W{wp.week}: {wp.sets ?? ex.sets}×{
+                              wp.reps_min != null && wp.reps_max != null
+                                ? wp.reps_min === wp.reps_max ? wp.reps_min : `${wp.reps_min}–${wp.reps_max}`
+                                : wp.distance_m != null
+                                  ? `${(wp.distance_m / 1609).toFixed(1)}mi`
+                                  : ex.reps_min != null ? `${ex.reps_min}–${ex.reps_max}` : '—'
+                            }
+                            {wp.deload ? ' ↓' : wp.taper ? ' ↓↓' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+              )}
+            </div>
+          )}
+        </>
+      )}
       <div className="px-4 py-3 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
         {error && <p className="text-xs text-red-500">{error}</p>}
         <button

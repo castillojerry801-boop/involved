@@ -53,6 +53,7 @@ RULES:
 • For a missing structural deload (≥8-week programs): add a deload — set deload:true on the recovery-week week_progressions entries (e.g. ~week 4 and ~week 8) AND reduce sets that week, or add a labeled deload phase.
 • For a missing final taper (≥12-week programs): set taper:true on the final week's week_progressions and reduce volume.
 • For a conditioning day with no aerobic modality: add a cardio/carry exercise from the pool, or convert the day to match its real content.
+• If correction removes or replaces exercises (especially conditioning modalities), update the program description so it accurately reflects the final program content. Do not leave the description referencing exercises or activities that are no longer present.
 • Do NOT respond to the user in text. The only valid output is a propose_program tool call.`
 
 const QUALITY_EXHAUSTED_MESSAGE = "Quality validation failed after all retries. Ask the user: \"I ran into a problem finding the right exercises for your setup — can you tell me exactly what equipment you have available?\" Do NOT output a program. Do NOT list exercises. Do NOT say \"I'll use standard exercises.\" Do NOT create a general outline. Ask the one clarifying question and stop."

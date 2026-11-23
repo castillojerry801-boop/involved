@@ -141,13 +141,33 @@ describe('filterCandidatesByEquipment', () => {
     expect(kept).toHaveLength(1)
   })
 
-  it('conditioning exercises always pass regardless of equipment profile', () => {
+  it('bodyweight conditioning always passes regardless of equipment profile', () => {
+    const walk = ex('cardio', {
+      id: '9001',
+      equipment: 'body weight',
+      exerciseRole: 'conditioning',
+    })
+    const kept = filterCandidatesByEquipment([walk], ['barbell'])
+    expect(kept).toHaveLength(1)
+  })
+
+  it('machine-dependent conditioning is filtered for bodyweight-only user', () => {
     const treadmill = ex('cardio', {
       id: 'ymv:aabbccdd-0000-0000-0000-000000000003',
       equipment: 'treadmill',
       exerciseRole: 'conditioning',
     })
-    const kept = filterCandidatesByEquipment([treadmill], ['barbell'])
+    const kept = filterCandidatesByEquipment([treadmill], ['body weight'])
+    expect(kept).toHaveLength(0)
+  })
+
+  it('machine-dependent conditioning passes for gym user (leverage machine)', () => {
+    const treadmill = ex('cardio', {
+      id: 'ymv:aabbccdd-0000-0000-0000-000000000003',
+      equipment: 'leverage machine',
+      exerciseRole: 'conditioning',
+    })
+    const kept = filterCandidatesByEquipment([treadmill], ['leverage machine'])
     expect(kept).toHaveLength(1)
   })
 
