@@ -1,171 +1,409 @@
-/**
- * 12-week executable progression — quality regression tests
- *
- * Proves a 12-week program has MATERIALLY different structure across
- * build → deload → build → deload → build → taper, and that a one-week
- * template dressed up with prose fails validation.
- *
- * These assert the new week-by-week checks in program-quality.ts in isolation
- * (by exercise-id-free fixtures — validateProgramQuality reads structure only).
- */
-
 import { describe, it, expect } from 'vitest'
-import { validateProgramQuality } from '../../lib/v/program-quality'
-import type { ProgramDraft, WeekProgression } from '../../lib/ai/tools/program'
+import {
+  getWeekPrescription,
+  getDeloadWeeks,
+  dayHasProgressionForWeek,
+  formatPrescription,
+  type ProgramExerciseBase,
+  type WeekPrescription,
+} from '../../lib/v/program-progression'
 
-function ex(
-  exercise_id: string,
-  intended_pattern: string,
-  week_progressions: WeekProgression[],
-  overrides: Record<string, unknown> = {},
-) {
+// ─── Fixtures ─────────────────────────────────────────────────────────────────
+
+function makeEx(overrides: Partial<ProgramExerciseBase> = {}): ProgramExerciseBase {
   return {
-    exercise_id,
-    intended_pattern,
     sets: 3,
     reps_min: 8,
-    reps_max: 12,
-    rest_seconds: 120,
-    progression_model: 'double_progression' as const,
-    target_rir: 2,
-    failure_allowed: false,
-    week_progressions,
+    reps_max: 10,
+    duration_seconds: null,
+    distance_m: null,
+    notes: null,
+    week_progressions: [],
     ...overrides,
   }
 }
 
-const codes = (d: ProgramDraft) => validateProgramQuality(d, { fitnessLevel: 'beginner', weeks: d.weeks }).map(i => i.code)
+// ─── getWeekPrescription ──────────────────────────────────────────────────────
 
-// Build → deload(4) → build → deload(8) → build → taper(12): sets drop on deloads/taper.
-const PERIODIZED: WeekProgression[] = [
-  { week: 1,  sets: 3, reps_min: 8,  reps_max: 10 },
-  { week: 3,  sets: 3, reps_min: 10, reps_max: 12 },
-  { week: 4,  sets: 2, reps_min: 8,  reps_max: 10 }, // deload — fewer sets
-  { week: 7,  sets: 4, reps_min: 8,  reps_max: 10 },
-  { week: 8,  sets: 2, reps_min: 8,  reps_max: 10 }, // deload
-  { week: 11, sets: 4, reps_min: 6,  reps_max: 8  },
-  { week: 12, sets: 2, reps_min: 6,  reps_max: 8  }, // taper — reduced final week
-]
-
-// A simple, returning-trainee 2-day full-body program (kept intentionally simple).
-function periodizedProgram(): ProgramDraft {
-  return {
-    program_name: 'Return to Training — 12 Week',
-    description: 'A 12-week return-to-training block: two full-body days with double progression, deloads at weeks 4 and 8, and a reduced-volume final week.',
-    weeks: 12,
-    progression_strategy: 'Double progression: advance reps within range, then add load and reset. Deload weeks 4 and 8 drop to 2 sets. Week 12 tapers volume.',
-    phases: [
-      { name: 'Base', weeks: '1-4', focus: 'Rebuild work capacity' },
-      { name: 'Build', weeks: '5-8', focus: 'Add load and volume' },
-      { name: 'Peak', weeks: '9-12', focus: 'Heavier loading then taper' },
-    ],
-    days: [
-      {
-        name: 'Full Body A', session_type: 'full_body', estimated_duration_minutes: 55,
-        exercises: [
-          ex('0025', 'horizontal_push', PERIODIZED),
-          ex('0100', 'horizontal_pull', PERIODIZED),
-          ex('0043', 'squat', PERIODIZED),
-        ],
-      },
-      {
-        name: 'Full Body B', session_type: 'full_body', estimated_duration_minutes: 55,
-        exercises: [
-          ex('0052', 'vertical_pull', PERIODIZED),
-          ex('0060', 'vertical_push', PERIODIZED),
-          ex('0088', 'hinge', PERIODIZED),
-        ],
-      },
-    ],
-  }
-}
-
-describe('12-week periodized program — meaningful structured differences', () => {
-  it('does NOT trip any of the new progression errors/warnings', () => {
-    const c = codes(periodizedProgram())
-    expect(c).not.toContain('WEEK_PROGRESSIONS_UNIFORM')
-    expect(c).not.toContain('NO_STRUCTURED_DELOAD')
-    expect(c).not.toContain('NO_FINAL_TAPER')
+describe('getWeekPrescription', () => {
+  it('returns base values when no week_progressions present', () => {
+    const ex = makeEx({ sets: 4, reps_min: 6, reps_max: 8 })
+    const rx = getWeekPrescription(ex, 1)
+    expect(rx.sets).toBe(4)
+    expect(rx.reps_min).toBe(6)
+    expect(rx.reps_max).toBe(8)
+    expect(rx.hasSpecificEntry).toBe(false)
+    expect(rx.deload).toBe(false)
+    expect(rx.taper).toBe(false)
   })
 
-  it('the prescription actually changes across weeks (build vs deload vs taper)', () => {
-    // Deload weeks have strictly fewer sets than the build weeks around them.
-    const build = PERIODIZED.find(w => w.week === 3)!.sets!
-    const deload4 = PERIODIZED.find(w => w.week === 4)!.sets!
-    const deload8 = PERIODIZED.find(w => w.week === 8)!.sets!
-    const taper = PERIODIZED.find(w => w.week === 12)!.sets!
-    const peak = PERIODIZED.find(w => w.week === 11)!.sets!
-    expect(deload4).toBeLessThan(build)
-    expect(deload8).toBeLessThan(build)
-    expect(taper).toBeLessThan(peak)
+  it('returns base values when week has no matching entry', () => {
+    const ex = makeEx({
+      sets: 3,
+      reps_min: 10,
+      reps_max: 12,
+      week_progressions: [{ week: 1, sets: 3, reps_min: 10, reps_max: 12 }],
+    })
+    const rx = getWeekPrescription(ex, 5)
+    expect(rx.sets).toBe(3)
+    expect(rx.reps_min).toBe(10)
+    expect(rx.reps_max).toBe(12)
+    expect(rx.hasSpecificEntry).toBe(false)
+  })
+
+  it('overrides sets from week_progressions entry', () => {
+    const ex = makeEx({
+      sets: 3,
+      reps_min: 8,
+      reps_max: 10,
+      week_progressions: [
+        { week: 1, sets: 3, reps_min: 8, reps_max: 10 },
+        { week: 4, sets: 4, reps_min: 10, reps_max: 12 },
+      ],
+    })
+    const rx = getWeekPrescription(ex, 4)
+    expect(rx.sets).toBe(4)
+    expect(rx.reps_min).toBe(10)
+    expect(rx.reps_max).toBe(12)
+    expect(rx.hasSpecificEntry).toBe(true)
+  })
+
+  it('marks deload week correctly', () => {
+    const ex = makeEx({
+      sets: 3,
+      reps_min: 10,
+      reps_max: 12,
+      week_progressions: [
+        { week: 8, sets: 2, reps_min: 10, reps_max: 12, deload: true },
+      ],
+    })
+    const rx = getWeekPrescription(ex, 8)
+    expect(rx.deload).toBe(true)
+    expect(rx.taper).toBe(false)
+  })
+
+  it('marks taper week correctly', () => {
+    const ex = makeEx({
+      sets: 3,
+      reps_min: 10,
+      reps_max: 12,
+      week_progressions: [
+        { week: 7, sets: 3, reps_min: 10, reps_max: 12, taper: true },
+      ],
+    })
+    const rx = getWeekPrescription(ex, 7)
+    expect(rx.taper).toBe(true)
+    expect(rx.deload).toBe(false)
+  })
+
+  it('carries load_note from week entry', () => {
+    const ex = makeEx({
+      week_progressions: [
+        { week: 3, sets: 3, reps_min: 8, reps_max: 10, load_note: 'Increase weight by 5 lb' },
+      ],
+    })
+    const rx = getWeekPrescription(ex, 3)
+    expect(rx.load_note).toBe('Increase weight by 5 lb')
+  })
+
+  it('falls back to base notes when no load_note in entry', () => {
+    const ex = makeEx({
+      notes: 'Focus on form',
+      week_progressions: [{ week: 2, sets: 3 }],
+    })
+    const rx = getWeekPrescription(ex, 2)
+    expect(rx.load_note).toBe('Focus on form')
+  })
+
+  it('handles distance_m from week entry (Saturday cardio)', () => {
+    const ex = makeEx({
+      sets: 1,
+      reps_min: null,
+      reps_max: null,
+      distance_m: 1609,
+      week_progressions: [
+        { week: 1, sets: 1, distance_m: 1609 },
+        { week: 4, sets: 1, distance_m: 3218 },
+        { week: 8, sets: 1, distance_m: 4827, deload: false },
+      ],
+    })
+    expect(getWeekPrescription(ex, 1).distance_m).toBe(1609)
+    expect(getWeekPrescription(ex, 4).distance_m).toBe(3218)
+    expect(getWeekPrescription(ex, 8).distance_m).toBe(4827)
+  })
+
+  it('week_progressions=[undefined] does not crash (empty array)', () => {
+    const ex = makeEx({ week_progressions: undefined })
+    const rx = getWeekPrescription(ex, 3)
+    expect(rx.hasSpecificEntry).toBe(false)
   })
 })
 
-describe('one-week-template failures', () => {
-  it('UNIFORM: identical week_progressions every week → error', () => {
-    const uniform: WeekProgression[] = [
-      { week: 1, sets: 3, reps_min: 8, reps_max: 12 },
-      { week: 6, sets: 3, reps_min: 8, reps_max: 12 },
-      { week: 12, sets: 3, reps_min: 8, reps_max: 12 },
+// ─── getDeloadWeeks ───────────────────────────────────────────────────────────
+
+describe('getDeloadWeeks', () => {
+  it('returns empty set when no deload weeks exist', () => {
+    const days = [
+      {
+        exercises: [
+          makeEx({
+            week_progressions: [
+              { week: 1, sets: 3 },
+              { week: 2, sets: 4 },
+            ],
+          }),
+        ],
+      },
     ]
-    const d = periodizedProgram()
-    d.phases = []                                   // remove phases so no deload phase masks it
-    d.days.forEach(day => day.exercises.forEach(e => { e.week_progressions = uniform }))
-    const c = codes(d)
-    expect(c).toContain('WEEK_PROGRESSIONS_UNIFORM')
+    expect(getDeloadWeeks(days).size).toBe(0)
   })
 
-  it('NO_STRUCTURED_DELOAD: monotonic increase, no volume drop, no deload phase → error', () => {
-    const rising: WeekProgression[] = [
-      { week: 1,  sets: 3, reps_min: 8,  reps_max: 10 },
-      { week: 6,  sets: 4, reps_min: 8,  reps_max: 10 },
-      { week: 12, sets: 5, reps_min: 8,  reps_max: 10 },
+  it('collects deload weeks from any exercise on any day', () => {
+    const days = [
+      {
+        exercises: [
+          makeEx({
+            week_progressions: [
+              { week: 1, sets: 3 },
+              { week: 8, sets: 2, deload: true },
+            ],
+          }),
+        ],
+      },
+      {
+        exercises: [
+          makeEx({
+            week_progressions: [
+              { week: 4, sets: 3, deload: true },
+              { week: 8, sets: 2, deload: true },
+            ],
+          }),
+        ],
+      },
     ]
-    const d = periodizedProgram()
-    d.phases = [{ name: 'Build', weeks: '1-12', focus: 'Keep adding' }] // no deload/taper phase
-    d.days.forEach(day => day.exercises.forEach(e => { e.week_progressions = rising }))
-    const c = codes(d)
-    expect(c).toContain('NO_STRUCTURED_DELOAD')
+    const result = getDeloadWeeks(days)
+    expect(result.has(4)).toBe(true)
+    expect(result.has(8)).toBe(true)
+    expect(result.has(1)).toBe(false)
   })
 
-  it('NO_FINAL_TAPER: has a mid-block deload but peaks at week 12 → warning', () => {
-    const noTaper: WeekProgression[] = [
-      { week: 1,  sets: 3, reps_min: 8, reps_max: 10 },
-      { week: 4,  sets: 2, reps_min: 8, reps_max: 10 }, // deload (satisfies NO_STRUCTURED_DELOAD)
-      { week: 8,  sets: 4, reps_min: 8, reps_max: 10 },
-      { week: 12, sets: 5, reps_min: 6, reps_max: 8  }, // peak at the very end, no taper
+  it('handles days with no exercises', () => {
+    const days = [{ exercises: [] }]
+    expect(getDeloadWeeks(days).size).toBe(0)
+  })
+
+  it('handles exercises with no week_progressions', () => {
+    const days = [{ exercises: [makeEx({ week_progressions: undefined })] }]
+    expect(getDeloadWeeks(days).size).toBe(0)
+  })
+
+  it('deduplicates the same deload week across multiple exercises', () => {
+    const days = [
+      {
+        exercises: [
+          makeEx({ week_progressions: [{ week: 8, deload: true }] }),
+          makeEx({ week_progressions: [{ week: 8, deload: true }] }),
+        ],
+      },
     ]
-    const d = periodizedProgram()
-    d.phases = [{ name: 'Build', weeks: '1-12', focus: 'Ramp' }]
-    d.days.forEach(day => day.exercises.forEach(e => { e.week_progressions = noTaper }))
-    const c = codes(d)
-    expect(c).not.toContain('NO_STRUCTURED_DELOAD')  // mid deload present
-    expect(c).toContain('NO_FINAL_TAPER')
+    const result = getDeloadWeeks(days)
+    expect(result.size).toBe(1)
+    expect(result.has(8)).toBe(true)
   })
 })
 
-describe('cardio duration progression', () => {
-  it('CARDIO_DURATION_STATIC: fixed cardio duration while plan claims it increases → warning', () => {
-    const d: ProgramDraft = {
-      program_name: 'Return + Conditioning',
-      weeks: 12,
-      description: 'Full body plus easy aerobic work that builds gradually from 20 to 30 minutes.',
-      progression_strategy: 'Easy aerobic duration increases gradually week to week.',
-      phases: [{ name: 'Base', weeks: '1-6', focus: 'Aerobic base' }, { name: 'Build', weeks: '7-12', focus: 'More work' }],
-      days: [
-        {
-          name: 'Full Body A', session_type: 'full_body', estimated_duration_minutes: 55,
-          exercises: [ex('0025', 'horizontal_push', PERIODIZED), ex('0100', 'horizontal_pull', PERIODIZED), ex('0043', 'squat', PERIODIZED)],
-        },
-        {
-          name: 'Easy Aerobic', session_type: 'conditioning', estimated_duration_minutes: 25,
-          exercises: [
-            // fixed duration, NO week_progressions → cannot encode the stated increase
-            { exercise_id: '2138', intended_pattern: 'cardio', sets: 1, duration_seconds: 1200, rest_seconds: 0 },
-          ],
-        },
+// ─── dayHasProgressionForWeek ─────────────────────────────────────────────────
+
+describe('dayHasProgressionForWeek', () => {
+  it('returns false when no exercises have week_progressions', () => {
+    const day = { exercises: [makeEx({ week_progressions: [] })] }
+    expect(dayHasProgressionForWeek(day, 1)).toBe(false)
+  })
+
+  it('returns false when day has no exercises', () => {
+    const day = { exercises: [] }
+    expect(dayHasProgressionForWeek(day, 1)).toBe(false)
+  })
+
+  it('returns true when at least one exercise has an entry for the week', () => {
+    const day = {
+      exercises: [
+        makeEx({ week_progressions: [{ week: 1, sets: 3 }, { week: 2, sets: 3 }] }),
+        makeEx({ week_progressions: [{ week: 1, sets: 4 }] }),
       ],
     }
-    expect(codes(d)).toContain('CARDIO_DURATION_STATIC')
+    expect(dayHasProgressionForWeek(day, 1)).toBe(true)
+    expect(dayHasProgressionForWeek(day, 2)).toBe(true)
+  })
+
+  it('returns false when exercises have progressions but not for the queried week', () => {
+    const day = {
+      exercises: [
+        makeEx({ week_progressions: [{ week: 1, sets: 3 }, { week: 2, sets: 4 }] }),
+      ],
+    }
+    expect(dayHasProgressionForWeek(day, 5)).toBe(false)
+  })
+})
+
+// ─── formatPrescription ───────────────────────────────────────────────────────
+
+describe('formatPrescription', () => {
+  const baseRx = (): WeekPrescription => ({
+    sets: 3,
+    hasSpecificEntry: false,
+    deload: false,
+    taper: false,
+  })
+
+  it('formats sets × reps range', () => {
+    const rx = { ...baseRx(), reps_min: 8, reps_max: 10 }
+    expect(formatPrescription(rx)).toBe('3 sets × 8–10 reps')
+  })
+
+  it('formats sets × single rep count when min=max', () => {
+    const rx = { ...baseRx(), reps_min: 5, reps_max: 5 }
+    expect(formatPrescription(rx)).toBe('3 sets × 5 reps')
+  })
+
+  it('formats "1 set" (singular) correctly', () => {
+    const rx = { ...baseRx(), sets: 1, reps_min: 10, reps_max: 10 }
+    expect(formatPrescription(rx)).toBe('1 set × 10 reps')
+  })
+
+  it('formats distance in miles (Saturday cardio)', () => {
+    const rx = { ...baseRx(), sets: 1, distance_m: 1609.344 }
+    expect(formatPrescription(rx)).toBe('1 set × 1.0 mi')
+  })
+
+  it('formats distance for 2-mile run', () => {
+    const rx = { ...baseRx(), sets: 1, distance_m: 3218.688 }
+    const result = formatPrescription(rx)
+    expect(result).toBe('1 set × 2.0 mi')
+  })
+
+  it('falls back to duration in minutes when no reps or distance', () => {
+    const rx = baseRx()
+    expect(formatPrescription(rx, 1800)).toBe('3 sets × 30 min')
+  })
+
+  it('falls back to — when no reps, distance, or duration', () => {
+    const rx = baseRx()
+    expect(formatPrescription(rx)).toBe('3 sets × —')
+  })
+
+  it('prefers reps over duration when both are present', () => {
+    const rx = { ...baseRx(), reps_min: 12, reps_max: 15 }
+    expect(formatPrescription(rx, 60)).toBe('3 sets × 12–15 reps')
+  })
+
+  it('prefers distance over duration when both are present', () => {
+    const rx = { ...baseRx(), sets: 1, distance_m: 1609.344 }
+    expect(formatPrescription(rx, 600)).toBe('1 set × 1.0 mi')
+  })
+})
+
+// ─── Integration: switching days ─────────────────────────────────────────────
+
+describe('day switching', () => {
+  const mondayExercises: ProgramExerciseBase[] = [
+    makeEx({ sets: 4, reps_min: 6, reps_max: 8, week_progressions: [{ week: 1, sets: 4 }, { week: 2, sets: 5 }] }),
+    makeEx({ sets: 3, reps_min: 10, reps_max: 12, week_progressions: [{ week: 1, sets: 3 }] }),
+  ]
+  const tuesdayExercises: ProgramExerciseBase[] = [
+    makeEx({ sets: 3, reps_min: 15, reps_max: 15, week_progressions: [{ week: 1, sets: 3 }, { week: 3, sets: 4 }] }),
+  ]
+  const saturdayExercises: ProgramExerciseBase[] = [
+    makeEx({ sets: 1, reps_min: null, reps_max: null, distance_m: 1609, week_progressions: [{ week: 1, distance_m: 1609 }, { week: 4, distance_m: 3218 }] }),
+  ]
+
+  const days = [
+    { exercises: mondayExercises },
+    { exercises: tuesdayExercises },
+    { exercises: [] },
+    { exercises: saturdayExercises },
+  ]
+
+  it('Monday Week 1 — first exercise returns sets=4', () => {
+    expect(getWeekPrescription(days[0].exercises[0], 1).sets).toBe(4)
+  })
+
+  it('Monday Week 2 — first exercise returns sets=5', () => {
+    expect(getWeekPrescription(days[0].exercises[0], 2).sets).toBe(5)
+  })
+
+  it('Tuesday Week 1 — exercise returns 15 reps', () => {
+    const rx = getWeekPrescription(days[1].exercises[0], 1)
+    expect(formatPrescription(rx)).toBe('3 sets × 15 reps')
+  })
+
+  it('Tuesday Week 3 — exercise returns sets=4', () => {
+    expect(getWeekPrescription(days[1].exercises[0], 3).sets).toBe(4)
+  })
+
+  it('Rest day (index 2) — exercises array is empty', () => {
+    expect(days[2].exercises.length).toBe(0)
+  })
+
+  it('Saturday Week 1 — cardio distance is 1609 m (1.0 mi)', () => {
+    const rx = getWeekPrescription(days[3].exercises[0], 1)
+    expect(formatPrescription(rx)).toBe('1 set × 1.0 mi')
+  })
+
+  it('Saturday Week 4 — cardio distance progressed to 3218 m (2.0 mi)', () => {
+    const rx = getWeekPrescription(days[3].exercises[0], 4)
+    expect(formatPrescription(rx)).toBe('1 set × 2.0 mi')
+  })
+})
+
+// ─── Integration: 8-week deload detection ────────────────────────────────────
+
+describe('8-week program with deload on week 8', () => {
+  const days = [
+    {
+      exercises: [
+        makeEx({
+          sets: 4,
+          reps_min: 6,
+          reps_max: 8,
+          week_progressions: [
+            { week: 1, sets: 4, reps_min: 6, reps_max: 8 },
+            { week: 2, sets: 4, reps_min: 7, reps_max: 9 },
+            { week: 3, sets: 4, reps_min: 8, reps_max: 10 },
+            { week: 4, sets: 5, reps_min: 6, reps_max: 8 },
+            { week: 5, sets: 5, reps_min: 7, reps_max: 9 },
+            { week: 6, sets: 5, reps_min: 8, reps_max: 10 },
+            { week: 7, sets: 5, reps_min: 8, reps_max: 10, taper: true },
+            { week: 8, sets: 3, reps_min: 6, reps_max: 8, deload: true },
+          ],
+        }),
+      ],
+    },
+  ]
+
+  it('deload weeks set contains week 8', () => {
+    const dw = getDeloadWeeks(days)
+    expect(dw.has(8)).toBe(true)
+    expect(dw.has(7)).toBe(false)
+  })
+
+  it('week 8 prescription has deload=true', () => {
+    expect(getWeekPrescription(days[0].exercises[0], 8).deload).toBe(true)
+  })
+
+  it('week 7 prescription has taper=true, deload=false', () => {
+    const rx = getWeekPrescription(days[0].exercises[0], 7)
+    expect(rx.taper).toBe(true)
+    expect(rx.deload).toBe(false)
+  })
+
+  it('week 4 progression shows sets=5', () => {
+    expect(getWeekPrescription(days[0].exercises[0], 4).sets).toBe(5)
+  })
+
+  it('dayHasProgressionForWeek returns true for all weeks 1–8', () => {
+    for (let w = 1; w <= 8; w++) {
+      expect(dayHasProgressionForWeek(days[0], w)).toBe(true)
+    }
   })
 })

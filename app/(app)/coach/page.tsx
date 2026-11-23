@@ -15,6 +15,12 @@ import { HealthSyncTrigger } from '@/components/today/HealthSyncTrigger'
 import { MealLogConfirmCard } from '@/components/v/MealLogConfirmCard'
 import type { MealLogPendingData } from '@/components/v/MealLogConfirmCard'
 import { CoachResearchPanel } from '@/components/v/CoachResearchPanel'
+import {
+  getWeekPrescription,
+  getDeloadWeeks,
+  dayHasProgressionForWeek,
+  formatPrescription,
+} from '@/lib/v/program-progression'
 
 interface TextMessage { role: 'user' | 'assistant'; content: string; type: 'text' }
 interface WorkoutMessage {
@@ -260,11 +266,17 @@ function ProgramCard({ data }: { data: ProgramMessage['data'] }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showProgressions, setShowProgressions] = useState(false)
+  const [selectedDayIdx, setSelectedDayIdx] = useState(0)
+  const [selectedWeek, setSelectedWeek] = useState(1)
 
   const hasWeekProgressions = data.days.some(d =>
     d.exercises.some(ex => ex.week_progressions && ex.week_progressions.length > 0)
   )
   const durationWeeks = data.weeks ?? null
+  const totalWeeks = durationWeeks ?? 8
+  const deloadWeeks = getDeloadWeeks(data.days)
+  const safeDayIdx = Math.min(selectedDayIdx, data.days.length - 1)
+  const selectedDay = data.days[safeDayIdx]
 
   const handleSave = async () => {
     setSaving(true)
@@ -352,42 +364,92 @@ function ProgramCard({ data }: { data: ProgramMessage['data'] }) {
             {showProgressions ? 'Hide progression' : `View ${durationWeeks ? `${durationWeeks}-week` : ''} progression plan`}
           </button>
           {showProgressions && (
-            <div className="px-4 pb-3 space-y-3 border-t border-zinc-100 dark:border-zinc-800">
-              {data.days.flatMap((day, di) =>
-                day.exercises
-                  .filter(ex => ex.week_progressions && ex.week_progressions.length > 0)
-                  .map((ex, ei) => (
-                    <div key={`${di}-${ei}`}>
-                      <p className="text-[10px] font-semibold text-zinc-500 mb-1 mt-2">
-                        {day.name} — {getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)}
-                      </p>
-                      <div className="flex flex-wrap gap-1">
-                        {ex.week_progressions!.map(wp => (
-                          <span
-                            key={wp.week}
-                            className={cn(
-                              'inline-flex items-center rounded px-1.5 py-0.5 text-[10px]',
-                              wp.deload
-                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                                : wp.taper
-                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                  : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-                            )}
-                          >
-                            W{wp.week}: {wp.sets ?? ex.sets}×{
-                              wp.reps_min != null && wp.reps_max != null
-                                ? wp.reps_min === wp.reps_max ? wp.reps_min : `${wp.reps_min}–${wp.reps_max}`
-                                : wp.distance_m != null
-                                  ? `${(wp.distance_m / 1609).toFixed(1)}mi`
-                                  : ex.reps_min != null ? `${ex.reps_min}–${ex.reps_max}` : '—'
-                            }
-                            {wp.deload ? ' ↓' : wp.taper ? ' ↓↓' : ''}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))
+            <div className="px-4 pb-4 space-y-3 border-t border-zinc-100 dark:border-zinc-800">
+              {/* Day selector */}
+              <div className="flex gap-1 overflow-x-auto pb-0.5 mt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {data.days.map((d, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setSelectedDayIdx(i)}
+                    className={cn(
+                      'shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors whitespace-nowrap',
+                      safeDayIdx === i
+                        ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                        : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                    )}
+                  >
+                    {d.name.slice(0, 3).toUpperCase()}
+                  </button>
+                ))}
+              </div>
+
+              {/* Week selector */}
+              <div className="flex gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {Array.from({ length: totalWeeks }, (_, i) => i + 1).map(w => (
+                  <button
+                    key={w}
+                    onClick={() => setSelectedWeek(w)}
+                    className={cn(
+                      'shrink-0 w-7 h-7 rounded-lg text-[10px] font-bold transition-colors',
+                      selectedWeek === w
+                        ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                        : deloadWeeks.has(w)
+                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-200'
+                          : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                    )}
+                  >
+                    {w}
+                  </button>
+                ))}
+              </div>
+
+              {/* Deload week label */}
+              {deloadWeeks.has(selectedWeek) && (
+                <p className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 -mt-1">
+                  Deload week
+                </p>
               )}
+
+              {/* Exercises for selected day × week */}
+              {selectedDay.exercises.length === 0 ? (
+                <p className="text-xs text-zinc-400 py-1">Rest day — no exercises</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {selectedDay.exercises.map((ex, i) => {
+                    const rx = getWeekPrescription(ex, selectedWeek)
+                    const name = getInvolvedDisplayName(ex.exercise_id, ex.exercise.name)
+                    return (
+                      <div key={i} className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-zinc-900 dark:text-white truncate">{name}</p>
+                          <p className="text-[10px] text-zinc-500">{formatPrescription(rx, ex.duration_seconds)}</p>
+                          {rx.load_note && (
+                            <p className="text-[10px] text-zinc-400 mt-0.5 italic">{rx.load_note}</p>
+                          )}
+                        </div>
+                        {(rx.deload || rx.taper) && (
+                          <span className={cn(
+                            'shrink-0 mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                            rx.deload
+                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                          )}>
+                            {rx.deload ? 'Deload' : 'Taper'}
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Footer */}
+              <p className="text-[10px] text-zinc-400">
+                {selectedDay.name} · Week {selectedWeek} of {totalWeeks}
+                {!dayHasProgressionForWeek(selectedDay, selectedWeek) && selectedDay.exercises.length > 0 && (
+                  <span> · base prescription</span>
+                )}
+              </p>
             </div>
           )}
         </>
