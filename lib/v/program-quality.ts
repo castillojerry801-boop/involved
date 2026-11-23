@@ -2,6 +2,7 @@ import 'server-only'
 import type { ProgramDraft, ProgressionModel, SessionType } from '@/lib/ai/tools/program'
 import { getSessionRoles } from '@/lib/v/session-composition'
 import type { WeeklySchedule } from '@/lib/v/program-intake'
+import { inferCardioSubtype, type CardioSubtype } from '@/lib/ymove/hierarchy-scorer'
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -138,6 +139,13 @@ export interface QualityContext {
    * Programs without an explicit schedule are unaffected.
    */
   explicitSchedule?: WeeklySchedule | null
+  /**
+   * Catalog-derived cardio subtype keyed by exercise ID. Built from the
+   * candidate pool before the generation loop so CARDIO_DRILL_OVERLOAD can
+   * classify exercises by trusted pool identity rather than the model-supplied
+   * exercise_name. When present, takes priority; falls back to name inference.
+   */
+  cardioSubtypeHints?: ReadonlyMap<string, CardioSubtype>
 }
 
 const PROGRESSION_KEYWORDS = /\badd\b|\bincrease\b|\bprogress\b|\bweek\b|\bphase\b|\b\d+%\b|\bload\b|\bbuilding\b|\bescalat/i
@@ -807,6 +815,40 @@ export function validateProgramQuality(draft: ProgramDraft, ctx: QualityContext)
           severity: 'warning',
           code: 'CARDIO_DURATION_STATIC',
           message: `Cardio week_progressions exist but the duration never changes. Increase the prescribed duration week to week to match the stated progression.`,
+        })
+        break
+      }
+    }
+
+  }
+
+  // CARDIO_DRILL_OVERLOAD: applies at any program length — running mechanics drills and
+  // agility exercises cannot be prescribed as extended continuous-duration sets (e.g.
+  // 20-min A Steps). Sustained aerobic exercises (stationary bike, treadmill, rowing)
+  // may use long durations without restriction.
+  {
+    const DRILL_MAX_DURATION_SECS = 300
+    const drillCardioEx = allExercises(draft).filter(
+      ex => ex.intended_pattern === 'cardio' || ex.duration_seconds != null,
+    )
+    for (const ex of drillCardioEx) {
+      if (!ex.duration_seconds || ex.duration_seconds <= DRILL_MAX_DURATION_SECS) continue
+      // Pool-derived identity takes precedence; fall back to model-supplied name.
+      // Skip only when NEITHER source can classify the exercise — conservative.
+      const cardioSub =
+        ctx.cardioSubtypeHints?.get(ex.exercise_id) ??
+        inferCardioSubtype(ex.exercise_name ?? '')
+      if (cardioSub === 'running_drill' || cardioSub === 'agility') {
+        const kind = cardioSub === 'running_drill' ? 'running mechanics drill' : 'agility exercise'
+        const displayName = ex.exercise_name ?? ex.exercise_id
+        issues.push({
+          severity: 'error',
+          code: 'CARDIO_DRILL_OVERLOAD',
+          message:
+            `"${displayName}" is a ${kind} and cannot be prescribed for ` +
+            `${Math.round(ex.duration_seconds / 60)} continuous minutes. ` +
+            `Replace with a sustained aerobic exercise (stationary bike, treadmill, rowing machine) ` +
+            `or prescribe as short sets of 20–60 seconds each.`,
         })
         break
       }

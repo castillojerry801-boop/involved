@@ -36,6 +36,7 @@ import type OpenAI from 'openai'
 import { after } from 'next/server'
 import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
 import type { PendingRequestLog, OperationType } from '@/lib/ai/request-logger'
+import { inferCardioSubtype, type CardioSubtype } from '@/lib/ymove/hierarchy-scorer'
 
 // One Luna draft + one targeted Luna correction, then escalate to Sol (which also
 // gets a draft + one correction). Kept at 1 so a correction round is cheap and the
@@ -736,6 +737,16 @@ export async function POST(req: NextRequest) {
       // ── Hand off to the extracted generation loop ──────────────────────────
       // The loop runs propose_program, quality validation, Luna correction, and
       // Sol escalation. It has no HTTP concerns and returns structured metrics.
+
+      // Build a trusted catalog-identity map for cardio exercises so the quality
+      // validator can classify them by pool identity, not the model-supplied name.
+      const cardioSubtypeHints = new Map<string, CardioSubtype>(
+        [...compactedPool.byId.entries()].flatMap(([id, ex]) => {
+          const sub = inferCardioSubtype(ex.name)
+          return sub !== null ? [[id, sub] as [string, CardioSubtype]] : []
+        }),
+      )
+
       const tGen = Date.now()
       const genResult = await runProgramGeneration({
         userId: user.id,
@@ -755,6 +766,7 @@ export async function POST(req: NextRequest) {
         proposeProgramTool: PROPOSE_PROGRAM_TOOL,
         validateDraft: validateProgramDraft,
         notify: (_, message) => emitRaw({ type: 'status', message }),
+        cardioSubtypeHints,
       })
       console.log(`[V-perf] generation=${Date.now() - tGen}ms total=${Date.now() - t0}ms`)
 

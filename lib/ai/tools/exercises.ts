@@ -5,6 +5,7 @@ import type { PrismaClient } from '@prisma/client'
 import { isYmvId, parseYmvId, formatYmvId } from '@/lib/exercises/identity'
 import { classifyYmoveExercise } from '@/lib/ymove/classify'
 import type { MovementClass, MovementSubclass } from '@/lib/ymove/hierarchy-scorer'
+import { normalizeYmoveEquipment, inferCardioSubtype } from '@/lib/ymove/hierarchy-scorer'
 
 // Compact exercise summary sent to V — structured metadata only, never GIF URLs.
 export interface ExerciseSummary {
@@ -215,7 +216,7 @@ export function classifyAnyExercise(exercise: Exercise): ExerciseClassification 
 // insertion order. The post-classification filter at line ~245 remains the source of
 // truth — these hints widen the scan to the right candidates; false-positives are
 // still removed by classification.
-const PATTERN_DB_HINTS: Partial<Record<string, { categories: string[]; nameKeywords: string[] }>> = {
+export const PATTERN_DB_HINTS: Partial<Record<string, { categories: string[]; nameKeywords: string[] }>> = {
   vertical_pull:      { categories: ['Pull', 'calisthenics'],
                         nameKeywords: ['pulldown', 'pull-up', 'pull up', 'chin-up', 'chin up'] },
   horizontal_pull:    { categories: ['Back'],
@@ -244,6 +245,10 @@ const PATTERN_DB_HINTS: Partial<Record<string, { categories: string[]; nameKeywo
                         nameKeywords: ['tricep', 'pushdown', 'extension', 'dip'] },
   core_antiextension: { categories: ['Core', 'CORE'],
                         nameKeywords: ['plank', 'pallof', 'rollout', 'hollow', 'dead bug'] },
+  // Cardio exercises are diffuse across the alphabet (~80 entries spanning '8' to 'W').
+  // The category hint scopes the query to cardio/hiit-cardio rows only; the scan take
+  // is raised to 300 so the full domain is reachable regardless of alphabetical position.
+  cardio:             { categories: ['cardio', 'hiit-cardio'], nameKeywords: [] },
 }
 
 // YMove-first search. When YMOVE_CATALOG_ENABLED=true and db is provided, searches
@@ -271,6 +276,12 @@ export async function executeExerciseSearchAsync(
     ],
   } : {}
 
+  // Cardio exercises span the full alphabet (~80 rows, from '8 Count' to 'Wall March').
+  // Using the same 3× heuristic as other patterns would truncate at the first 24 rows
+  // and never reach stationary bikes (rank 43+) or treadmills (rank 58+). A fixed
+  // upper bound of 300 covers the full cardio domain without inflating strength searches.
+  const scanTake = movementPattern === 'cardio' ? 300 : safeLimit * 3
+
   const ymoveRows = await db.ymoveExerciseCatalog.findMany({
     where: {
       NOT:       { curationStatus: 'duplicate' },
@@ -280,10 +291,12 @@ export async function executeExerciseSearchAsync(
     },
     orderBy: { name: 'asc' },
     select: { ymoveId: true, name: true, equipment: true, category: true, primaryMuscleGroup: true },
-    take: safeLimit * 3,
+    take: scanTake,
   })
 
   const ymoveResults: ExerciseSummary[] = []
+  const ymoveSubtypes: ReturnType<typeof inferCardioSubtype>[] = []
+
   for (const row of ymoveRows) {
     const cls = classifyYmoveExercise({ name: row.name, equipment: row.equipment, category: row.category })
     const { primary, secondary } = ymoveClassToMovementPattern(cls.movementClass, cls.movementSubclass, row.name)
@@ -314,6 +327,84 @@ export async function executeExerciseSearchAsync(
       laterality:                'bilateral',
       classificationConfidence:  conf,
     })
+    ymoveSubtypes.push(inferCardioSubtype(row.name))
+  }
+
+  // For cardio searches: build a subtype-diverse pool so both gym and bodyweight
+  // users receive viable options after downstream equipment filtering.
+  //
+  // Policy:
+  //   1. One exercise per distinct cardio machine type (air bike, rowing machine,
+  //      stationary bike, treadmill), preferring the simplest name per type.
+  //      These serve gym users; they are filtered out for bodyweight-only users.
+  //   2. Fill remaining slots from general bodyweight cardio (null subtype), then
+  //      interval and agility — always available after equipment filtering.
+  //   3. Running mechanics drills (A Steps, B Steps, etc.) are appended last;
+  //      they remain in the pool for legitimate short-drill use but cannot fill
+  //      the pool at the expense of sustained aerobic options.
+  //
+  // This prevents alphabetical ordering from filling all slots with early-alphabet
+  // drills while ensuring bodyweight users are never left without conditioning options.
+  if (movementPattern === 'cardio') {
+    // Pass 1 — one exercise per machine type, shortest name wins (simplest variant)
+    const machineOptions: ExerciseSummary[] = []
+    const seenMachineEq = new Set<string>()
+    // Sort continuous_aerobic candidates: within each equipment type, prefer shortest name
+    const continuousCandidates = ymoveResults
+      .map((ex, i) => ({ ex, sub: ymoveSubtypes[i] }))
+      .filter(({ sub, ex }) => sub === 'continuous_aerobic' && normalizeYmoveEquipment(ex.equipment) === null)
+      .sort((a, b) =>
+        a.ex.equipment === b.ex.equipment
+          ? a.ex.name.length - b.ex.name.length || a.ex.name.localeCompare(b.ex.name)
+          : a.ex.equipment.localeCompare(b.ex.equipment),
+      )
+    for (const { ex } of continuousCandidates) {
+      const eq = ex.equipment.toLowerCase()
+      if (!seenMachineEq.has(eq)) {
+        seenMachineEq.add(eq)
+        machineOptions.push(ex)
+      }
+    }
+
+    // Pass 2 — bodyweight general/interval/agility (excludes running_drill and activation)
+    const bodyweightFill: ExerciseSummary[] = []
+    for (let i = 0; i < ymoveResults.length; i++) {
+      const sub = ymoveSubtypes[i]
+      const eq  = ymoveResults[i].equipment.toLowerCase()
+      if (sub === 'running_drill' || sub === 'activation') continue
+      if (sub === 'continuous_aerobic') continue  // already handled in pass 1
+      if (normalizeYmoveEquipment(eq) === 'bodyweight') {
+        bodyweightFill.push(ymoveResults[i])
+      }
+    }
+
+    // Pass 3 — non-bodyweight non-machine options (battle rope, kettlebell, etc.)
+    const otherFill: ExerciseSummary[] = []
+    for (let i = 0; i < ymoveResults.length; i++) {
+      const sub = ymoveSubtypes[i]
+      const eq  = ymoveResults[i].equipment.toLowerCase()
+      if (sub === 'running_drill' || sub === 'activation' || sub === 'continuous_aerobic') continue
+      if (normalizeYmoveEquipment(eq) !== 'bodyweight') {
+        otherFill.push(ymoveResults[i])
+      }
+    }
+
+    // Pass 4 — running drills last (eligible for short-drill sessions, not conditioning default)
+    const drillFill = ymoveResults.filter((_, i) => ymoveSubtypes[i] === 'running_drill')
+
+    const diverse = [
+      ...machineOptions,
+      ...bodyweightFill,
+      ...otherFill,
+      ...drillFill,
+    ]
+    // Deduplicate (a result cannot appear in two passes)
+    const seen = new Set<string>()
+    const deduped: ExerciseSummary[] = []
+    for (const ex of diverse) {
+      if (!seen.has(ex.id)) { seen.add(ex.id); deduped.push(ex) }
+    }
+    return deduped.slice(0, safeLimit)
   }
 
   ymoveResults.sort((a, b) => (ROLE_PRIORITY[a.exerciseRole] ?? 7) - (ROLE_PRIORITY[b.exerciseRole] ?? 7))

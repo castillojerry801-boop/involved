@@ -20,6 +20,7 @@ import type { ProgramDraft, ProgramValidationResult } from '@/lib/ai/tools/progr
 import type { WeeklySchedule } from '@/lib/v/program-intake'
 import type { OperationType } from '@/lib/ai/request-logger'
 import { validateProgramQuality } from '@/lib/v/program-quality'
+import type { CardioSubtype } from '@/lib/ymove/hierarchy-scorer'
 import { buildModelParamShape, describeOpenAIError } from '@/lib/ai/models'
 import { MAX_ORCHESTRATION_TOKENS } from '@/lib/v/search-orchestration'
 
@@ -138,6 +139,14 @@ export type GenerationOptions = {
    * emitRaw; tests may pass undefined to discard status events.
    */
   notify?: (type: 'status', message: string) => void
+  /**
+   * Catalog-derived cardio subtype keyed by exercise ID. Built by the route
+   * from the compacted candidate pool before handing off to this loop. Passed
+   * to quality validation so CARDIO_DRILL_OVERLOAD uses pool identity rather
+   * than the model-supplied exercise_name. Absent in routes without a
+   * deterministic pool — those fall back to name-based inference.
+   */
+  cardioSubtypeHints?: ReadonlyMap<string, CardioSubtype>
 }
 
 // ─── Main function ────────────────────────────────────────────────────────────
@@ -400,6 +409,7 @@ export async function runProgramGeneration(
           readinessState: intake.readinessState ?? undefined,
           requiredDailyActivityIds: intake.dailyWalkRequested ? ['9001'] : undefined,
           explicitSchedule: intake.explicitSchedule,
+          cardioSubtypeHints: options.cardioSubtypeHints,
         })
         const hardErrors = qualityIssues.filter(i => i.severity === 'error')
 

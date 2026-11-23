@@ -53,6 +53,7 @@ const VALID_SEQUENCING_MODES: SequencingMode[] = [
 
 export interface ProgramExercise {
   exercise_id: string
+  exercise_name?: string     // human-readable name from the candidate pool — used by quality validators
   intended_pattern: string   // V must declare the movementPattern role this exercise fills; server validates it
   sets: number
   reps_min?: number
@@ -476,6 +477,7 @@ export const PROPOSE_PROGRAM_TOOL = {
                   type: 'object',
                   properties: {
                     exercise_id:       { type: 'string', description: 'ID from search_exercises — never invent' },
+                    exercise_name:     { type: 'string', description: 'Human-readable exercise name from the candidate pool — copy exactly as shown in the pool summary.' },
                     intended_pattern:  { type: 'string', description: 'REQUIRED: the movementPattern role this exercise fills in this session (e.g. "squat", "hinge", "vertical_pull"). Must match the exercise\'s movementPattern from search_exercises or the server will reject it.' },
                     sets:              { type: 'number', description: 'Sets (1–20) — represents Week 1 baseline' },
                     reps_min:          { type: 'number', description: 'Minimum reps per set (omit for time-based) — Week 1 baseline' },

@@ -50,6 +50,12 @@ export type MovementSubclass =
   | 'rdl'           // Romanian / stiff-leg / straight-leg — partial ROM hinge
   | 'good_morning'  // good morning — hip hinge, torso horizontal
   | 'leg_curl'      // knee flexion: hamstring curl, nordic curl
+  // Cardio subtypes — distinguish purpose within cardio_conditioning class
+  | 'continuous_aerobic'  // sustained steady-state: stationary bike, rowing machine, treadmill
+  | 'interval'            // intended as intervals/sprints: air bike sprint, pogo hops
+  | 'running_drill'       // running mechanics: A/B steps, carioca, skips
+  | 'agility'             // coordination/agility: grapevines, back shuffle, lateral hops
+  | 'activation'          // warm-up/activation: jumping jacks, seal jacks, standing march
   | null
 
 // ── Score thresholds ──────────────────────────────────────────────────────────
@@ -329,6 +335,45 @@ export function detectMovementSubclass(
   if (technicalPattern === 'hinge')        return 'deadlift'
   if (technicalPattern === 'knee_flexion') return 'leg_curl'
 
+  // ── Cardio subtypes ───────────────────────────────────────────────────────
+  // Sprint/interval variants of machines must be checked BEFORE the base machine
+  // patterns so "Air Bike Sprint" and "Stationary Bike Seated Sprint" become
+  // 'interval' rather than 'continuous_aerobic'.
+  if (/air bike sprint|stationary bike.{0,20}sprint|rowing machine sprint|treadmill(?:\s+incline)?\s+sprint/i.test(n)) return 'interval'
+  // Sustained aerobic machines — appropriate for long continuous prescriptions
+  if (/\bstationary bike\b|\browing machine\b|\btreadmill\b/i.test(n)) return 'continuous_aerobic'
+  if (/\bair bike\b/i.test(n))                                         return 'continuous_aerobic'
+  // Running mechanics drills — short distance/rep-based, not timed duration
+  if (/\ba[\s-]?steps?\b|\bb[\s-]?steps?\b|\bcarioca\b|\bskips?\b/i.test(n)) return 'running_drill'
+  // Agility and coordination — short sets, not sustained aerobic
+  if (/\bgrapevines?\b|\bback shuffle\b|\bcrab walk\b|\blateral hops?\b/i.test(n)) return 'agility'
+  // Activation / warm-up movements
+  if (/\bjumping jacks?\b|\bseal jacks?\b|\bstanding march\b|\bwall march\b/i.test(n)) return 'activation'
+  // Plyometric / explosive intervals
+  if (/\bpogo hops?\b|\bdepth jump\b|\bbox switch jumps?\b/i.test(n)) return 'interval'
+
+  return null
+}
+
+/**
+ * Returns the cardio subtype for a conditioning exercise given its name, or null
+ * when the exercise is general cardio (mountain climbers, burpees, etc.) or
+ * unrecognised as a named subtype. Used by program-quality dosage validation.
+ */
+/** Cardio-specific movement subtypes. Used for pool diversity and dosage validation. */
+export type CardioSubtype = 'continuous_aerobic' | 'interval' | 'running_drill' | 'agility' | 'activation'
+
+export function inferCardioSubtype(
+  name: string,
+): CardioSubtype | null {
+  const sub = detectMovementSubclass(null, name)
+  if (
+    sub === 'continuous_aerobic' ||
+    sub === 'interval' ||
+    sub === 'running_drill' ||
+    sub === 'agility' ||
+    sub === 'activation'
+  ) return sub
   return null
 }
 
