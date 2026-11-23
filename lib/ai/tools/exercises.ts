@@ -210,6 +210,42 @@ export function classifyAnyExercise(exercise: Exercise): ExerciseClassification 
   }
 }
 
+// DB-level retrieval hints per movement pattern. Applied as an OR WHERE clause when
+// movementPattern is provided, ensuring exercises reach the query regardless of catalog
+// insertion order. The post-classification filter at line ~245 remains the source of
+// truth — these hints widen the scan to the right candidates; false-positives are
+// still removed by classification.
+const PATTERN_DB_HINTS: Partial<Record<string, { categories: string[]; nameKeywords: string[] }>> = {
+  vertical_pull:      { categories: ['Pull', 'calisthenics'],
+                        nameKeywords: ['pulldown', 'pull-up', 'pull up', 'chin-up', 'chin up'] },
+  horizontal_pull:    { categories: ['Back'],
+                        nameKeywords: ['row', 'pull'] },
+  horizontal_push:    { categories: ['Chest', 'Push'],
+                        nameKeywords: ['bench', 'chest press', 'push-up', 'push up', 'pushup'] },
+  incline_push:       { categories: ['Chest', 'Push'],
+                        nameKeywords: ['incline', 'decline', 'fly', 'flye', 'crossover', 'pec deck'] },
+  fly:                { categories: ['Chest'],
+                        nameKeywords: ['fly', 'flye', 'crossover', 'pec deck'] },
+  vertical_push:      { categories: ['Shoulders'],
+                        nameKeywords: ['overhead press', 'shoulder press', 'military press', 'push press'] },
+  shoulder_isolation: { categories: ['Shoulders'],
+                        nameKeywords: ['lateral raise', 'front raise', 'face pull', 'shrug', 'rear delt'] },
+  squat:              { categories: ['Legs'],
+                        nameKeywords: ['squat'] },
+  hinge:              { categories: ['Legs', 'Back'],
+                        nameKeywords: ['deadlift', 'rdl', 'romanian', 'hip thrust', 'glute bridge', 'good morning'] },
+  lunge:              { categories: ['Legs'],
+                        nameKeywords: ['lunge', 'split squat', 'step-up', 'step up', 'bulgarian'] },
+  calf:               { categories: ['Legs'],
+                        nameKeywords: ['calf'] },
+  bicep:              { categories: ['Arms', 'Arms - Biceps'],
+                        nameKeywords: ['curl'] },
+  tricep:             { categories: ['Arms', 'Arms - Triceps'],
+                        nameKeywords: ['tricep', 'pushdown', 'extension', 'dip'] },
+  core_antiextension: { categories: ['Core', 'CORE'],
+                        nameKeywords: ['plank', 'pallof', 'rollout', 'hollow', 'dead bug'] },
+}
+
 // YMove-first search. When YMOVE_CATALOG_ENABLED=true and db is provided, searches
 // the YMove catalog exclusively — ExerciseDB results are NOT merged. This prevents
 // ExerciseDB from crowding out YMove exercises and ensures honest no-match behavior:
@@ -227,12 +263,22 @@ export async function executeExerciseSearchAsync(
   const { query = '', bodyPart = 'all', equipment, muscle, movementPattern, limit = 15 } = params
   const safeLimit = Math.min(limit, 100)
 
+  const hints = movementPattern ? (PATTERN_DB_HINTS[movementPattern] ?? null) : null
+  const hintFilter = hints ? {
+    OR: [
+      { category: { in: hints.categories } },
+      ...hints.nameKeywords.map(kw => ({ name: { contains: kw, mode: 'insensitive' as const } })),
+    ],
+  } : {}
+
   const ymoveRows = await db.ymoveExerciseCatalog.findMany({
     where: {
       NOT:       { curationStatus: 'duplicate' },
       ...(query     ? { name:      { contains: query,     mode: 'insensitive' } } : {}),
       ...(equipment ? { equipment: { contains: equipment, mode: 'insensitive' } } : {}),
+      ...hintFilter,
     },
+    orderBy: { name: 'asc' },
     select: { ymoveId: true, name: true, equipment: true, category: true, primaryMuscleGroup: true },
     take: safeLimit * 3,
   })

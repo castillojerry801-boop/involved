@@ -67,6 +67,32 @@ describe('classifyYmoveExercise — movement class', () => {
     expect(classifyYmoveExercise(row('Pull-Up', 'Bodyweight')).movementClass).toBe('upper_pull_v')
   })
 
+  // Regression: ymove uses 'Back' as a catch-all for all back exercises, including
+  // vertical-pull movements (lat pulldowns, pull-ups). The name override must fire
+  // before the Back→upper_pull_h category mapping to prevent misclassification.
+  it('classifies pulldown/pull-up with category Back as vertical pull (production regression)', () => {
+    expect(classifyYmoveExercise(row('Lat Pulldown',           'Cable',           'Back')).movementClass).toBe('upper_pull_v')
+    expect(classifyYmoveExercise(row('Wide Grip Lat Pulldown', 'Cable',           'Back')).movementClass).toBe('upper_pull_v')
+    expect(classifyYmoveExercise(row('Close Grip Pulldown',    'Cable',           'Back')).movementClass).toBe('upper_pull_v')
+    expect(classifyYmoveExercise(row('Cable Pull-Down',        'Cable',           'Back')).movementClass).toBe('upper_pull_v')
+    expect(classifyYmoveExercise(row('Assisted Pull-Up',       'Leverage Machine','Back')).movementClass).toBe('upper_pull_v')
+    expect(classifyYmoveExercise(row('Chin-Up',                'Bodyweight',      'Back')).movementClass).toBe('upper_pull_v')
+  })
+
+  it('row and rear-delt exercises with category Back remain horizontal pull', () => {
+    expect(classifyYmoveExercise(row('Seated Cable Row',  'Cable',   'Back')).movementClass).toBe('upper_pull_h')
+    expect(classifyYmoveExercise(row('Barbell Bent Over Row','Barbell','Back')).movementClass).toBe('upper_pull_h')
+    expect(classifyYmoveExercise(row('Dumbbell Row',      'Dumbbell','Back')).movementClass).toBe('upper_pull_h')
+  })
+
+  it('face pulls and pullovers with category Back are not classified as vertical pull', () => {
+    // face pull → upper_pull_h via category (then ymoveClassToMovementPattern maps to shoulder_isolation)
+    expect(classifyYmoveExercise(row('Face Pull',          'Cable',   'Back')).movementClass).toBe('upper_pull_h')
+    // pullover does not contain pull.?up, chin.?up, or pull.?down
+    expect(classifyYmoveExercise(row('Dumbbell Pullover',  'Dumbbell','Back')).movementClass).toBe('upper_pull_h')
+    expect(classifyYmoveExercise(row('Cable Lat Pullover', 'Cable',   'Back')).movementClass).toBe('upper_pull_h')
+  })
+
   it('classifies arm isolation patterns', () => {
     expect(classifyYmoveExercise(row('Bicep Curl', 'Dumbbell', 'Arms - Biceps')).movementClass).toBe('arm_flexion')
     expect(classifyYmoveExercise(row('Tricep Pushdown', 'Cable', 'Arms - Triceps')).movementClass).toBe('arm_extension')

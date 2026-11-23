@@ -252,6 +252,10 @@ export function movementClassFromYmove(category: string | null, name: string): M
   if (n.includes('deadlift') || /\brdl\b/.test(n) || n.includes('romanian') || n.includes('good morning')) return 'lower_pull'
   if (n.includes('leg curl') || n.includes('hamstring curl') || n.includes('nordic curl'))                  return 'lower_pull'
   if (n.includes('overhead press') || n.includes('military press') || n.includes('shoulder press') || n.includes('push press')) return 'upper_push_v'
+  // Pull-up and pulldown exercises are frequently categorised as 'Back' in ymove
+  // alongside rows, but they are vertical-pull movements. The name must win over
+  // the category check for these patterns — same approach as deadlift/shoulder press above.
+  if (/pull.?up|chin.?up|pull.?down/.test(n)) return 'upper_pull_v'
 
   if (category) {
     const cls = YMOVE_CATEGORY_TO_CLASS[category]
