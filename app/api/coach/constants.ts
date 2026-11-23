@@ -252,6 +252,12 @@ export const QUALITY_EXHAUSTED_MESSAGE = 'Quality validation failed after all re
 // the same failed generation with unchanged state.
 export const GENERATION_FAILED_MESSAGE = "I couldn't finalize a full program that meets the quality bar for your setup right now. Want me to build a simpler, shorter starter block — say, 4 weeks focused on the essentials — instead? Let me know and I'll rework it."
 
+// Used specifically for budget_exhausted: a transient technical failure where the
+// generation loop ran out of token budget (typically caused by repeated structural
+// validation failures before they were corrected). This must NOT suggest reducing
+// the program duration — the user's request was valid and the issue was internal.
+export const BUDGET_EXHAUSTED_MESSAGE = "I hit a temporary technical issue while building your program — it has nothing to do with your request, which looks great. Please try again and I'll build your complete plan."
+
 // Loop-protection fallback: emitted only when GENERATION_FAILED_MESSAGE was already
 // the previous turn and nothing changed. Narrows the request to a single goal so the
 // next attempt has materially different (easier to satisfy) inputs.

@@ -43,12 +43,13 @@ const MAX_ROUNDS = 12
 // app → lib layering dependency. app/api/coach/constants.ts also exports these
 // for other callers.
 
-const CORRECTION_SYSTEM_PROMPT = `You are V's program-correction pass. You are given a single program draft and a list of specific quality errors. Fix ONLY those errors and call propose_program again with the corrected draft.
+const CORRECTION_SYSTEM_PROMPT = `You are V's program-correction pass. You are given a single program draft and a list of specific validation errors. Fix ONLY those errors and call propose_program again with the corrected draft.
 
 RULES:
 • Change the minimum necessary to clear every listed error. Keep everything else identical — same exercises, weeks, days, and prescriptions unless an error requires a change.
 • Use ONLY exercise IDs from the candidate pool below. Never invent IDs or exercise names.
 • For a missing movement-pattern role: add an exercise from the pool whose movementPattern matches the missing role to that specific day.
+• For an intended_pattern mismatch (STRUCTURAL error): do NOT simply relabel the exercise — that removes a required movement role. Instead, either (a) assign the exercise to its verified movement role (use the classification code from the error message) or (b) select a correctly classified alternative from the pool's matching group for the rejected role. Never leave a required role uncovered.
 • For a missing structural deload (≥8-week programs): add a deload — set deload:true on the recovery-week week_progressions entries (e.g. ~week 4 and ~week 8) AND reduce sets that week, or add a labeled deload phase.
 • For a missing final taper (≥12-week programs): set taper:true on the final week's week_progressions and reduce volume.
 • For a conditioning day with no aerobic modality: add a cardio/carry exercise from the pool, or convert the day to match its real content.
@@ -190,7 +191,7 @@ export async function runProgramGeneration(
     {
       role: 'user',
       content:
-        `This draft has these quality errors. Fix ONLY these, keep everything else, ` +
+        `This draft has these validation errors. Fix ONLY these, keep everything else, ` +
         `and call propose_program with the corrected draft:\n` +
         errors.map(e => `[${e.code}] ${e.message}`).join('\n'),
     },
@@ -346,6 +347,27 @@ export async function runProgramGeneration(
         }
 
         if (!validation.valid) {
+          // Log structural failure for diagnostics — these are silent in production
+          // without this log, making repeated failures undetectable until budget_exhausted.
+          console.warn('[V-generation-structural-fail]', {
+            userId,
+            round,
+            model: toolRoundModel(),
+            errorCount: validation.errors.length,
+            errors: validation.errors.map(e => e.substring(0, 150)),
+            remainingTokenBudget: MAX_ORCHESTRATION_TOKENS - (promptTokens + completionTokens),
+            contextCompacted: true,
+          })
+          // Trigger correction context compaction (same as quality-failure path).
+          // Without this, chatMessages grows by ~3,600 tokens per structural-failure
+          // round, exhausting the 70,000-token budget after just 3 rounds on a
+          // typical 8-week program where the initial prompt is already ~22,000 tokens.
+          correctionErrors = validation.errors.map(msg => ({
+            code: 'STRUCTURAL',
+            message: msg,
+            severity: 'error' as const,
+          }))
+          correctionPending = true
           chatMessages.push({
             role: 'tool',
             tool_call_id: call.id,

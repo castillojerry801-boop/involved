@@ -24,7 +24,7 @@ import {
   type SearchPhase, type CandidatePool,
 } from '@/lib/v/search-orchestration'
 import type { QualityIssue } from '@/lib/v/program-quality'
-import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL, GET_MEAL_LOG_TOOL } from './constants'
+import { SYSTEM_PROMPT, CORRECTION_SYSTEM_PROMPT, EMPTY_SEARCH_RESULT, QUALITY_EXHAUSTED_MESSAGE, GENERATION_FAILED_MESSAGE, GENERATION_FAILED_ALT_MESSAGE, BUDGET_EXHAUSTED_MESSAGE, PROGRAM_INTENT_PATTERN, LOOKUP_INTENT_PATTERN, CREATION_INTENT_PATTERN, selectRoundTools, CALCULATE_NUTRITION_TOOL, PREPARE_MEAL_LOG_TOOL, GET_MEAL_LOG_TOOL } from './constants'
 import { PROGRAM_INTELLIGENCE_PROMPT } from '@/lib/v/program-intelligence'
 import { calculateNutrition } from '@/lib/v/tools/calculate-nutrition'
 import type { CalculateNutritionArgs } from '@/lib/v/tools/calculate-nutrition'
@@ -676,18 +676,25 @@ export async function POST(req: NextRequest) {
           `\n\n${PROGRAM_INTELLIGENCE_PROMPT}`,
       })
 
-      // Context-size telemetry — reveals where the draft prompt budget goes.
-      const systemChars = typeof chatMessages[0]?.content === 'string' ? chatMessages[0].content.length : 0
-      const conversationChars = body.messages.reduce((n, m) => n + m.content.length, 0)
-      const candidateTextChars = candidateSummaryText.length
-      const totalChars = systemChars + conversationChars + candidateTextChars
+      // Context-size telemetry — accounts for ALL system messages, including the
+      // second system message (candidate pool + PROGRAM_INTELLIGENCE_PROMPT) pushed
+      // just above. The old version counted only chatMessages[0] and missed ~13,000
+      // tokens of PROGRAM_INTELLIGENCE_PROMPT, causing a 2.5× undercount.
+      // Note: character-based estimates are approximations (4 chars/token avg).
+      // Authoritative token counts come from the OpenAI API and are tracked in
+      // runProgramGeneration's promptTokens accumulator.
+      const allSystemChars = chatMessages
+        .filter(m => m.role === 'system')
+        .reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 0), 0)
+      const conversationChars = body.messages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 0), 0)
+      const totalChars = allSystemChars + conversationChars
       console.log('[V-context-size]', {
         userId: user.id,
         candidateCount: compactedPool.byId.size,
-        candidateTextChars,
-        systemChars,
-        conversationChars,
+        candidateTextChars: candidateSummaryText.length,
+        systemMessageCount: chatMessages.filter(m => m.role === 'system').length,
         estimatedPromptTokens: Math.round(totalChars / 4),
+        note: 'estimate only — API-reported counts are authoritative',
       })
 
       // ── Hand off to the extracted generation loop ──────────────────────────
@@ -746,21 +753,28 @@ export async function POST(req: NextRequest) {
         return
       }
 
-      // generation_failed, quality_exhausted, budget_exhausted → freeform guard
+      // generation_failed, quality_exhausted, budget_exhausted → freeform guard.
+      // budget_exhausted is a transient technical failure — do NOT suggest reducing
+      // the program duration, as the user's request was valid.
       const missingPrompt = buildMissingContextPrompt(missingContext)
-      let guardMessage = missingPrompt ?? GENERATION_FAILED_MESSAGE
-      if (wouldRepeatLast(guardMessage)) guardMessage = missingPrompt ?? GENERATION_FAILED_ALT_MESSAGE
+      let guardMessage: string
+      if (genResult.outcome === 'budget_exhausted') {
+        guardMessage = BUDGET_EXHAUSTED_MESSAGE
+      } else {
+        guardMessage = missingPrompt ?? GENERATION_FAILED_MESSAGE
+        if (wouldRepeatLast(guardMessage)) guardMessage = missingPrompt ?? GENERATION_FAILED_ALT_MESSAGE
+      }
       console.log('[V-freeform-guard]', {
         userId: user.id,
         genOutcome: genResult.outcome,
         escalated: genResult.escalated,
         qualityRetries: genResult.qualityRetries,
         missing: missingContext.map(m => m.field),
-        action: missingPrompt ? 'ask_missing_field' : 'generation_failed',
+        action: genResult.outcome === 'budget_exhausted' ? 'budget_exhausted' : (missingPrompt ? 'ask_missing_field' : 'generation_failed'),
       })
       await streamText(guardMessage)
       console.log(`[V-perf] total=${Date.now() - t0}ms`)
-      logModelSummary(missingPrompt ? 'ask_missing_field' : 'generation_failed')
+      logModelSummary(genResult.outcome === 'budget_exhausted' ? 'budget_exhausted' : (missingPrompt ? 'ask_missing_field' : 'generation_failed'))
       emitRaw({ type: 'done' })
       await cleanup()
       return

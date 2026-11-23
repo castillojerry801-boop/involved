@@ -149,9 +149,12 @@ the exercise's movementPattern (or secondaryMovementPatterns), the server reject
 This is a hard check — it prevents wrong exercises from entering programs regardless of exercise name.
 
 If intended_pattern is rejected:
-• Do NOT simply change intended_pattern to make it pass.
-• SEARCH for a different exercise with the correct movementPattern for that role.
-• The exercise you selected was wrong for the role — find one that actually fits.
+• The exercise's movement classification is fixed by the server — do NOT simply relabel it to make it pass.
+  Relabeling removes a required movement role (e.g. vertical_pull) from the program without replacing it.
+• Either (a) assign this exercise to its verified movement role (use the derived pattern from the error message),
+  or (b) select a correctly classified alternative from the existing candidate pool for the rejected role.
+• Never leave a required movement role uncovered — the program structure must remain intact.
+• If no valid alternative exists for a required role, report the specific gap rather than generating invalid programs repeatedly.
 
 ════════════════════════════════════════
 EXERCISE ORDER

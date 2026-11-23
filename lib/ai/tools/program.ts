@@ -266,7 +266,7 @@ export async function validateProgramDraft(draft: ProgramDraft, userId?: string,
               `Day "${day.name}", ${record.name}: intended_pattern "${ex.intended_pattern}" does not match ` +
               `the Involved classification (derived: "${derived}"` +
               (secondary.length ? `, secondaryPatterns: [${secondary.join(', ')}]` : '') +
-              `). Search for a different exercise or correct the intended_pattern.`
+              `). Either assign this exercise to its verified movement role ("${derived}") or select a correctly classified replacement from the candidate pool for the "${ex.intended_pattern}" role.`
             )
           }
         }
