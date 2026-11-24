@@ -160,20 +160,74 @@ See the PITR procedure below.
 
 ## Restore safety checklist — outbound call risk
 
-Before initiating a PITR restore to a new project, verify that the restored copy cannot accidentally call live external services. **Checked 2026-11-23 against migration history and shadow DB.**
+**Live read-only check of production `cthozkricqchjgciwztx` — 2026-11-23.**  
+Connected via DIRECT_URL from `.env.local`; all queries were SELECT-only.
 
-| Risk vector | Status | Evidence |
+### Extensions installed
+
+| Extension | Version | Schema | Outbound risk |
+|---|---|---|---|
+| `plpgsql` | 1.0 | pg_catalog | None |
+| `pgcrypto` | 1.3 | extensions | None |
+| `pg_stat_statements` | 1.11 | extensions | None |
+| `uuid-ossp` | 1.1 | extensions | None |
+| `supabase_vault` | 0.3.1 | vault | None |
+| `pg_cron` | — | — | **Not installed** |
+| `pg_net` | — | — | **Not installed** |
+| `wrappers` | — | — | **Not installed** |
+
+`pg_cron` and `pg_net` are absent. Without `pg_net`, no DB function can make an HTTP request. Without `pg_cron`, no job can be scheduled. No foreign data wrappers.
+
+### Schemas
+
+`cron`, `net`, and `supabase_functions` schemas are all absent. Database webhooks require `supabase_functions`; scheduled jobs require `cron`. Neither exists.
+
+### Triggers (all schemas)
+
+16 triggers exist across `auth`, `realtime`, and `storage` — zero in `public`:
+
+| Trigger | Table | What it does |
 |---|---|---|
-| `pg_cron` scheduled jobs | **None** | Extension not installed; not in any migration |
-| `pg_net` / HTTP calls from DB functions | **None** | Extension not installed; zero public functions with network calls |
-| Database triggers calling external URLs | **None** | Zero triggers in public schema |
-| Supabase Edge Functions | **None** | No `supabase/functions/` directory; `supabase_functions` schema absent |
-| Supabase database webhooks (dashboard-configured) | **None** | Requires `pg_net`; not installed |
-| RevenueCat webhook (inbound) | **Safe** | RC POSTs to `involvedfit.com/api/webhooks/revenuecat`. Restored project has a different Supabase URL and cannot receive that traffic unless RC is explicitly re-pointed. |
-| Supabase Realtime | **Isolated** | Each Supabase project has its own Realtime service; a restored project only broadcasts to clients connected to its own URL |
-| Application-level outbound calls | **App-layer, not DB-layer** | ymove API, RevenueCat SDK, Apple Health, AI providers are called by the Next.js app, not by the database. The restored DB cannot trigger these unless you explicitly point a running app instance at the restored project's DATABASE_URL. |
+| `auth.on_auth_user_created` | `auth.users` | Calls `handle_new_user()` → `INSERT INTO public.profiles` only. No HTTP. |
+| `realtime.tr_check_filters` | `realtime.subscription` | Internal subscription validation. No HTTP. |
+| `storage.*` (14 triggers) | `storage.buckets/objects` | Bucket lifecycle and delete guards. All internal. No HTTP. |
 
-**Safe to restore**: The database layer of a restored copy has no mechanism to call production services. The only risk is intentionally running application code against the restored project, which requires changing env vars.
+`handle_new_user()` body confirmed:
+```sql
+BEGIN
+  INSERT INTO public.profiles (id, display_name, updated_at)
+  VALUES (new.id, new.raw_user_meta_data->>'full_name', CURRENT_TIMESTAMP)
+  ON CONFLICT (id) DO NOTHING;
+  RETURN new;
+END;
+```
+Pure SQL, no outbound call. On a restored copy, this would only fire if a new user is created in the restored project's own auth — writing to the restored `profiles` table, not production.
+
+### Functions with outbound patterns
+
+Zero matches scanning all non-system schemas for `http`, `net.`, `webhook`, `pg_net`, `cron`, `supabase_functions`, `wrappers`, `curl`.
+
+### Vault secrets
+
+Vault is empty (0 rows in `vault.secrets`). No secrets would transfer to the restored project that could be misused.
+
+### Realtime publication
+
+`supabase_realtime` publication exists but has **zero tables** in it (`pg_publication_tables` = 0 rows, `puballtables = false`). The restored copy's Realtime service would broadcast nothing, and each project's Realtime is scoped to its own WebSocket endpoint — no cross-project events.
+
+### Active background workers
+
+Zero non-idle connections at time of check.
+
+### Application-layer risk (not DB-layer)
+
+The Next.js app calls ymove API, RevenueCat SDK, Apple Health, AI providers, and Stripe — none of these are triggered by the database. The restored DB cannot reach them. The only way application-level calls would run against the restored project is if you intentionally changed `DATABASE_URL`/`DIRECT_URL` env vars in a running app instance.
+
+RevenueCat is configured to POST webhooks to `https://involvedfit.com/api/webhooks/revenuecat`. The restored project has a different URL; RC cannot reach it without explicit reconfiguration in the RC dashboard.
+
+### Verdict
+
+**Safe to restore.** The database layer has no mechanism to call any external service. The restore is an isolated copy.
 
 ---
 
