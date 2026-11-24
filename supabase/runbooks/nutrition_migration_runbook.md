@@ -158,6 +158,25 @@ See the PITR procedure below.
 
 ---
 
+## Restore safety checklist — outbound call risk
+
+Before initiating a PITR restore to a new project, verify that the restored copy cannot accidentally call live external services. **Checked 2026-11-23 against migration history and shadow DB.**
+
+| Risk vector | Status | Evidence |
+|---|---|---|
+| `pg_cron` scheduled jobs | **None** | Extension not installed; not in any migration |
+| `pg_net` / HTTP calls from DB functions | **None** | Extension not installed; zero public functions with network calls |
+| Database triggers calling external URLs | **None** | Zero triggers in public schema |
+| Supabase Edge Functions | **None** | No `supabase/functions/` directory; `supabase_functions` schema absent |
+| Supabase database webhooks (dashboard-configured) | **None** | Requires `pg_net`; not installed |
+| RevenueCat webhook (inbound) | **Safe** | RC POSTs to `involvedfit.com/api/webhooks/revenuecat`. Restored project has a different Supabase URL and cannot receive that traffic unless RC is explicitly re-pointed. |
+| Supabase Realtime | **Isolated** | Each Supabase project has its own Realtime service; a restored project only broadcasts to clients connected to its own URL |
+| Application-level outbound calls | **App-layer, not DB-layer** | ymove API, RevenueCat SDK, Apple Health, AI providers are called by the Next.js app, not by the database. The restored DB cannot trigger these unless you explicitly point a running app instance at the restored project's DATABASE_URL. |
+
+**Safe to restore**: The database layer of a restored copy has no mechanism to call production services. The only risk is intentionally running application code against the restored project, which requires changing env vars.
+
+---
+
 ## Production recovery window
 
 Measured 2026-11-24 01:34 UTC (read from production `pg_stat_archiver`):
