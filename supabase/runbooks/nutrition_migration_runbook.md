@@ -273,36 +273,48 @@ A full PITR restore rehearsal requires Supabase Dashboard access and a spare pro
 
 3. **Wait for restore**: Supabase provisions a new project and applies WAL replay. For a 68-day database, estimate 15–30 minutes.
 
-4. **Verify restored state**:
-   ```bash
-   # Connect to the restored project using its DIRECT_URL
-   psql "$RESTORED_DIRECT_URL" -c "
-   SELECT migration_name, finished_at
-   FROM _prisma_migrations
-   ORDER BY started_at DESC
-   LIMIT 3;"
-   ```
-   Expected: `20261110010000_billing_source_rc_test` and `20261123000000_nutrition_foundation_milestone1` should NOT appear if restored to pre-migration.
-   
-   ```bash
-   # Verify nutrition tables do NOT exist
-   psql "$RESTORED_DIRECT_URL" -c "
-   SELECT tablename FROM pg_tables
-   WHERE schemaname = 'public'
-   AND tablename LIKE 'dietary_%' OR tablename LIKE 'user_meal_%';"
-   ```
-   Expected: 0 rows.
+4. **Verify restored state**: Run the read-only verification SQL in the restored project's SQL Editor. The query checks migration count, migration names, schema presence, and record counts without exposing customer records. See the rehearsal results below for the expected output.
 
-5. **Confirm user data integrity**: Spot-check a known user's recent workout or meal log entry to confirm the data matches what was present before the migration.
+5. **Confirm user data integrity**: The record counts in check 8 (profiles non-zero, food_log_entries non-zero, workouts non-zero) confirm data was restored. Latest-activity timestamps in check 9 confirm the cut is at or before the restore target.
 
 6. **Tear down**: Delete the restored project from the dashboard once verified.
+
+### Rehearsal completed — 2026-11-23
+
+**Restore project**: `involved-restore-rehearsal` (`tkkujphqlohlfxolzzho.supabase.co`)  
+**Restore target**: 2026-11-23 05:03:12 UTC  
+**Verification run via Supabase SQL Editor**
+
+| Check | Expected | Actual | Result |
+|---|---|---|---|
+| PostgreSQL version | 17.x | 17.12 | PASS |
+| Migration count | 11 | 11 | PASS |
+| Unfinished / rolled-back migrations | 0 | 0 | PASS |
+| All 11 migrations applied | baseline → revenuecat_phase_a | All "Applied" | PASS |
+| billing_source_rc_test absent | Yes | "Absent as expected" | PASS |
+| nutrition_foundation_milestone1 absent | Yes | "Absent as expected" | PASS |
+| 17 expected tables present | All | All "Present" | PASS |
+| 4 ALTER-only columns present | All | All "Present" | PASS |
+| BillingSource.rc_test absent | Yes | "Absent as expected" | PASS |
+| 9 nutrition tables absent | Yes | All "Absent as expected" | PASS |
+| profiles count | > 0 | 21 | PASS |
+| food_items count | > 0 | 188 | PASS |
+| food_log_entries count | > 0 | 299 | PASS |
+| workouts / workout_sets | > 0 | 29 / 405 | PASS |
+| ai_request_logs latest (UTC) | ≤ 05:03:12 | 03:13:32 (−1h 50m) | PASS |
+| profiles latest (UTC) | ≤ 05:03:12 | 2026-11-16 17:20 | PASS |
+| workouts latest (UTC) | ≤ 05:03:12 | 2026-11-15 06:20 | PASS |
+| user_subscriptions count | 0 expected | 0 | PASS (RC webhook inactive — secrets not yet configured in production) |
+| webhook_events count | ≤ 1 | 1 | PASS (single RC test call before secrets configured) |
+
+**Gate 4 verdict: PASS.** The restore is a faithful, isolated snapshot of production at the target timestamp. Schema matches the 11-migration baseline exactly. Both pending migrations left no footprint. User data is present and all activity timestamps fall before the cut.
 
 ### Shadow database as smoke-test analog
 
 The `involved_shadow` shadow database (local PostgreSQL) serves as the structural rehearsal:
 - Both pending migrations applied via `prisma migrate deploy`: confirmed ✓
 - All 13 migration history rows present, `rolled_back_at = NULL` on all: confirmed ✓
-- All 10 RLS validation sections passed, exit 0: confirmed 2026-11-24 ✓
+- All 13 RLS validation sections passed, exit 0: confirmed 2026-11-24 ✓
 
 This confirms the SQL will apply without error and the RLS policies are correct. It does not replace a Supabase PITR rehearsal for data-integrity verification.
 
