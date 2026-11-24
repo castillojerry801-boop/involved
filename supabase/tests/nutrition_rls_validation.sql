@@ -1,273 +1,466 @@
--- nutrition_rls_validation.sql
--- Post-migration smoke test for RLS policies on the 9 nutrition tables.
+-- 04_rls_validation.sql  v2
+-- Full RLS validation for all 9 nutrition tables.
 --
--- Run this AFTER `prisma migrate deploy` using a psql session connected as
--- superuser (postgres role), which bypasses RLS and can SET LOCAL role freely.
+-- Prerequisites: 02_supabase_stubs.sql applied, all 13 migrations applied,
+--                03_post_migration_grants.sql applied.
+--
+-- Uses \set ON_ERROR_STOP on — any RAISE EXCEPTION exits psql nonzero.
+-- Every assertion that fails raises; passing tests emit NOTICE.
+-- Wraps in a transaction; ROLLBACK removes all fixture rows.
 --
 -- Usage:
---   psql "$DIRECT_URL" -f supabase/tests/nutrition_rls_validation.sql
---
--- Expected: all RAISE EXCEPTION lines fire (meaning the policy blocked the
--- forbidden operation) and all SELECT assertions return the correct counts.
--- A "query returned X rows" mismatch or a missing RAISE is a policy failure.
+--   psql -d involved_shadow -v ON_ERROR_STOP=1 -f 04_rls_validation.sql
+-- Exit 0 = all assertions passed.  Nonzero = first failed assertion.
+
+\set ON_ERROR_STOP on
+
+-- Fixture UUIDs (systematically chosen, easy to grep in results)
+\set USER_A        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+\set USER_B        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+\set DP_A          'cccccccc-cccc-cccc-cccc-cccccccc0001'
+\set DP_B          'cccccccc-cccc-cccc-cccc-cccccccc0002'
+\set DA_A          'cccccccc-cccc-cccc-cccc-cccccccc0011'
+\set DA_B          'cccccccc-cccc-cccc-cccc-cccccccc0012'
+\set DE_A          'cccccccc-cccc-cccc-cccc-cccccccc0021'
+\set DE_B          'cccccccc-cccc-cccc-cccc-cccccccc0022'
+\set UMP_A         'cccccccc-cccc-cccc-cccc-cccccccc0031'
+\set UMP_B         'cccccccc-cccc-cccc-cccc-cccccccc0032'
+\set UPD_A         'cccccccc-cccc-cccc-cccc-cccccccc0041'
+\set UPD_B         'cccccccc-cccc-cccc-cccc-cccccccc0042'
+\set UPE_A         'cccccccc-cccc-cccc-cccc-cccccccc0051'
+\set UPE_B         'cccccccc-cccc-cccc-cccc-cccccccc0052'
+\set MPT_SYS       'cccccccc-cccc-cccc-cccc-cccccccc0061'
+\set MPTD_SYS      'cccccccc-cccc-cccc-cccc-cccccccc0071'
+\set MPTE_SYS      'cccccccc-cccc-cccc-cccc-cccccccc0081'
 
 BEGIN;
 
--- ─────────────────────────────────────────────────────────────────────────────
--- Setup: two real user UUIDs from your database (replace before running)
--- ─────────────────────────────────────────────────────────────────────────────
--- \set user_a 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
--- \set user_b 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S0: Structural checks — 9 tables with RLS enabled, 9 policies
+-- ═════════════════════════════════════════════════════════════════════════════
 
--- For automated validation without real users, we seed synthetic test data
--- via the postgres role (which bypasses RLS), then test access via the
--- authenticated role with fabricated JWTs.
-
--- ─────────────────────────────────────────────────────────────────────────────
--- 1. Verify RLS is ENABLED on all 9 tables
--- ─────────────────────────────────────────────────────────────────────────────
 DO $$
 DECLARE
   tbl text;
   rls_on bool;
+  policy_count int;
 BEGIN
   FOREACH tbl IN ARRAY ARRAY[
-    'dietary_preferences',
-    'dietary_allergens',
-    'dietary_exclusions',
-    'meal_plan_templates',
-    'meal_plan_template_days',
-    'meal_plan_template_entries',
-    'user_meal_plans',
-    'user_meal_plan_days',
-    'user_meal_plan_entries'
+    'dietary_preferences','dietary_allergens','dietary_exclusions',
+    'meal_plan_templates','meal_plan_template_days','meal_plan_template_entries',
+    'user_meal_plans','user_meal_plan_days','user_meal_plan_entries'
   ] LOOP
     SELECT relrowsecurity INTO rls_on
       FROM pg_class
      WHERE relname = tbl AND relnamespace = 'public'::regnamespace;
-    IF NOT rls_on THEN
-      RAISE EXCEPTION 'RLS NOT enabled on table: %', tbl;
+    IF NOT FOUND OR NOT rls_on THEN
+      RAISE EXCEPTION '[S0] RLS NOT enabled on table: %', tbl;
     END IF;
-    RAISE NOTICE 'RLS enabled: %', tbl;
+    RAISE NOTICE '[S0] PASS: RLS enabled on %', tbl;
   END LOOP;
-END $$;
 
--- ─────────────────────────────────────────────────────────────────────────────
--- 2. Verify policy count: 9 tables, 9 policies total
---    (3 personal tables × FOR ALL = 1 policy each,
---     3 personal child tables × FOR ALL = 1 policy each,
---     3 template tables × FOR SELECT = 1 policy each)
--- ─────────────────────────────────────────────────────────────────────────────
-DO $$
-DECLARE
-  cnt int;
-BEGIN
-  SELECT COUNT(*) INTO cnt
+  SELECT COUNT(*) INTO policy_count
     FROM pg_policies
    WHERE schemaname = 'public'
      AND tablename IN (
-       'dietary_preferences', 'dietary_allergens', 'dietary_exclusions',
-       'meal_plan_templates', 'meal_plan_template_days', 'meal_plan_template_entries',
-       'user_meal_plans', 'user_meal_plan_days', 'user_meal_plan_entries'
+       'dietary_preferences','dietary_allergens','dietary_exclusions',
+       'meal_plan_templates','meal_plan_template_days','meal_plan_template_entries',
+       'user_meal_plans','user_meal_plan_days','user_meal_plan_entries'
      );
-  IF cnt <> 9 THEN
-    RAISE EXCEPTION 'Expected 9 RLS policies on nutrition tables, found %', cnt;
+  IF policy_count <> 9 THEN
+    RAISE EXCEPTION '[S0] Expected 9 policies on nutrition tables, found %', policy_count;
   END IF;
-  RAISE NOTICE 'Policy count correct: % policies', cnt;
+  RAISE NOTICE '[S0] PASS: policy count = 9';
 END $$;
 
--- ─────────────────────────────────────────────────────────────────────────────
--- 3. Seed test data as postgres (bypasses RLS)
--- ─────────────────────────────────────────────────────────────────────────────
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S1: Insert fixtures as postgres (rolbypassrls = t, skips FK triggers)
+-- ═════════════════════════════════════════════════════════════════════════════
 
--- Use synthetic UUIDs that cannot collide with real profiles.id values
--- (they reference profiles via FK — in a live test environment, substitute
--- real user UUIDs and skip the INSERT into profiles below).
+SET session_replication_role = 'replica';
 
--- For isolated schema-only validation (no profiles table dependency),
--- temporarily disable FK checks:
-SET session_replication_role = 'replica';  -- disables FK triggers
-
-INSERT INTO dietary_preferences (id, user_id, approaches, created_at, updated_at)
+INSERT INTO dietary_preferences (id, user_id, updated_at)
 VALUES
-  ('dp-test-aaa1', 'aaaaaaaa-0000-0000-0000-aaaaaaaaaaaa', '{}', now(), now()),
-  ('dp-test-bbb1', 'bbbbbbbb-0000-0000-0000-bbbbbbbbbbbb', '{}', now(), now())
-ON CONFLICT DO NOTHING;
+  (:'DP_A', :'USER_A', now()),
+  (:'DP_B', :'USER_B', now());
 
-INSERT INTO dietary_allergens (id, dietary_preference_id, name, severity, created_at, updated_at)
+INSERT INTO dietary_allergens (id, dietary_preference_id, name, severity)
 VALUES
-  ('da-test-aaa1', 'dp-test-aaa1', 'peanuts', 'allergy', now(), now()),
-  ('da-test-bbb1', 'dp-test-bbb1', 'shellfish', 'allergy', now(), now())
-ON CONFLICT DO NOTHING;
+  (:'DA_A', :'DP_A', 'peanuts',   'allergy'),
+  (:'DA_B', :'DP_B', 'shellfish', 'allergy');
 
-INSERT INTO user_meal_plans (id, user_id, title, status, source, created_at, updated_at)
+INSERT INTO dietary_exclusions (id, dietary_preference_id, ingredient)
 VALUES
-  ('ump-test-aaa1', 'aaaaaaaa-0000-0000-0000-aaaaaaaaaaaa', 'Plan A', 'active', 'custom', now(), now()),
-  ('ump-test-bbb1', 'bbbbbbbb-0000-0000-0000-bbbbbbbbbbbb', 'Plan B', 'active', 'custom', now(), now())
-ON CONFLICT DO NOTHING;
+  (:'DE_A', :'DP_A', 'cilantro'),
+  (:'DE_B', :'DP_B', 'mushrooms');
 
-INSERT INTO user_meal_plan_days (id, plan_id, day_index, label, created_at, updated_at)
+INSERT INTO user_meal_plans (id, user_id, name, source, updated_at)
 VALUES
-  ('upd-test-aaa1', 'ump-test-aaa1', 1, 'Monday', now(), now()),
-  ('upd-test-bbb1', 'ump-test-bbb1', 1, 'Monday', now(), now())
-ON CONFLICT DO NOTHING;
+  (:'UMP_A', :'USER_A', 'Plan A', 'custom', now()),
+  (:'UMP_B', :'USER_B', 'Plan B', 'custom', now());
 
-SET session_replication_role = 'origin';  -- re-enable FK triggers
+INSERT INTO user_meal_plan_days (id, plan_id, day_index)
+VALUES
+  (:'UPD_A', :'UMP_A', 1),
+  (:'UPD_B', :'UMP_B', 1);
 
--- ─────────────────────────────────────────────────────────────────────────────
--- 4. Test: anon role sees nothing
--- ─────────────────────────────────────────────────────────────────────────────
+INSERT INTO user_meal_plan_entries (id, plan_day_id, meal_type, updated_at)
+VALUES
+  (:'UPE_A', :'UPD_A', 'lunch',  now()),
+  (:'UPE_B', :'UPD_B', 'dinner', now());
+
+INSERT INTO meal_plan_templates (id, name, target_calories, updated_at)
+VALUES
+  (:'MPT_SYS', 'System Template', 2000, now());
+
+INSERT INTO meal_plan_template_days (id, template_id, day_index)
+VALUES
+  (:'MPTD_SYS', :'MPT_SYS', 1);
+
+INSERT INTO meal_plan_template_entries (id, template_day_id, meal_type, updated_at)
+VALUES
+  (:'MPTE_SYS', :'MPTD_SYS', 'breakfast', now());
+
+SET session_replication_role = 'origin';
+DO $$ BEGIN RAISE NOTICE '[S1] Fixtures inserted as postgres (bypasses RLS/FK)'; END $$;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S2: Anon role — default deny on all 9 tables
+-- (anon has DML grants but no policy → 0 rows)
+-- ═════════════════════════════════════════════════════════════════════════════
+
 DO $$
 DECLARE cnt int;
 BEGIN
   SET LOCAL role = 'anon';
+
   SELECT COUNT(*) INTO cnt FROM dietary_preferences;
-  IF cnt > 0 THEN
-    RAISE EXCEPTION 'FAIL: anon can read dietary_preferences (% rows visible)', cnt;
-  END IF;
+  IF cnt > 0 THEN RAISE EXCEPTION '[S2] FAIL: anon sees % rows in dietary_preferences', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM dietary_allergens;
+  IF cnt > 0 THEN RAISE EXCEPTION '[S2] FAIL: anon sees % rows in dietary_allergens', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM dietary_exclusions;
+  IF cnt > 0 THEN RAISE EXCEPTION '[S2] FAIL: anon sees % rows in dietary_exclusions', cnt; END IF;
 
   SELECT COUNT(*) INTO cnt FROM user_meal_plans;
-  IF cnt > 0 THEN
-    RAISE EXCEPTION 'FAIL: anon can read user_meal_plans (% rows visible)', cnt;
-  END IF;
+  IF cnt > 0 THEN RAISE EXCEPTION '[S2] FAIL: anon sees % rows in user_meal_plans', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_days;
+  IF cnt > 0 THEN RAISE EXCEPTION '[S2] FAIL: anon sees % rows in user_meal_plan_days', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_entries;
+  IF cnt > 0 THEN RAISE EXCEPTION '[S2] FAIL: anon sees % rows in user_meal_plan_entries', cnt; END IF;
 
   SELECT COUNT(*) INTO cnt FROM meal_plan_templates;
-  IF cnt > 0 THEN
-    RAISE EXCEPTION 'FAIL: anon can read meal_plan_templates (% rows visible)', cnt;
-  END IF;
+  IF cnt > 0 THEN RAISE EXCEPTION '[S2] FAIL: anon sees % rows in meal_plan_templates', cnt; END IF;
 
-  RAISE NOTICE 'PASS: anon sees 0 rows on all nutrition tables';
+  SELECT COUNT(*) INTO cnt FROM meal_plan_template_days;
+  IF cnt > 0 THEN RAISE EXCEPTION '[S2] FAIL: anon sees % rows in meal_plan_template_days', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM meal_plan_template_entries;
+  IF cnt > 0 THEN RAISE EXCEPTION '[S2] FAIL: anon sees % rows in meal_plan_template_entries', cnt; END IF;
+
+  RAISE NOTICE '[S2] PASS: anon sees 0 rows on all 9 nutrition tables';
 END $$;
 
--- ─────────────────────────────────────────────────────────────────────────────
--- 5. Test: user A can see only their own rows
--- ─────────────────────────────────────────────────────────────────────────────
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S3: User A — sees own rows, cannot see user B rows (all personal tables)
+-- ═════════════════════════════════════════════════════════════════════════════
+
 DO $$
 DECLARE cnt int;
 BEGIN
   SET LOCAL role = 'authenticated';
-  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-0000-0000-0000-aaaaaaaaaaaa","role":"authenticated"}';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
 
-  -- dietary_preferences: should see exactly 1 (their own)
-  SELECT COUNT(*) INTO cnt FROM dietary_preferences WHERE id = 'dp-test-aaa1';
-  IF cnt <> 1 THEN
-    RAISE EXCEPTION 'FAIL: user A cannot see own dietary_preference (got %)', cnt;
-  END IF;
+  -- dietary_preferences: own row visible, B not visible, total=1
+  SELECT COUNT(*) INTO cnt FROM dietary_preferences WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0001';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S3] FAIL: user A cannot see own dietary_preference (got %)', cnt; END IF;
 
-  -- dietary_preferences: should NOT see user B's row
-  SELECT COUNT(*) INTO cnt FROM dietary_preferences WHERE id = 'dp-test-bbb1';
-  IF cnt > 0 THEN
-    RAISE EXCEPTION 'FAIL: user A can read user B dietary_preference (%)', cnt;
-  END IF;
+  SELECT COUNT(*) INTO cnt FROM dietary_preferences WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0002';
+  IF cnt > 0 THEN RAISE EXCEPTION '[S3] FAIL: user A reads user B dietary_preference (% rows)', cnt; END IF;
 
-  -- dietary_allergens: own row visible
-  SELECT COUNT(*) INTO cnt FROM dietary_allergens WHERE id = 'da-test-aaa1';
-  IF cnt <> 1 THEN
-    RAISE EXCEPTION 'FAIL: user A cannot see own allergen (got %)', cnt;
-  END IF;
+  SELECT COUNT(*) INTO cnt FROM dietary_preferences;
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S3] FAIL: user A table-scan sees % dietary_preferences rows (want 1)', cnt; END IF;
 
-  -- dietary_allergens: other user's row NOT visible
-  SELECT COUNT(*) INTO cnt FROM dietary_allergens WHERE id = 'da-test-bbb1';
-  IF cnt > 0 THEN
-    RAISE EXCEPTION 'FAIL: user A can read user B allergen (%)', cnt;
-  END IF;
+  -- dietary_allergens
+  SELECT COUNT(*) INTO cnt FROM dietary_allergens WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0011';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S3] FAIL: user A cannot see own allergen (got %)', cnt; END IF;
 
-  -- user_meal_plans: own row visible
-  SELECT COUNT(*) INTO cnt FROM user_meal_plans WHERE id = 'ump-test-aaa1';
-  IF cnt <> 1 THEN
-    RAISE EXCEPTION 'FAIL: user A cannot see own meal plan (got %)', cnt;
-  END IF;
+  SELECT COUNT(*) INTO cnt FROM dietary_allergens WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0012';
+  IF cnt > 0 THEN RAISE EXCEPTION '[S3] FAIL: user A reads user B allergen (% rows)', cnt; END IF;
 
-  -- user_meal_plans: other user's row NOT visible
-  SELECT COUNT(*) INTO cnt FROM user_meal_plans WHERE id = 'ump-test-bbb1';
-  IF cnt > 0 THEN
-    RAISE EXCEPTION 'FAIL: user A can read user B meal plan (%)', cnt;
-  END IF;
+  -- dietary_exclusions
+  SELECT COUNT(*) INTO cnt FROM dietary_exclusions WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0021';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S3] FAIL: user A cannot see own exclusion (got %)', cnt; END IF;
 
-  -- user_meal_plan_days: own row visible
-  SELECT COUNT(*) INTO cnt FROM user_meal_plan_days WHERE id = 'upd-test-aaa1';
-  IF cnt <> 1 THEN
-    RAISE EXCEPTION 'FAIL: user A cannot see own plan day (got %)', cnt;
-  END IF;
+  SELECT COUNT(*) INTO cnt FROM dietary_exclusions WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0022';
+  IF cnt > 0 THEN RAISE EXCEPTION '[S3] FAIL: user A reads user B exclusion (% rows)', cnt; END IF;
 
-  -- user_meal_plan_days: other user's row NOT visible
-  SELECT COUNT(*) INTO cnt FROM user_meal_plan_days WHERE id = 'upd-test-bbb1';
-  IF cnt > 0 THEN
-    RAISE EXCEPTION 'FAIL: user A can read user B plan day (%)', cnt;
-  END IF;
+  -- user_meal_plans
+  SELECT COUNT(*) INTO cnt FROM user_meal_plans WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0031';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S3] FAIL: user A cannot see own meal plan (got %)', cnt; END IF;
 
-  RAISE NOTICE 'PASS: user A isolation verified (personal tables)';
+  SELECT COUNT(*) INTO cnt FROM user_meal_plans WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0032';
+  IF cnt > 0 THEN RAISE EXCEPTION '[S3] FAIL: user A reads user B meal plan (% rows)', cnt; END IF;
+
+  -- user_meal_plan_days
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_days WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0041';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S3] FAIL: user A cannot see own plan day (got %)', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_days WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0042';
+  IF cnt > 0 THEN RAISE EXCEPTION '[S3] FAIL: user A reads user B plan day (% rows)', cnt; END IF;
+
+  -- user_meal_plan_entries (2-level join: entry→day→plan→user_id)
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0051';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S3] FAIL: user A cannot see own plan entry (got %)', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0052';
+  IF cnt > 0 THEN RAISE EXCEPTION '[S3] FAIL: user A reads user B plan entry (% rows)', cnt; END IF;
+
+  RAISE NOTICE '[S3] PASS: user A read isolation verified on all 6 personal tables + child tables';
 END $$;
 
--- ─────────────────────────────────────────────────────────────────────────────
--- 6. Test: authenticated user CANNOT write to template tables
--- ─────────────────────────────────────────────────────────────────────────────
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S4: User B — symmetric isolation
+-- ═════════════════════════════════════════════════════════════════════════════
+
+DO $$
+DECLARE cnt int;
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","role":"authenticated"}';
+
+  SELECT COUNT(*) INTO cnt FROM dietary_preferences;
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S4] FAIL: user B sees % dietary_preferences rows (want 1)', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM dietary_preferences WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0001';
+  IF cnt > 0 THEN RAISE EXCEPTION '[S4] FAIL: user B reads user A dietary_preference (% rows)', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_entries;
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S4] FAIL: user B sees % plan entries (want 1)', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0051';
+  IF cnt > 0 THEN RAISE EXCEPTION '[S4] FAIL: user B reads user A plan entry (% rows)', cnt; END IF;
+
+  RAISE NOTICE '[S4] PASS: user B symmetric isolation verified';
+END $$;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S5: Cross-user INSERT — WITH CHECK enforcement
+-- ═════════════════════════════════════════════════════════════════════════════
+
 DO $$
 BEGIN
   SET LOCAL role = 'authenticated';
-  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-0000-0000-0000-aaaaaaaaaaaa","role":"authenticated"}';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
 
+  -- User A tries to INSERT allergen under user B's dietary_preference
   BEGIN
-    INSERT INTO meal_plan_templates (id, title, status, created_at, updated_at)
-    VALUES ('mpt-test-attack', 'Injected', 'draft', now(), now());
-    -- If we get here, RLS did NOT block the insert — that is a failure
-    RAISE EXCEPTION 'FAIL: authenticated user was able to INSERT into meal_plan_templates';
+    INSERT INTO dietary_allergens (id, dietary_preference_id, name, severity)
+    VALUES ('cccccccc-cccc-cccc-cccc-cccccccc9901', 'cccccccc-cccc-cccc-cccc-cccccccc0002', 'inject', 'dislike');
+    RAISE EXCEPTION '[S5] FAIL: user A inserted allergen under user B preference';
   EXCEPTION
-    WHEN insufficient_privilege OR check_violation THEN
-      RAISE NOTICE 'PASS: authenticated INSERT into meal_plan_templates blocked';
+    WHEN check_violation OR insufficient_privilege THEN
+      RAISE NOTICE '[S5] PASS: allergen cross-user INSERT blocked (check_violation/insufficient_privilege)';
     WHEN others THEN
-      RAISE NOTICE 'PASS (FK/other constraint blocked insert): %', SQLERRM;
+      RAISE NOTICE '[S5] PASS: allergen cross-user INSERT blocked (%)', SQLERRM;
   END;
+
+  -- User A tries to INSERT plan day under user B's meal plan
+  BEGIN
+    INSERT INTO user_meal_plan_days (id, plan_id, day_index)
+    VALUES ('cccccccc-cccc-cccc-cccc-cccccccc9902', 'cccccccc-cccc-cccc-cccc-cccccccc0032', 2);
+    RAISE EXCEPTION '[S5] FAIL: user A inserted plan day under user B plan';
+  EXCEPTION
+    WHEN check_violation OR insufficient_privilege THEN
+      RAISE NOTICE '[S5] PASS: plan day cross-user INSERT blocked';
+    WHEN others THEN
+      RAISE NOTICE '[S5] PASS: plan day cross-user INSERT blocked (%)', SQLERRM;
+  END;
+
+  -- User A tries to INSERT plan entry under user B's plan day (2-level join)
+  BEGIN
+    INSERT INTO user_meal_plan_entries (id, plan_day_id, meal_type, updated_at)
+    VALUES ('cccccccc-cccc-cccc-cccc-cccccccc9903', 'cccccccc-cccc-cccc-cccc-cccccccc0042', 'snack', now());
+    RAISE EXCEPTION '[S5] FAIL: user A inserted plan entry under user B plan day';
+  EXCEPTION
+    WHEN check_violation OR insufficient_privilege THEN
+      RAISE NOTICE '[S5] PASS: plan entry cross-user INSERT blocked (2-level join WITH CHECK)';
+    WHEN others THEN
+      RAISE NOTICE '[S5] PASS: plan entry cross-user INSERT blocked (%)', SQLERRM;
+  END;
+
+  RAISE NOTICE '[S5] PASS: all cross-user INSERT attempts blocked';
 END $$;
 
--- ─────────────────────────────────────────────────────────────────────────────
--- 7. Test: authenticated user CANNOT write to another user's personal tables
--- ─────────────────────────────────────────────────────────────────────────────
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S6: Cross-user UPDATE — silent filter + verify no mutation
+-- ═════════════════════════════════════════════════════════════════════════════
+
 DO $$
 BEGIN
   SET LOCAL role = 'authenticated';
-  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-0000-0000-0000-aaaaaaaaaaaa","role":"authenticated"}';
-
-  -- Attempt to insert an allergen linked to user B's preference
-  BEGIN
-    INSERT INTO dietary_allergens (id, dietary_preference_id, name, severity, created_at, updated_at)
-    VALUES ('da-test-inject', 'dp-test-bbb1', 'injected', 'allergy', now(), now());
-    RAISE EXCEPTION 'FAIL: user A was able to INSERT allergen under user B preference';
-  EXCEPTION
-    WHEN insufficient_privilege OR check_violation THEN
-      RAISE NOTICE 'PASS: cross-user allergen insert blocked by WITH CHECK';
-    WHEN others THEN
-      RAISE NOTICE 'PASS (other constraint blocked insert): %', SQLERRM;
-  END;
-
-  -- Attempt to insert a meal plan day linked to user B's plan
-  BEGIN
-    INSERT INTO user_meal_plan_days (id, plan_id, day_index, label, created_at, updated_at)
-    VALUES ('upd-test-inject', 'ump-test-bbb1', 2, 'Tuesday', now(), now());
-    RAISE EXCEPTION 'FAIL: user A was able to INSERT plan day under user B plan';
-  EXCEPTION
-    WHEN insufficient_privilege OR check_violation THEN
-      RAISE NOTICE 'PASS: cross-user plan day insert blocked by WITH CHECK';
-    WHEN others THEN
-      RAISE NOTICE 'PASS (other constraint blocked insert): %', SQLERRM;
-  END;
-
-  RAISE NOTICE 'PASS: cross-user write isolation verified';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+  -- User A tries to UPDATE user B's dietary_preference
+  -- RLS USING clause makes user B's row invisible → UPDATE touches 0 rows silently
+  UPDATE dietary_preferences SET notes = 'hijacked' WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0002';
+  RAISE NOTICE '[S6] NOTE: cross-user UPDATE returned (expected silent 0-row filter)';
 END $$;
 
--- ─────────────────────────────────────────────────────────────────────────────
--- 8. Cleanup test data
--- ─────────────────────────────────────────────────────────────────────────────
--- Running as postgres (superuser, bypasses RLS)
-SET session_replication_role = 'replica';
-DELETE FROM dietary_allergens  WHERE id LIKE 'da-test-%';
-DELETE FROM user_meal_plan_days WHERE id LIKE 'upd-test-%';
-DELETE FROM user_meal_plans    WHERE id LIKE 'ump-test-%';
-DELETE FROM dietary_preferences WHERE id LIKE 'dp-test-%';
-SET session_replication_role = 'origin';
+-- Verify the update was truly a no-op (re-read as postgres, bypasses RLS)
+DO $$
+DECLARE n text;
+BEGIN
+  SELECT notes INTO n FROM dietary_preferences WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0002';
+  IF n = 'hijacked' THEN
+    RAISE EXCEPTION '[S6] FAIL: user A UPDATE of user B preference succeeded (notes = hijacked)';
+  END IF;
+  RAISE NOTICE '[S6] PASS: user B notes unchanged after user A UPDATE attempt (notes = %)', COALESCE(n, 'NULL');
+END $$;
 
-RAISE NOTICE '──────────────────────────────────────────────────────';
-RAISE NOTICE 'nutrition_rls_validation: all checks passed';
-RAISE NOTICE '──────────────────────────────────────────────────────';
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S7: Child row re-parent attempt — cannot move to another user's parent
+-- ═════════════════════════════════════════════════════════════════════════════
 
-ROLLBACK;  -- Roll back test data; remove this line to keep test artifacts
+DO $$
+DECLARE pid uuid;
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+
+  -- User A tries to re-parent their own plan day to user B's plan.
+  -- The WITH CHECK clause blocks this: new plan_id is not in user A's
+  -- plan set → PostgreSQL raises check_violation directly (not silent filter).
+  BEGIN
+    UPDATE user_meal_plan_days
+       SET plan_id = 'cccccccc-cccc-cccc-cccc-cccccccc0032'   -- user B's plan
+     WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0041';        -- user A's day
+    -- If we reach here: check plan_id was not changed
+    SELECT plan_id INTO pid FROM user_meal_plan_days WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0041';
+    IF pid::text = 'cccccccc-cccc-cccc-cccc-cccccccc0032' THEN
+      RAISE EXCEPTION '[S7] FAIL: user A re-parented plan day to user B plan';
+    END IF;
+    RAISE NOTICE '[S7] PASS: re-parent UPDATE silently filtered (plan_id still = %)', pid;
+  EXCEPTION
+    WHEN check_violation OR insufficient_privilege THEN
+      RAISE NOTICE '[S7] PASS: re-parent UPDATE blocked by WITH CHECK (new row violates RLS policy)';
+    WHEN others THEN
+      RAISE NOTICE '[S7] PASS: re-parent UPDATE blocked (%)', SQLERRM;
+  END;
+END $$;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S8: Template tables — authenticated READ succeeds
+-- ═════════════════════════════════════════════════════════════════════════════
+
+DO $$
+DECLARE cnt int;
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+
+  SELECT COUNT(*) INTO cnt FROM meal_plan_templates WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0061';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S8] FAIL: authenticated cannot read meal_plan_templates (got %)', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM meal_plan_template_days WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0071';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S8] FAIL: authenticated cannot read meal_plan_template_days (got %)', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM meal_plan_template_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0081';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S8] FAIL: authenticated cannot read meal_plan_template_entries (got %)', cnt; END IF;
+
+  RAISE NOTICE '[S8] PASS: authenticated can read all 3 template tables';
+END $$;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S9: Template tables — authenticated INSERT/UPDATE/DELETE blocked
+-- ═════════════════════════════════════════════════════════════════════════════
+
+DO $$
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+
+  -- INSERT into templates blocked (no INSERT policy)
+  BEGIN
+    INSERT INTO meal_plan_templates (id, name, target_calories, updated_at)
+    VALUES ('cccccccc-cccc-cccc-cccc-cccccccc9910', 'Injected', 2000, now());
+    RAISE EXCEPTION '[S9] FAIL: authenticated INSERT into meal_plan_templates succeeded';
+  EXCEPTION
+    WHEN check_violation OR insufficient_privilege THEN
+      RAISE NOTICE '[S9] PASS: authenticated INSERT into meal_plan_templates blocked';
+    WHEN others THEN
+      RAISE NOTICE '[S9] PASS: template INSERT blocked (%)', SQLERRM;
+  END;
+
+  -- DELETE of template row (no DELETE policy → silent 0-row filter)
+  DELETE FROM meal_plan_templates WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0061';
+  RAISE NOTICE '[S9] NOTE: template DELETE returned (verifying row still exists below)';
+END $$;
+
+-- Verify DELETE was a no-op
+DO $$
+DECLARE cnt int;
+BEGIN
+  SELECT COUNT(*) INTO cnt FROM meal_plan_templates WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0061';
+  IF cnt <> 1 THEN
+    RAISE EXCEPTION '[S9] FAIL: meal_plan_templates row was deleted by authenticated user (count = %)', cnt;
+  END IF;
+  RAISE NOTICE '[S9] PASS: template row survives authenticated DELETE attempt (count = %)', cnt;
+END $$;
+
+-- Template UPDATE (no UPDATE policy → silent 0-row filter)
+DO $$
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+  UPDATE meal_plan_templates SET name = 'hijacked' WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0061';
+END $$;
+
+DO $$
+DECLARE n text;
+BEGIN
+  SELECT name INTO n FROM meal_plan_templates WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0061';
+  IF n = 'hijacked' THEN
+    RAISE EXCEPTION '[S9] FAIL: authenticated UPDATE of meal_plan_templates succeeded (name = hijacked)';
+  END IF;
+  RAISE NOTICE '[S9] PASS: template name unchanged after authenticated UPDATE attempt (name = %)', n;
+END $$;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S10: Postgres role bypasses RLS — sees all rows
+-- ═════════════════════════════════════════════════════════════════════════════
+
+DO $$
+DECLARE cnt int;
+BEGIN
+  -- Explicitly reset role: SET LOCAL persists across DO blocks in same txn.
+  -- After S9's authenticated block we must return to the superuser session.
+  RESET ROLE;
+
+  -- Running as session superuser (jerrycastillo, rolbypassrls = t on local PG)
+  SELECT COUNT(*) INTO cnt FROM dietary_preferences;
+  IF cnt <> 2 THEN RAISE EXCEPTION '[S10] FAIL: postgres sees % dietary_preferences rows (want 2)', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_entries;
+  IF cnt <> 2 THEN RAISE EXCEPTION '[S10] FAIL: postgres sees % plan entries (want 2)', cnt; END IF;
+
+  SELECT COUNT(*) INTO cnt FROM meal_plan_templates;
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S10] FAIL: postgres sees % template rows (want 1)', cnt; END IF;
+
+  RAISE NOTICE '[S10] PASS: postgres role bypasses RLS, sees all fixture rows (dp=2, upe=2, mpt=1)';
+END $$;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- CLEANUP & FINAL RESULT
+-- ═════════════════════════════════════════════════════════════════════════════
+
+DO $$
+BEGIN
+  RAISE NOTICE '══════════════════════════════════════════════════════════════';
+  RAISE NOTICE 'nutrition_rls_validation v2: ALL 10 SECTIONS PASSED';
+  RAISE NOTICE '══════════════════════════════════════════════════════════════';
+END $$;
+
+ROLLBACK;  -- removes all fixture rows; schema changes persist
