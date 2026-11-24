@@ -85,16 +85,54 @@ Expected: both rows with `rolled_back_at = NULL`, validation exits 0.
 
 ## Recovery procedures
 
-### Case 1: Migration fails, Prisma reports error
+### Case 1: Migration fails, Prisma reports error (P3018)
 
-Prisma's transaction rollback means no DDL was applied. The `_prisma_migrations` row will have `rolled_back_at` set.
+When a migration fails mid-execution, Prisma's behavior is:
+
+1. The migration SQL ran inside a PostgreSQL `BEGIN`/`COMMIT` transaction. If any SQL statement errors, the entire transaction is rolled back — **no DDL reaches the database**.
+2. Prisma records the failure in `_prisma_migrations`:
+   - `finished_at` = NULL (migration did not complete)
+   - `rolled_back_at` = NULL (**not automatically set**)
+   - `applied_steps_count` = 0
+   - `logs` = error message
+3. Subsequent `prisma migrate deploy` calls immediately return **P3009** ("migrate found failed migrations") and refuse to apply any further migrations until the failure is resolved.
+
+**Prisma does NOT automatically retry a failed migration.** Manual intervention is required.
 
 **What NOT to do**: Do not manually `DELETE FROM _prisma_migrations`. This breaks Prisma's migration history permanently and is not a supported recovery path.
 
-**What to do**:
-1. Inspect the error. Prisma prints the exact SQL line that failed.
-2. Fix the issue (edit the migration SQL if needed — only if the migration has NOT yet been applied; if it has partially applied and rolled back cleanly, re-deploy is safe).
-3. Re-run `prisma migrate deploy`. Prisma retries failed migrations automatically.
+**Recovery steps**:
+
+1. **Identify the failure**: Read the P3018 output or query `_prisma_migrations`:
+   ```sql
+   SELECT migration_name, logs, applied_steps_count
+   FROM _prisma_migrations
+   WHERE finished_at IS NULL AND rolled_back_at IS NULL;
+   ```
+
+2. **Confirm no partial state** (for fully transactional DDL, nothing was committed):
+   ```sql
+   -- Check whether the migration's tables were created
+   SELECT tablename FROM pg_tables
+   WHERE schemaname = 'public'
+   AND tablename IN ('dietary_preferences', 'dietary_allergens', ...);
+   ```
+   If tables exist despite the failure, DDL was not fully rolled back (can happen with non-transactional DDL like `ALTER TYPE ... ADD VALUE` on some PostgreSQL versions). In that case, manually reconcile the partial state before proceeding.
+
+3. **Mark as rolled back** (this is the ONLY way to unblock deploy):
+   ```bash
+   npx prisma migrate resolve --rolled-back "20261123000000_nutrition_foundation_milestone1"
+   ```
+   This sets `rolled_back_at = now()` in `_prisma_migrations`. It **does not undo any SQL** — it only updates migration history. If partial DDL was committed, it remains and must be reconciled manually first.
+
+4. **Fix the migration SQL** if the failure was caused by a bug in the migration file.
+
+5. **Re-run deploy** — Prisma detects `rolled_back_at` and re-applies the migration. On success it inserts a **new row** in `_prisma_migrations`; the old failed row (with `rolled_back_at` set) remains in history.
+   ```bash
+   npx prisma migrate deploy
+   ```
+
+**Rehearsed 2026-11-24 on `involved_shadow_runbook`**: injected a `SELECT 1/0` failure into a 14th migration, confirmed `finished_at = NULL` / `rolled_back_at = NULL` after failure, confirmed P3009 on re-run without resolve, ran `migrate resolve --rolled-back`, confirmed `rolled_back_at` set, fixed SQL, re-ran deploy — exit 0, new success row inserted.
 
 ### Case 2: Tables created but app deployment fails
 
@@ -197,10 +235,15 @@ This confirms the SQL will apply without error and the RLS policies are correct.
 
 ---
 
-## What the failing-migration runbook previously said (incorrect)
+## Prisma migration failure — what actually happens
 
-> "Delete the failed migration from `_prisma_migrations` to allow re-running it"
+**Verified 2026-11-24 on `involved_shadow_runbook`** (see Case 1 above for the full rehearsal).
 
-**This is wrong.** Deleting rows from `_prisma_migrations` corrupts Prisma's migration state. Prisma will then try to re-apply the migration but encounter already-existing tables/enums and fail again. Recovery from this requires manual schema surgery.
+| Claim | Actual behavior |
+|---|---|
+| `rolled_back_at` is set automatically on failure | **FALSE** — it is NULL until you run `migrate resolve --rolled-back` |
+| `prisma migrate deploy` retries failed migrations automatically | **FALSE** — subsequent runs return P3009 and refuse to apply anything |
+| `migrate resolve --rolled-back` undoes committed SQL | **FALSE** — it only updates `_prisma_migrations`; SQL already committed remains |
+| Deleting rows from `_prisma_migrations` enables re-running | **FALSE** — corrupts migration history; do not delete |
 
-**Correct behavior**: Prisma automatically retries a failed migration on the next `prisma migrate deploy` call. The `rolled_back_at` timestamp tells Prisma the migration needs to be retried. No manual intervention in `_prisma_migrations` is ever required.
+**Correct recovery path**: inspect → confirm partial state → `migrate resolve --rolled-back <name>` → fix SQL → `migrate deploy`.

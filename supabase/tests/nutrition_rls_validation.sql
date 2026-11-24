@@ -1,4 +1,4 @@
--- 04_rls_validation.sql  v2
+-- 04_rls_validation.sql  v3
 -- Full RLS validation for all 9 nutrition tables.
 --
 -- Prerequisites: 02_supabase_stubs.sql applied, all 13 migrations applied,
@@ -78,6 +78,16 @@ END $$;
 -- ═════════════════════════════════════════════════════════════════════════════
 
 SET session_replication_role = 'replica';
+
+-- profiles rows required: dietary_preferences.user_id FK is IMMEDIATE;
+-- PostgreSQL rechecks the FK on every UPDATE of that table even when user_id
+-- is not being changed, so the referenced profile must exist.
+-- profiles has no FK to auth.users in the shadow DB, so direct INSERT is safe.
+INSERT INTO profiles (id, updated_at)
+VALUES
+  (:'USER_A', now()),
+  (:'USER_B', now())
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO dietary_preferences (id, user_id, updated_at)
 VALUES
@@ -453,13 +463,230 @@ BEGIN
 END $$;
 
 -- ═════════════════════════════════════════════════════════════════════════════
+-- S11: Owner positive writes — dietary layer
+--      Owner CAN INSERT/UPDATE/DELETE their own rows
+-- ═════════════════════════════════════════════════════════════════════════════
+
+DO $$
+DECLARE n text; cnt int;
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+
+  -- dietary_preferences: owner UPDATE succeeds
+  UPDATE dietary_preferences SET notes = 'my notes' WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0001';
+END $$;
+
+DO $$
+DECLARE n text;
+BEGIN
+  SELECT notes INTO n FROM dietary_preferences WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0001';
+  IF n <> 'my notes' THEN
+    RAISE EXCEPTION '[S11] FAIL: owner UPDATE of dietary_preferences did not persist (got %)', n;
+  END IF;
+  RAISE NOTICE '[S11] PASS: owner UPDATE of dietary_preferences persisted (notes = %)', n;
+END $$;
+
+DO $$
+DECLARE cnt int;
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+
+  -- dietary_allergens: owner INSERT under own preference
+  INSERT INTO dietary_allergens (id, dietary_preference_id, name, severity)
+  VALUES ('cccccccc-cccc-cccc-cccc-cccccccc0013', 'cccccccc-cccc-cccc-cccc-cccccccc0001', 'tree nuts', 'intolerance');
+
+  SELECT COUNT(*) INTO cnt FROM dietary_allergens WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0013';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S11] FAIL: owner INSERT of allergen not visible (got %)', cnt; END IF;
+  RAISE NOTICE '[S11] PASS: owner INSERT of dietary_allergen succeeded and is visible';
+
+  -- dietary_allergens: owner DELETE of own row
+  DELETE FROM dietary_allergens WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0013';
+  SELECT COUNT(*) INTO cnt FROM dietary_allergens WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0013';
+  IF cnt <> 0 THEN RAISE EXCEPTION '[S11] FAIL: owner DELETE of allergen did not remove row (got %)', cnt; END IF;
+  RAISE NOTICE '[S11] PASS: owner DELETE of dietary_allergen succeeded';
+
+  -- dietary_exclusions: owner INSERT under own preference
+  INSERT INTO dietary_exclusions (id, dietary_preference_id, ingredient)
+  VALUES ('cccccccc-cccc-cccc-cccc-cccccccc0023', 'cccccccc-cccc-cccc-cccc-cccccccc0001', 'msg');
+  SELECT COUNT(*) INTO cnt FROM dietary_exclusions WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0023';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S11] FAIL: owner INSERT of exclusion not visible (got %)', cnt; END IF;
+
+  DELETE FROM dietary_exclusions WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0023';
+  SELECT COUNT(*) INTO cnt FROM dietary_exclusions WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0023';
+  IF cnt <> 0 THEN RAISE EXCEPTION '[S11] FAIL: owner DELETE of exclusion did not remove row (got %)', cnt; END IF;
+  RAISE NOTICE '[S11] PASS: owner INSERT/DELETE of dietary_exclusion succeeded';
+END $$;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S12: Owner positive writes — meal plan layer
+--      Owner CAN INSERT/UPDATE/DELETE user_meal_plans, days, entries
+-- ═════════════════════════════════════════════════════════════════════════════
+
+DO $$
+DECLARE cnt int; meal text;
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+
+  -- user_meal_plans: owner INSERT
+  INSERT INTO user_meal_plans (id, user_id, name, source, updated_at)
+  VALUES ('cccccccc-cccc-cccc-cccc-cccccccc0033', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'New Plan', 'custom', now());
+  SELECT COUNT(*) INTO cnt FROM user_meal_plans WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0033';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S12] FAIL: owner INSERT of user_meal_plan not visible (got %)', cnt; END IF;
+  RAISE NOTICE '[S12] PASS: owner INSERT of user_meal_plan succeeded';
+
+  -- user_meal_plan_days: owner INSERT under own plan
+  INSERT INTO user_meal_plan_days (id, plan_id, day_index)
+  VALUES ('cccccccc-cccc-cccc-cccc-cccccccc0043', 'cccccccc-cccc-cccc-cccc-cccccccc0033', 2);
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_days WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0043';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S12] FAIL: owner INSERT of user_meal_plan_day not visible (got %)', cnt; END IF;
+  RAISE NOTICE '[S12] PASS: owner INSERT of user_meal_plan_day succeeded';
+
+  -- user_meal_plan_entries: owner INSERT under own plan day
+  INSERT INTO user_meal_plan_entries (id, plan_day_id, meal_type, updated_at)
+  VALUES ('cccccccc-cccc-cccc-cccc-cccccccc0053', 'cccccccc-cccc-cccc-cccc-cccccccc0043', 'snack', now());
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0053';
+  IF cnt <> 1 THEN RAISE EXCEPTION '[S12] FAIL: owner INSERT of user_meal_plan_entry not visible (got %)', cnt; END IF;
+  RAISE NOTICE '[S12] PASS: owner INSERT of user_meal_plan_entry succeeded (2-level join via own plan)';
+
+  -- user_meal_plan_entries: owner UPDATE
+  UPDATE user_meal_plan_entries SET meal_type = 'other' WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0053';
+  SELECT meal_type INTO meal FROM user_meal_plan_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0053';
+  IF meal::text <> 'other' THEN RAISE EXCEPTION '[S12] FAIL: owner UPDATE of plan entry did not persist (got %)', meal; END IF;
+  RAISE NOTICE '[S12] PASS: owner UPDATE of user_meal_plan_entry persisted (meal_type = other)';
+
+  -- Delete leaf-to-root to respect FK constraints
+  DELETE FROM user_meal_plan_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0053';
+  SELECT COUNT(*) INTO cnt FROM user_meal_plan_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0053';
+  IF cnt <> 0 THEN RAISE EXCEPTION '[S12] FAIL: owner DELETE of plan entry did not remove row'; END IF;
+
+  DELETE FROM user_meal_plan_days WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0043';
+  DELETE FROM user_meal_plans WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0033';
+
+  SELECT COUNT(*) INTO cnt FROM user_meal_plans WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0033';
+  IF cnt <> 0 THEN RAISE EXCEPTION '[S12] FAIL: owner DELETE of meal plan did not remove row'; END IF;
+  RAISE NOTICE '[S12] PASS: owner DELETE cascade (entry → day → plan) all succeeded';
+END $$;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- S13: Template child tables — authenticated INSERT/UPDATE/DELETE blocked
+--      meal_plan_template_days and meal_plan_template_entries have FOR SELECT
+--      policies only; writes must be blocked.
+-- ═════════════════════════════════════════════════════════════════════════════
+
+DO $$
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+
+  -- meal_plan_template_days: INSERT blocked
+  BEGIN
+    INSERT INTO meal_plan_template_days (id, template_id, day_index)
+    VALUES ('cccccccc-cccc-cccc-cccc-cccccccc9920', 'cccccccc-cccc-cccc-cccc-cccccccc0061', 2);
+    RAISE EXCEPTION '[S13] FAIL: authenticated INSERT into meal_plan_template_days succeeded';
+  EXCEPTION
+    WHEN check_violation OR insufficient_privilege THEN
+      RAISE NOTICE '[S13] PASS: meal_plan_template_days INSERT blocked (check_violation/insufficient_privilege)';
+    WHEN others THEN
+      RAISE NOTICE '[S13] PASS: meal_plan_template_days INSERT blocked (%)', SQLERRM;
+  END;
+
+  -- meal_plan_template_days: UPDATE → silent 0-row filter
+  UPDATE meal_plan_template_days SET day_index = 99 WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0071';
+  RAISE NOTICE '[S13] NOTE: template_days UPDATE returned (verifying no mutation below)';
+END $$;
+
+DO $$
+DECLARE d int;
+BEGIN
+  SELECT day_index INTO d FROM meal_plan_template_days WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0071';
+  IF d = 99 THEN
+    RAISE EXCEPTION '[S13] FAIL: authenticated UPDATE of meal_plan_template_days succeeded (day_index = 99)';
+  END IF;
+  RAISE NOTICE '[S13] PASS: meal_plan_template_days day_index unchanged after authenticated UPDATE (= %)', d;
+END $$;
+
+DO $$
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+
+  -- meal_plan_template_days: DELETE → silent 0-row filter
+  DELETE FROM meal_plan_template_days WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0071';
+END $$;
+
+DO $$
+DECLARE cnt int;
+BEGIN
+  SELECT COUNT(*) INTO cnt FROM meal_plan_template_days WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0071';
+  IF cnt <> 1 THEN
+    RAISE EXCEPTION '[S13] FAIL: meal_plan_template_days row deleted by authenticated user (count = %)', cnt;
+  END IF;
+  RAISE NOTICE '[S13] PASS: meal_plan_template_days row survives authenticated DELETE (count = 1)';
+END $$;
+
+DO $$
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+
+  -- meal_plan_template_entries: INSERT blocked
+  BEGIN
+    INSERT INTO meal_plan_template_entries (id, template_day_id, meal_type, updated_at)
+    VALUES ('cccccccc-cccc-cccc-cccc-cccccccc9921', 'cccccccc-cccc-cccc-cccc-cccccccc0071', 'lunch', now());
+    RAISE EXCEPTION '[S13] FAIL: authenticated INSERT into meal_plan_template_entries succeeded';
+  EXCEPTION
+    WHEN check_violation OR insufficient_privilege THEN
+      RAISE NOTICE '[S13] PASS: meal_plan_template_entries INSERT blocked';
+    WHEN others THEN
+      RAISE NOTICE '[S13] PASS: meal_plan_template_entries INSERT blocked (%)', SQLERRM;
+  END;
+
+  -- meal_plan_template_entries: UPDATE → silent 0-row filter
+  -- Use 'other' (valid MealType); fixture value is 'breakfast', so a change would be detectable.
+  UPDATE meal_plan_template_entries SET meal_type = 'other' WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0081';
+  RAISE NOTICE '[S13] NOTE: template_entries UPDATE returned (verifying no mutation below)';
+END $$;
+
+DO $$
+DECLARE m text;
+BEGIN
+  SELECT meal_type INTO m FROM meal_plan_template_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0081';
+  IF m::text = 'other' THEN
+    RAISE EXCEPTION '[S13] FAIL: authenticated UPDATE of meal_plan_template_entries succeeded (meal_type changed to other)';
+  END IF;
+  RAISE NOTICE '[S13] PASS: meal_plan_template_entries meal_type unchanged after authenticated UPDATE (= %)', m;
+END $$;
+
+DO $$
+BEGIN
+  SET LOCAL role = 'authenticated';
+  SET LOCAL "request.jwt.claims" = '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"authenticated"}';
+
+  -- meal_plan_template_entries: DELETE → silent 0-row filter
+  DELETE FROM meal_plan_template_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0081';
+END $$;
+
+DO $$
+DECLARE cnt int;
+BEGIN
+  SELECT COUNT(*) INTO cnt FROM meal_plan_template_entries WHERE id = 'cccccccc-cccc-cccc-cccc-cccccccc0081';
+  IF cnt <> 1 THEN
+    RAISE EXCEPTION '[S13] FAIL: meal_plan_template_entries row deleted by authenticated user (count = %)', cnt;
+  END IF;
+  RAISE NOTICE '[S13] PASS: meal_plan_template_entries row survives authenticated DELETE (count = 1)';
+END $$;
+
+-- ═════════════════════════════════════════════════════════════════════════════
 -- CLEANUP & FINAL RESULT
 -- ═════════════════════════════════════════════════════════════════════════════
 
 DO $$
 BEGIN
   RAISE NOTICE '══════════════════════════════════════════════════════════════';
-  RAISE NOTICE 'nutrition_rls_validation v2: ALL 10 SECTIONS PASSED';
+  RAISE NOTICE 'nutrition_rls_validation v3: ALL 13 SECTIONS PASSED';
   RAISE NOTICE '══════════════════════════════════════════════════════════════';
 END $$;
 
