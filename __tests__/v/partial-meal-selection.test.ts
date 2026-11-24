@@ -22,7 +22,14 @@
  *   - duplicate logging → alreadyLogged, no new rows
  *   - original-index idempotency keys
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest'
+
+// Fixed reference point for Section B date-guard tests.
+// The meal-log route enforces a 30-day lookback (isValidLogDate).
+// LOG_DATE is 7 days before FAKE_NOW — always within the window, never expires.
+const FAKE_NOW  = new Date('2026-11-20T12:00:00Z')
+const LOG_DATE  = '2026-11-13'   // 7 days before FAKE_NOW
+const CLIENT_DATE = '2026-11-20' // matches FAKE_NOW
 
 // ── Env (token signing) ─────────────────────────────────────────────────────────
 vi.stubEnv('MEAL_LOG_SIGNING_KEY', 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2a3b4c5d6a7b8c9d0e1f2')
@@ -164,7 +171,7 @@ function coachRequest(messages: Array<{ role: string; content: string }>, pendin
   return new NextRequest('http://localhost/api/coach', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, clientDate: '2026-10-17', ...(pendingCalculationToken ? { pendingCalculationToken } : {}) }),
+    body: JSON.stringify({ messages, clientDate: CLIENT_DATE, ...(pendingCalculationToken ? { pendingCalculationToken } : {}) }),
   })
 }
 
@@ -353,6 +360,13 @@ describe('POST /api/coach — multi-turn partial-meal selection (scripted AI)', 
 // ══════════════════════════════════════════════════════════════════════════════
 
 describe('POST /api/coach/meal-log — ingredient selection', () => {
+  // Freeze the system clock so the route's 30-day logDate guard never expires.
+  // LOG_DATE (7 days before FAKE_NOW) is always within the window.
+  // buildMealLogToken uses Date.now() too; frozen clock means tokens issued
+  // here are always valid (expiresAt = issuedAt + 7200s, Date.now() = issuedAt).
+  beforeAll(() => { vi.useFakeTimers(); vi.setSystemTime(FAKE_NOW) })
+  afterAll(() => { vi.useRealTimers() })
+
   const THREE_ING = () => buildMealLogToken(h.mockUser.id, {
     ingredients: [EGGS, BACON_UNRESOLVED, TOAST],
     totals: { calories: 220, proteinG: 15, carbG: 14, fatG: 11 },
@@ -362,7 +376,7 @@ describe('POST /api/coach/meal-log — ingredient selection', () => {
 
   it('includeIngredientIndexes:[0] logs only eggs with original-index key', async () => {
     const res = await MEALLOG_POST(mealLogRequest({
-      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: '2026-10-17', includeIngredientIndexes: [0],
+      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: LOG_DATE, includeIngredientIndexes: [0],
     }))
     const json = await res.json() as { ok: boolean; loggedCount: number }
     expect(res.status).toBe(200)
@@ -376,7 +390,7 @@ describe('POST /api/coach/meal-log — ingredient selection', () => {
 
   it('includeIngredientIndexes:[0,2] logs eggs+toast with original-index keys 0 and 2', async () => {
     const res = await MEALLOG_POST(mealLogRequest({
-      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: '2026-10-17', includeIngredientIndexes: [0, 2],
+      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: LOG_DATE, includeIngredientIndexes: [0, 2],
     }))
     expect((await res.json() as { loggedCount: number }).loggedCount).toBe(2)
     const keys = h.mockPrisma.foodLogEntry.create.mock.calls.map(c => c[0].data.idempotencyKey as string)
@@ -386,7 +400,7 @@ describe('POST /api/coach/meal-log — ingredient selection', () => {
 
   it('omitted indexes → logs all resolved (eggs+toast), skips unresolved bacon', async () => {
     const res = await MEALLOG_POST(mealLogRequest({
-      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: '2026-10-17',
+      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: LOG_DATE,
     }))
     expect((await res.json() as { loggedCount: number }).loggedCount).toBe(2)
     const names = h.mockPrisma.foodLogEntry.create.mock.calls.map(c => c[0].data.snapshotFoodName)
@@ -395,7 +409,7 @@ describe('POST /api/coach/meal-log — ingredient selection', () => {
 
   it('selection naming only the unresolved index → 400, nothing written', async () => {
     const res = await MEALLOG_POST(mealLogRequest({
-      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: '2026-10-17', includeIngredientIndexes: [1],
+      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: LOG_DATE, includeIngredientIndexes: [1],
     }))
     expect(res.status).toBe(400)
     expect(h.mockPrisma.$transaction).not.toHaveBeenCalled()
@@ -403,7 +417,7 @@ describe('POST /api/coach/meal-log — ingredient selection', () => {
 
   it('out-of-range selection → 400, never falls back to other items', async () => {
     const res = await MEALLOG_POST(mealLogRequest({
-      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: '2026-10-17', includeIngredientIndexes: [99],
+      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: LOG_DATE, includeIngredientIndexes: [99],
     }))
     expect(res.status).toBe(400)
     expect(h.mockPrisma.$transaction).not.toHaveBeenCalled()
@@ -411,14 +425,14 @@ describe('POST /api/coach/meal-log — ingredient selection', () => {
 
   it('empty selection array → 400 (explicit empty is not "log all")', async () => {
     const res = await MEALLOG_POST(mealLogRequest({
-      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: '2026-10-17', includeIngredientIndexes: [],
+      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: LOG_DATE, includeIngredientIndexes: [],
     }))
     expect(res.status).toBe(400)
   })
 
   it('non-array includeIngredientIndexes → 400', async () => {
     const res = await MEALLOG_POST(mealLogRequest({
-      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: '2026-10-17', includeIngredientIndexes: 'eggs',
+      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: LOG_DATE, includeIngredientIndexes: 'eggs',
     }))
     expect(res.status).toBe(400)
   })
@@ -429,7 +443,7 @@ describe('POST /api/coach/meal-log — ingredient selection', () => {
       new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '5.0.0' }),
     )
     const res = await MEALLOG_POST(mealLogRequest({
-      calculationToken: token, mealType: 'breakfast', logDate: '2026-10-17', includeIngredientIndexes: [0],
+      calculationToken: token, mealType: 'breakfast', logDate: LOG_DATE, includeIngredientIndexes: [0],
     }))
     const json = await res.json() as { ok: boolean; alreadyLogged: boolean }
     expect(res.status).toBe(200)
@@ -438,7 +452,7 @@ describe('POST /api/coach/meal-log — ingredient selection', () => {
 
   it('macros always come from the token, never request body', async () => {
     const res = await MEALLOG_POST(mealLogRequest({
-      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: '2026-10-17',
+      calculationToken: THREE_ING(), mealType: 'breakfast', logDate: LOG_DATE,
       includeIngredientIndexes: [0],
       // attacker-style injected fields
       calories: 9999, snapshotCaloriesPerServing: 9999, ingredients: [{ calories: 9999 }],

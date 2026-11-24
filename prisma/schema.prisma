@@ -62,14 +62,16 @@ model Profile {
   clientDrafts        VTrainerDraft[]             @relation("ClientDrafts")
 
   // Nutrition
-  createdFoods     FoodItem[]       @relation("FoodItemsCreated")
-  foodLogEntries   FoodLogEntry[]
-  nutritionTargets NutritionTarget[]
-  foodFavorites    FoodFavorite[]
-  savedMeals       SavedMeal[]
-  recipes          Recipe[]
-  recipeSaves      RecipeSave[]
-  ymoveRecipeSaves YMoveRecipeSave[]
+  createdFoods      FoodItem[]        @relation("FoodItemsCreated")
+  foodLogEntries    FoodLogEntry[]
+  nutritionTargets  NutritionTarget[]
+  foodFavorites     FoodFavorite[]
+  savedMeals        SavedMeal[]
+  recipes           Recipe[]
+  recipeSaves       RecipeSave[]
+  ymoveRecipeSaves  YMoveRecipeSave[]
+  dietaryPreference DietaryPreference?
+  userMealPlans     UserMealPlan[]
 
   // Health / wearable
   healthActivities HealthActivity[]
@@ -306,6 +308,8 @@ model FoodItem {
   savedMealItems    SavedMealItem[]
   recipeIngredients RecipeIngredient[]
   portions          FoodItemPortion[]
+  templateEntries   MealPlanTemplateEntry[] @relation("TemplateEntryFood")
+  userPlanEntries   UserMealPlanEntry[]     @relation("UserPlanEntryFood")
 
   @@index([name])
   @@index([barcode])
@@ -510,6 +514,8 @@ model Recipe {
   steps       RecipeStep[]
   saves       RecipeSave[]
   logEntries  FoodLogEntry[]
+  templateEntries MealPlanTemplateEntry[] @relation("TemplateEntryRecipe")
+  userPlanEntries UserMealPlanEntry[]     @relation("UserPlanEntryRecipe")
 
   @@index([userId])
   @@index([status])
@@ -1747,4 +1753,323 @@ model MealCalculationRef {
   @@index([userId], name: "meal_calculation_refs_user_id_idx")
   @@index([expiresAt], name: "meal_calculation_refs_expires_at_idx")
   @@map("meal_calculation_refs")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// DIETARY PREFERENCES
+//
+// Separated into three concerns deliberately:
+//   DietaryPreference — approach styles + meal-pattern preferences
+//   DietaryAllergen   — medical allergies / intolerances (severity-graded)
+//   DietaryExclusion  — specific ingredient dislikes / cultural/ethical avoidances
+//
+// A user may select MULTIPLE approaches. Conflicting combinations (e.g.
+// vegan + carnivore) are detected server-side at write time and rejected
+// with a descriptive error — they are NOT silently merged or dropped.
+//
+// AllergenSeverity deliberately distinguishes ALLERGY (anaphylactic risk,
+// must exclude) from INTOLERANCE (avoid when possible) from DISLIKE
+// (soft preference). Unknown allergen status on a food is treated as
+// UNKNOWN — never assumed safe. This matters for meal-plan generation:
+// unverified allergen status must surface as a warning, not a clearance.
+// ═════════════════════════════════════════════════════════════════════
+
+model DietaryPreference {
+  id      String @id @default(uuid()) @db.Uuid
+  userId  String @unique @map("user_id") @db.Uuid
+
+  // Multiple compatible dietary approaches. Conflict detection enforced
+  // server-side — see lib/nutrition/dietary-conflicts.ts.
+  approaches DietaryApproach[] @map("approaches")
+
+  // Meal-pattern preferences (used as planning hints, not hard constraints)
+  mealsPerDay  Int? @map("meals_per_day")
+  snacksPerDay Int? @map("snacks_per_day")
+
+  // Free-text notes the user wants V to know (e.g. "I hate cilantro but it's
+  // not an allergy", "I meal-prep on Sundays").  NOT used for safety checks.
+  notes String? @db.VarChar(1000)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt    @map("updated_at")
+
+  profile   Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  allergens DietaryAllergen[]
+  exclusions DietaryExclusion[]
+
+  @@map("dietary_preferences")
+}
+
+model DietaryAllergen {
+  id                  String           @id @default(uuid()) @db.Uuid
+  dietaryPreferenceId String           @map("dietary_preference_id") @db.Uuid
+  // Canonical name, lowercase (e.g. "peanuts", "tree nuts", "shellfish",
+  // "eggs", "milk", "wheat", "soy", "fish", "sesame").
+  name                String           @db.VarChar(200)
+  severity            AllergenSeverity
+  notes               String?          @db.VarChar(500)
+  createdAt           DateTime         @default(now()) @map("created_at")
+
+  preference DietaryPreference @relation(fields: [dietaryPreferenceId], references: [id], onDelete: Cascade)
+
+  @@unique([dietaryPreferenceId, name])
+  @@index([dietaryPreferenceId])
+  @@map("dietary_allergens")
+}
+
+model DietaryExclusion {
+  id                  String   @id @default(uuid()) @db.Uuid
+  dietaryPreferenceId String   @map("dietary_preference_id") @db.Uuid
+  // The specific ingredient or food to avoid (e.g. "bacon", "cilantro",
+  // "olives", "pork").  Lowercase.  Distinct from allergens — no severity.
+  ingredient          String   @db.VarChar(200)
+  // Why: "religious", "ethical", "taste", "texture", "cultural", or null
+  reason              String?  @db.VarChar(100)
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  preference DietaryPreference @relation(fields: [dietaryPreferenceId], references: [id], onDelete: Cascade)
+
+  @@unique([dietaryPreferenceId, ingredient])
+  @@index([dietaryPreferenceId])
+  @@map("dietary_exclusions")
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// MEAL PLANS
+//
+// Two-layer architecture:
+//   MealPlanTemplate / MealPlanTemplateDay / MealPlanTemplateEntry
+//     — Curated master plans.  Admin-created.  Versioned.  Read-only
+//       for users.  Carry explicit suitableFor[] and verifiedAllergenFree[]
+//       claims — with an IMPORTANT caveat: allergen-free claims are only
+//       as good as the ingredients verified at that version.  New ingredient
+//       changes must increment the version and re-verify.
+//
+//   UserMealPlan / UserMealPlanDay / UserMealPlanEntry
+//     — Personal copies.  Users can start from a template, customize with
+//       Coach V, or build from scratch.  Saving a personal copy never
+//       mutates the master template.  source field tracks origin.
+//
+// Nutrition provenance:
+//   calculatedCalories / Protein / Carb / Fat are ALWAYS derived from
+//   provider-verified food records (USDA, FatSecret, recipe serving math)
+//   via the existing calculate_nutrition infrastructure.
+//   AI-generated text descriptions are display-only.
+//   nutritionConfidence tracks whether the match was confident, plausible,
+//   or unresolved.  unresolvedNote explains what could not be matched.
+//   Callers must surface unresolved entries to users — never silently drop.
+// ═════════════════════════════════════════════════════════════════════
+
+model MealPlanTemplate {
+  id          String          @id @default(uuid()) @db.Uuid
+  name        String          @db.VarChar(300)
+  description String?         @db.VarChar(1000)
+  slug        String?         @unique @db.VarChar(300)
+
+  // Calorie and macro targets this template is designed around
+  targetCalories Int         @map("target_calories")
+  targetProteinG Decimal?    @map("target_protein_g") @db.Decimal(8, 2)
+  targetCarbG    Decimal?    @map("target_carb_g")    @db.Decimal(8, 2)
+  targetFatG     Decimal?    @map("target_fat_g")     @db.Decimal(8, 2)
+
+  // Approaches this template is compatible with (may satisfy multiple)
+  suitableFor DietaryApproach[] @map("suitable_for")
+
+  // Allergens this template has been verified to exclude.
+  // CRITICAL: absence of an allergen from this list does NOT mean the template
+  // is safe for that allergen — it means the claim has not been verified.
+  // Unknown allergen status must be surfaced as a warning, not a clearance.
+  verifiedAllergenFree String[] @map("verified_allergen_free")
+
+  durationDays Int @default(7) @map("duration_days")
+  mealsPerDay  Int @default(3) @map("meals_per_day")
+
+  status  MealPlanTemplateStatus @default(draft)
+  version Int                    @default(1)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt    @map("updated_at")
+
+  days  MealPlanTemplateDay[]
+  plans UserMealPlan[]        @relation("TemplateSource")
+
+  @@map("meal_plan_templates")
+}
+
+model MealPlanTemplateDay {
+  id         String @id @default(uuid()) @db.Uuid
+  templateId String @map("template_id") @db.Uuid
+  // 0 = Day 1 (Monday when used as a week), 1 = Day 2, etc.
+  dayIndex   Int    @map("day_index")
+  label      String? @db.VarChar(100) // e.g. "Light day", "High-carb day"
+
+  template MealPlanTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  entries  MealPlanTemplateEntry[]
+
+  @@unique([templateId, dayIndex])
+  @@map("meal_plan_template_days")
+}
+
+model MealPlanTemplateEntry {
+  id            String   @id @default(uuid()) @db.Uuid
+  templateDayId String   @map("template_day_id") @db.Uuid
+  mealType      MealType @map("meal_type")
+  sortOrder     Int      @default(0) @map("sort_order")
+
+  // Source: at most one of recipeId / foodItemId is set.
+  // A null food_item_id with a non-null description means a generic
+  // AI-described item whose nutrition has not been verified — must set
+  // nutritionConfidence to "unresolved" and populate unresolvedNote.
+  recipeId          String?  @map("recipe_id")  @db.Uuid
+  foodItemId        String?  @map("food_item_id") @db.Uuid
+  genericDescription String? @map("generic_description") @db.VarChar(500)
+
+  recipeServings    Decimal? @map("recipe_servings")    @db.Decimal(8, 3)
+  servingMultiplier Decimal? @map("serving_multiplier") @db.Decimal(8, 3)
+
+  // Provider-derived nutrition snapshot — never from AI arithmetic
+  calculatedCalories Decimal? @map("calculated_calories") @db.Decimal(8, 2)
+  calculatedProteinG Decimal? @map("calculated_protein_g") @db.Decimal(8, 3)
+  calculatedCarbG    Decimal? @map("calculated_carb_g")    @db.Decimal(8, 3)
+  calculatedFatG     Decimal? @map("calculated_fat_g")     @db.Decimal(8, 3)
+
+  nutritionSource     String? @map("nutrition_source")     @db.VarChar(100)
+  nutritionConfidence String? @map("nutrition_confidence") @db.VarChar(50)
+  unresolvedNote      String? @map("unresolved_note")      @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt    @map("updated_at")
+
+  templateDay MealPlanTemplateDay @relation(fields: [templateDayId], references: [id], onDelete: Cascade)
+  recipe      Recipe?             @relation("TemplateEntryRecipe", fields: [recipeId],   references: [id], onDelete: SetNull)
+  foodItem    FoodItem?           @relation("TemplateEntryFood",   fields: [foodItemId], references: [id], onDelete: SetNull)
+
+  @@index([templateDayId])
+  @@map("meal_plan_template_entries")
+}
+
+model UserMealPlan {
+  id         String         @id @default(uuid()) @db.Uuid
+  userId     String         @map("user_id")     @db.Uuid
+  templateId String?        @map("template_id") @db.Uuid
+  name       String         @db.VarChar(300)
+  source     MealPlanSource
+
+  targetCalories Int?     @map("target_calories")
+  targetProteinG Decimal? @map("target_protein_g") @db.Decimal(8, 2)
+  targetCarbG    Decimal? @map("target_carb_g")    @db.Decimal(8, 2)
+  targetFatG     Decimal? @map("target_fat_g")     @db.Decimal(8, 2)
+
+  startDate DateTime?        @map("start_date") @db.Date
+  status    UserMealPlanStatus @default(draft)
+
+  // V-generated plans carry a provenance note (which model, which prompt version)
+  generationNote String? @map("generation_note") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt    @map("updated_at")
+
+  profile  Profile           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template MealPlanTemplate? @relation("TemplateSource", fields: [templateId], references: [id], onDelete: SetNull)
+  days     UserMealPlanDay[]
+
+  @@index([userId])
+  @@map("user_meal_plans")
+}
+
+model UserMealPlanDay {
+  id       String @id @default(uuid()) @db.Uuid
+  planId   String @map("plan_id") @db.Uuid
+  dayIndex Int    @map("day_index") // 0-6
+  label    String? @db.VarChar(100)
+
+  plan    UserMealPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  entries UserMealPlanEntry[]
+
+  @@unique([planId, dayIndex])
+  @@map("user_meal_plan_days")
+}
+
+model UserMealPlanEntry {
+  id          String   @id @default(uuid()) @db.Uuid
+  planDayId   String   @map("plan_day_id") @db.Uuid
+  mealType    MealType @map("meal_type")
+  sortOrder   Int      @default(0) @map("sort_order")
+
+  recipeId          String?  @map("recipe_id")  @db.Uuid
+  foodItemId        String?  @map("food_item_id") @db.Uuid
+  genericDescription String? @map("generic_description") @db.VarChar(500)
+
+  recipeServings    Decimal? @map("recipe_servings")    @db.Decimal(8, 3)
+  servingMultiplier Decimal? @map("serving_multiplier") @db.Decimal(8, 3)
+
+  calculatedCalories Decimal? @map("calculated_calories") @db.Decimal(8, 2)
+  calculatedProteinG Decimal? @map("calculated_protein_g") @db.Decimal(8, 3)
+  calculatedCarbG    Decimal? @map("calculated_carb_g")    @db.Decimal(8, 3)
+  calculatedFatG     Decimal? @map("calculated_fat_g")     @db.Decimal(8, 3)
+
+  nutritionSource     String? @map("nutrition_source")     @db.VarChar(100)
+  nutritionConfidence String? @map("nutrition_confidence") @db.VarChar(50)
+  unresolvedNote      String? @map("unresolved_note")      @db.VarChar(500)
+
+  // When the user logs this entry into their food log, loggedAt is set.
+  // The actual FoodLogEntry is created separately — this is just the timestamp.
+  loggedAt DateTime? @map("logged_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt    @map("updated_at")
+
+  planDay  UserMealPlanDay @relation(fields: [planDayId], references: [id], onDelete: Cascade)
+  recipe   Recipe?         @relation("UserPlanEntryRecipe", fields: [recipeId],   references: [id], onDelete: SetNull)
+  foodItem FoodItem?       @relation("UserPlanEntryFood",   fields: [foodItemId], references: [id], onDelete: SetNull)
+
+  @@index([planDayId])
+  @@map("user_meal_plan_entries")
+}
+
+// ─── Dietary enums ────────────────────────────────────────────────────
+
+enum DietaryApproach {
+  keto
+  carnivore
+  vegan
+  vegetarian
+  mediterranean
+  paleo
+  low_carb
+  high_protein
+  plant_based
+  gluten_free
+  dairy_free
+}
+
+enum AllergenSeverity {
+  // Potential anaphylaxis or serious medical reaction — strict exclusion required.
+  // Meal plans must surface a warning for any food with unknown allergen status.
+  allergy
+  // Digestive or immune sensitivity — avoid when possible, not life-threatening.
+  intolerance
+  // Personal preference — skip if easy, but not a safety concern.
+  dislike
+}
+
+// ─── Meal plan enums ──────────────────────────────────────────────────
+
+enum MealPlanTemplateStatus {
+  draft
+  published
+  archived
+}
+
+enum MealPlanSource {
+  template     // started from a MealPlanTemplate
+  v_generated  // generated by Coach V
+  custom       // manually assembled
+}
+
+enum UserMealPlanStatus {
+  draft
+  active
+  completed
+  archived
 }

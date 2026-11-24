@@ -7,6 +7,7 @@ import { useWeightUnit } from '@/lib/hooks/use-weight-unit'
 import { useDistanceUnit } from '@/lib/hooks/use-distance-unit'
 import { AppleHealthCard } from '@/components/settings/AppleHealthCard'
 import { ChangePasswordCard } from '@/components/settings/ChangePasswordCard'
+import { DietaryPreferencesCard } from '@/components/settings/DietaryPreferencesCard'
 
 export default function SettingsPage() {
   const { unit, setUnit } = useWeightUnit()
@@ -77,6 +78,8 @@ export default function SettingsPage() {
         </div>
 
         <AppleHealthCard />
+
+        <DietaryPreferencesCard />
 
         <ChangePasswordCard />
 
