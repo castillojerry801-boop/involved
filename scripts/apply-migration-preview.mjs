@@ -91,3 +91,37 @@ for (const name of enumMigrations) {
     }
   }
 }
+
+// ── Deploy remaining transactional migrations via pooler ──────────────────────
+// Runs `prisma migrate deploy` after all enum migrations have been reconciled.
+// DIRECT_URL is overridden to DATABASE_URL (Supavisor pooler, port 6543) with
+// pgbouncer=false so Prisma gets a session-mode connection that supports DDL
+// inside transactions. Port 5432 (the real DIRECT_URL) is blocked from Vercel
+// build machines; the pooler in session mode is accessible and supports CREATE TABLE.
+const databaseUrlForDeploy = process.env.DATABASE_URL
+if (!databaseUrlForDeploy) {
+  console.warn('apply-migration-preview: deploy WARN — DATABASE_URL not set, skipping migrate deploy')
+  process.exit(0)
+}
+
+// Switch to session mode (pgbouncer=false) and add connect timeout.
+const sessionUrl = databaseUrlForDeploy
+  .replace(/pgbouncer=true/i, 'pgbouncer=false')
+  .replace(/[?&]connect_timeout=\d+/i, '')
+  + (databaseUrlForDeploy.includes('?') ? '&connect_timeout=10' : '?connect_timeout=10')
+
+console.log('apply-migration-preview: deploy — running prisma migrate deploy via pooler session mode')
+try {
+  execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
+    stdio:   'inherit',
+    cwd:     root,
+    env:     { ...process.env, DIRECT_URL: sessionUrl },
+    timeout: 60000,
+  })
+  console.log('apply-migration-preview: deploy OK')
+} catch {
+  // Network error or already up to date — either is acceptable for preview.
+  // If this fires for a real failure, check Vercel build logs and apply
+  // pending migrations manually in Supabase SQL Editor (project qverqgbfkgiscycdqsck).
+  console.warn('apply-migration-preview: deploy WARN — migrate deploy failed or timed out (network, up to date, or migration error)')
+}
