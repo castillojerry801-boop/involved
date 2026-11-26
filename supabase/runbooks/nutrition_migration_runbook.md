@@ -154,7 +154,7 @@ This should be rare — only if the schema design was fundamentally wrong.
 
 For catastrophic scenarios where data needs to be restored to a point before the migration:
 
-See the PITR procedure below.
+See the restore rehearsal procedure below.
 
 ---
 
@@ -252,37 +252,34 @@ The WAL archive covers 69+ days of continuous history. Supabase's PITR dashboard
 
 ---
 
-## Isolated restore rehearsal (documentation)
+## Isolated restore rehearsal
 
-A full PITR restore rehearsal requires Supabase Dashboard access and a spare project (or the restore creates a new project). The following documents the procedure and what access/cost approval is needed.
+A full database restore rehearsal requires Supabase Dashboard access and a spare project (or the restore creates a new project). The following documents the procedure and what access/cost approval is needed.
 
 ### Access and cost requirements
 
 | Requirement | Detail |
 |---|---|
 | Dashboard access | Project owner or admin role required |
-| Plan tier | Pro or Team — Free plan does not support PITR |
 | Cost | Supabase creates a **new project** for the restore; it incurs the standard project fee until deleted. Estimate: ~$25–50/month pro-rated for the duration of the rehearsal (< 1 day = < $2). |
 | Approval needed | Yes — costs money and requires owner-level dashboard access |
 
 ### Rehearsal procedure (once approved)
 
-1. **Record restore target**: Before starting, note the LSN and timestamp you want to restore to (the pre-migration LSN recorded in pre-flight step 1).
+1. **Choose backup**: Identify the scheduled daily backup snapshot to restore from (the one taken before the migration run). Dashboard → Database → Backups → Daily Backups — select the snapshot and choose "Restore to new project".
 
-2. **Initiate restore**: Dashboard → Database → Backups → Point in Time Recovery → select the timestamp → "Restore to new project".
+2. **Wait for restore**: Supabase provisions a new project and restores from the snapshot. Estimate 15–30 minutes.
 
-3. **Wait for restore**: Supabase provisions a new project and applies WAL replay. For a 68-day database, estimate 15–30 minutes.
+3. **Verify restored state**: Run the read-only verification SQL in the restored project's SQL Editor. The query checks migration count, migration names, schema presence, and record counts without exposing customer records. See the rehearsal results below for the expected output.
 
-4. **Verify restored state**: Run the read-only verification SQL in the restored project's SQL Editor. The query checks migration count, migration names, schema presence, and record counts without exposing customer records. See the rehearsal results below for the expected output.
+4. **Confirm user data integrity**: The record counts in check 8 (profiles non-zero, food_log_entries non-zero, workouts non-zero) confirm data was restored. Latest-activity timestamps in check 9 confirm the cut is at or before the restore target.
 
-5. **Confirm user data integrity**: The record counts in check 8 (profiles non-zero, food_log_entries non-zero, workouts non-zero) confirm data was restored. Latest-activity timestamps in check 9 confirm the cut is at or before the restore target.
-
-6. **Tear down**: Delete the restored project from the dashboard once verified.
+5. **Tear down**: Delete the restored project from the dashboard once verified.
 
 ### Rehearsal completed — 2026-11-23
 
 **Restore project**: `involved-restore-rehearsal` (`tkkujphqlohlfxolzzho.supabase.co`)  
-**Restore target**: 2026-11-23 05:03:12 UTC  
+**Backup used**: scheduled daily backup at 2026-11-23 05:03:12 UTC  
 **Verification run via Supabase SQL Editor**
 
 | Check | Expected | Actual | Result |
@@ -316,7 +313,7 @@ The `involved_shadow` shadow database (local PostgreSQL) serves as the structura
 - All 13 migration history rows present, `rolled_back_at = NULL` on all: confirmed ✓
 - All 13 RLS validation sections passed, exit 0: confirmed 2026-11-24 ✓
 
-This confirms the SQL will apply without error and the RLS policies are correct. It does not replace a Supabase PITR rehearsal for data-integrity verification.
+This confirms the SQL will apply without error and the RLS policies are correct. It does not replace a full database restore rehearsal for data-integrity verification.
 
 ---
 
