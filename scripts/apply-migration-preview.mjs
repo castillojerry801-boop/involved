@@ -4,16 +4,13 @@
  *
  * Runs ONLY when VERCEL_ENV === 'preview'. Production and local builds are no-ops.
  *
- * DDL step: uses DIRECT_URL (non-pooled) via `prisma db execute` — required because
- * `ALTER TYPE ... ADD VALUE` cannot run inside a transaction block, and `prisma migrate
- * deploy` wraps every migration in one. `prisma db execute` sends SQL directly.
- * Supabase blocks port 5432 from Vercel build machines, so this step falls back to a
- * manual instruction when the connection is refused.
+ * Enum migration step: ALTER TYPE ... ADD VALUE cannot run inside a transaction
+ * block, so each enum migration is applied via `prisma db execute` (which sends
+ * the SQL directly without wrapping it in BEGIN/COMMIT) and then recorded with
+ * `migrate resolve --applied` so `migrate deploy` skips it on subsequent runs.
  *
- * Reconcile step: uses DATABASE_URL (pooler) via `prisma migrate resolve --applied`.
- * This is plain DML (INSERT into _prisma_migrations), so the pooler connection works.
- * Marks each migration as applied so future `migrate deploy` runs skip it correctly
- * instead of trying to re-run the ALTER TYPE inside a failing transaction.
+ * Deploy step: runs `prisma migrate deploy` using DIRECT_URL (the Supabase
+ * Session pooler). A failure exits non-zero and fails the build.
  */
 
 import { execFileSync } from 'child_process'
@@ -25,6 +22,12 @@ if (process.env.VERCEL_ENV !== 'preview') {
 }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const directUrl = process.env.DIRECT_URL
+
+if (!directUrl) {
+  console.error('apply-migration-preview: DIRECT_URL is not set — cannot apply migrations')
+  process.exit(1)
+}
 
 // Migrations that must be applied non-transactionally (ALTER TYPE ADD VALUE).
 // Add new entries here when adding enum values in future migrations.
@@ -36,84 +39,42 @@ for (const name of enumMigrations) {
   const rel  = `prisma/migrations/${name}/migration.sql`
   const file = path.join(root, rel)
 
-  // ── DDL step (DIRECT_URL, non-transactional) ──────────────────────────────
-  const directUrl = process.env.DIRECT_URL
-  if (directUrl) {
-    console.log(`apply-migration-preview: DDL — applying ${name}`)
-    try {
-      execFileSync('npx', ['prisma', 'db', 'execute', '--file', file, '--url', directUrl], {
-        stdio: 'inherit',
-        cwd:   root,
-      })
-      console.log(`apply-migration-preview: DDL OK — ${name}`)
-    } catch {
-      // Supabase direct connection (port 5432) is blocked from Vercel build machines.
-      // Apply the migration manually if it has not been applied yet.
-      console.warn(`apply-migration-preview: DDL WARN — network unreachable for ${name}`)
-      console.warn('apply-migration-preview: Apply manually in Supabase SQL Editor (project qverqgbfkgiscycdqsck):')
-      console.warn(`  ALTER TYPE "BillingSource" ADD VALUE IF NOT EXISTS 'rc_test';`)
-    }
-  } else {
-    console.warn('apply-migration-preview: DIRECT_URL not set — skipping DDL step')
+  // ── DDL step (non-transactional) ─────────────────────────────────────────
+  // IF NOT EXISTS guards make this safe to re-run on redeployment.
+  console.log(`apply-migration-preview: DDL — applying ${name}`)
+  try {
+    execFileSync('npx', ['prisma', 'db', 'execute', '--file', file, '--url', directUrl], {
+      stdio: 'inherit',
+      cwd:   root,
+    })
+    console.log(`apply-migration-preview: DDL OK — ${name}`)
+  } catch {
+    console.warn(`apply-migration-preview: DDL WARN — ${name} (already applied or non-fatal error)`)
   }
 
-  // ── Reconcile step (DATABASE_URL pooler, plain DML) ───────────────────────
-  // Marks the migration as applied in _prisma_migrations so `migrate deploy`
-  // does not attempt to re-run the ALTER TYPE inside a transaction on future runs.
-  //
-  // Prisma CLI schema operations use directUrl when set, which is the blocked direct
-  // connection. Override DIRECT_URL = DATABASE_URL for this subprocess so Prisma
-  // uses the pooler (accessible from Vercel build machines) for this DML-only step.
-  const databaseUrl = process.env.DATABASE_URL
-  if (!databaseUrl) {
-    console.warn('apply-migration-preview: reconcile WARN — DATABASE_URL not set, skipping')
-  } else {
-    // Add a 5-second connect timeout so the reconcile step fails fast rather than
-    // hanging for minutes when Supabase blocks the build machine's IP.
-    const timeoutUrl = databaseUrl.includes('?')
-      ? `${databaseUrl}&connect_timeout=5`
-      : `${databaseUrl}?connect_timeout=5`
-    console.log(`apply-migration-preview: reconcile — marking ${name} as applied`)
-    try {
-      execFileSync('npx', ['prisma', 'migrate', 'resolve', '--applied', name], {
-        stdio:   'inherit',
-        cwd:     root,
-        env:     { ...process.env, DIRECT_URL: timeoutUrl },
-        timeout: 15000,
-      })
-      console.log(`apply-migration-preview: reconcile OK — ${name}`)
-    } catch {
-      // Expected on re-deploy if migration is already recorded as applied.
-      // Also fires if Supabase blocks the build machine IP or _prisma_migrations absent.
-      // Reconcile manually in Supabase SQL Editor (project qverqgbfkgiscycdqsck):
-      //   see prisma/migrations/20261110010000_billing_source_rc_test/migration.sql
-      console.warn(`apply-migration-preview: reconcile WARN — ${name} (network, already applied, or no _prisma_migrations table)`)
-    }
+  // ── Reconcile step ────────────────────────────────────────────────────────
+  // Records the migration in _prisma_migrations so migrate deploy skips it.
+  console.log(`apply-migration-preview: reconcile — marking ${name} as applied`)
+  try {
+    execFileSync('npx', ['prisma', 'migrate', 'resolve', '--applied', name], {
+      stdio:   'inherit',
+      cwd:     root,
+      timeout: 15000,
+    })
+    console.log(`apply-migration-preview: reconcile OK — ${name}`)
+  } catch {
+    // Expected on redeployment when migration is already recorded as applied.
+    console.warn(`apply-migration-preview: reconcile WARN — ${name} (already applied or non-fatal)`)
   }
 }
 
-// ── Deploy remaining transactional migrations ────────────────────────────────
-// Runs `prisma migrate deploy` after all enum migrations have been reconciled.
-// Uses DIRECT_URL as-is (the non-pooled direct connection). Prisma requires a
-// direct connection for schema operations; the pooler (DATABASE_URL) is not
-// suitable for DDL inside transactions.
-const directUrlForDeploy = process.env.DIRECT_URL
-if (!directUrlForDeploy) {
-  console.warn('apply-migration-preview: deploy WARN — DIRECT_URL not set, skipping migrate deploy')
-  process.exit(0)
-}
-
+// ── Deploy remaining transactional migrations ─────────────────────────────
+// Uses DIRECT_URL (Supabase Session pooler). No try/catch — a failure exits
+// non-zero and fails the Preview build so migration errors are never silent.
 console.log('apply-migration-preview: deploy — running prisma migrate deploy')
-try {
-  execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
-    stdio:   'inherit',
-    cwd:     root,
-    timeout: 60000,
-  })
-  console.log('apply-migration-preview: deploy OK')
-} catch {
-  // Network error or already up to date — either is acceptable for preview.
-  // If this fires for a real failure, check Vercel build logs and apply
-  // pending migrations manually in the preview Supabase SQL Editor.
-  console.warn('apply-migration-preview: deploy WARN — migrate deploy failed or timed out (network, up to date, or migration error)')
-}
+execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
+  stdio:   'inherit',
+  cwd:     root,
+  timeout: 90000,
+})
+console.log('apply-migration-preview: deploy OK')
