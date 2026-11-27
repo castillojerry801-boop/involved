@@ -33,7 +33,7 @@ export async function checkAndConsumeVUsage(
   userId:  string,
   tier:    EffectiveTier,
   feature: AiFeatureKey,
-): Promise<{ allowed: boolean; count: number; limit: number | null }> {
+): Promise<{ allowed: boolean; count: number; limit: number | null; dbError?: true }> {
   const limit  = getAiLimit(tier, feature)
   const period = billingPeriod()
 
@@ -80,8 +80,13 @@ export async function checkAndConsumeVUsage(
     })
     return { allowed: false, count: existing?.interactionCount ?? limit, limit }
   } catch {
-    // Fail open: a DB error must not silently block users.
-    return { allowed: true, count: 0, limit }
+    if (limit !== null) {
+      // Capped tier: cannot verify usage → signal the caller to return a temporary error.
+      // Failing open would let users bypass the ceiling on every DB outage.
+      return { allowed: false, count: 0, limit, dbError: true }
+    }
+    // Unlimited tier: fail open (no cap to enforce, so no risk of over-use).
+    return { allowed: true, count: 0, limit: null }
   }
 }
 

@@ -10,13 +10,19 @@ vi.mock('@/lib/prisma', () => ({
     },
     userSubscription: {
       count: vi.fn().mockResolvedValue(0),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    aiUsageLog: {
+      findMany: vi.fn().mockResolvedValue([]),
     },
   },
 }))
 
 import { prisma } from '@/lib/prisma'
-const mockFindMany = vi.mocked(prisma.aiRequestLog.findMany)
-const mockSubCount = vi.mocked(prisma.userSubscription.count)
+const mockFindMany      = vi.mocked(prisma.aiRequestLog.findMany)
+const mockSubCount      = vi.mocked(prisma.userSubscription.count)
+const mockSubFindMany   = vi.mocked(prisma.userSubscription.findMany)
+const mockUsageFindMany = vi.mocked(prisma.aiUsageLog.findMany)
 
 const TODAY = new Date('2026-10-23T10:00:00Z')
 
@@ -61,6 +67,8 @@ function makeLog(overrides: {
 beforeEach(() => {
   mockFindMany.mockResolvedValue([])
   mockSubCount.mockResolvedValue(0)
+  mockSubFindMany.mockResolvedValue([])
+  mockUsageFindMany.mockResolvedValue([])
 })
 
 describe('generateAiUsageReport — empty period', () => {

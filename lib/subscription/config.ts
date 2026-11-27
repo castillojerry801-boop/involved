@@ -166,7 +166,7 @@ export const AI_LIMITS: Record<EffectiveTier, AiLimitRecord> = {
     substitution:        envInt('LIMIT_TRIAL_SUBSTITUTION', 20),
   },
   plus: {
-    coach_message:       null,
+    coach_message:       envInt('LIMIT_PLUS_COACH',       150),
     workout_generation:  null,
     meal_photo:          null,
     label_scan:          null,
@@ -199,7 +199,7 @@ export function getAiLimit(tier: EffectiveTier, feature: AiFeatureKey): number |
 // ─── Upgrade messaging ────────────────────────────────────────────────────────
 
 export const PLUS_HIGHLIGHTS = [
-  'Unlimited AI Coach conversations',
+  '150 AI Coach messages per month',
   'Personalized AI workout generation',
   'Voice workout logging',
   'Meal photo nutrition analysis',

@@ -19,6 +19,7 @@ export type OperationType =
   | 'photo_analysis'
   | 'trainer_query'
   | 'chat_prose'
+  | 'chat_rate_limited'
 
 export interface PendingRequestLog {
   userId: string
@@ -104,6 +105,29 @@ export function buildAudioLog(
     audioBytes,
     estimatedCostUsd,
     pricingStatus,
+  }
+}
+
+/**
+ * Build a zero-cost log entry for a request blocked by the usage limit.
+ * Records that a user hit their ceiling without spending any tokens.
+ */
+export function buildBlockedAttemptLog(
+  userId: string,
+  feature: AiFeature,
+): PendingRequestLog {
+  return {
+    userId,
+    billingPeriod: currentBillingPeriod(),
+    feature,
+    operationType: 'chat_rate_limited',
+    model: 'blocked',
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedInputTokens: 0,
+    audioBytes: null,
+    estimatedCostUsd: 0,
+    pricingStatus: 'blocked',
   }
 }
 
