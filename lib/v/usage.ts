@@ -33,7 +33,7 @@ export async function checkAndConsumeVUsage(
   userId:  string,
   tier:    EffectiveTier,
   feature: AiFeatureKey,
-): Promise<{ allowed: boolean; count: number; limit: number | null }> {
+): Promise<{ allowed: boolean; count: number; limit: number | null; dbError?: true }> {
   const limit  = getAiLimit(tier, feature)
   const period = billingPeriod()
 
@@ -42,9 +42,9 @@ export async function checkAndConsumeVUsage(
       // Unlimited tier — track usage, never block.
       const rows = await prisma.$queryRaw<Array<{ n: number }>>`
         INSERT INTO "ai_usage_logs"
-          ("user_id", "billing_period", "feature", "interaction_count", "created_at", "updated_at")
+          ("id", "user_id", "billing_period", "feature", "interaction_count", "created_at", "updated_at")
         VALUES
-          (${userId}::uuid, ${period}, ${feature}::"AiFeature", 1, NOW(), NOW())
+          (gen_random_uuid(), ${userId}::uuid, ${period}, ${feature}::"AiFeature", 1, NOW(), NOW())
         ON CONFLICT ("user_id", "billing_period", "feature")
         DO UPDATE SET
           "interaction_count" = "ai_usage_logs"."interaction_count" + 1,
@@ -58,9 +58,9 @@ export async function checkAndConsumeVUsage(
     // Returns 1 row (new count) if under limit; 0 rows if at or over limit.
     const rows = await prisma.$queryRaw<Array<{ n: number }>>`
       INSERT INTO "ai_usage_logs"
-        ("user_id", "billing_period", "feature", "interaction_count", "created_at", "updated_at")
+        ("id", "user_id", "billing_period", "feature", "interaction_count", "created_at", "updated_at")
       VALUES
-        (${userId}::uuid, ${period}, ${feature}::"AiFeature", 1, NOW(), NOW())
+        (gen_random_uuid(), ${userId}::uuid, ${period}, ${feature}::"AiFeature", 1, NOW(), NOW())
       ON CONFLICT ("user_id", "billing_period", "feature")
       DO UPDATE SET
         "interaction_count" = "ai_usage_logs"."interaction_count" + 1,
@@ -80,7 +80,11 @@ export async function checkAndConsumeVUsage(
     })
     return { allowed: false, count: existing?.interactionCount ?? limit, limit }
   } catch {
-    // Fail open: a DB error must not silently block users.
+    if (feature === 'coach_message' && limit !== null) {
+      // Coach returns a retryable error when it cannot verify a capped allowance.
+      return { allowed: false, count: 0, limit, dbError: true }
+    }
+    // Preserve existing outage behavior for other features and unlimited tiers.
     return { allowed: true, count: 0, limit }
   }
 }

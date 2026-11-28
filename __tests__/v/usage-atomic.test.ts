@@ -95,34 +95,94 @@ describe('Limited tier — free (limit=20)', () => {
     expect(result.count).toBe(20)
   })
 
-  it('DB error fails open — returns allowed=true to avoid blocking users', async () => {
+  it('DB error on capped tier — returns dbError=true, allowed=false (fail closed)', async () => {
     mockQueryRaw.mockRejectedValue(new Error('DB connection lost'))
     const result = await checkAndConsumeVUsage(USER_ID, 'free', FEATURE)
-    expect(result.allowed).toBe(true)
+    expect(result.allowed).toBe(false)
+    expect(result.dbError).toBe(true)
     expect(result.count).toBe(0)
+    expect(result.limit).toBe(20)
   })
 })
 
-// ─── Unlimited tier — never blocked ──────────────────────────────────────────
+// ─── Plus tier — limited to 150 ──────────────────────────────────────────────
 
-describe('Unlimited tier — plus', () => {
-  it('always returns allowed=true', async () => {
-    mockQueryRaw.mockResolvedValue([{ n: 500 }])
+describe('Limited tier — plus (limit=150)', () => {
+  it('first request: INSERT fires, returns count=1, allowed', async () => {
+    mockQueryRaw.mockResolvedValue([{ n: 1 }])
     const result = await checkAndConsumeVUsage(USER_ID, 'plus', FEATURE)
+    expect(result.allowed).toBe(true)
+    expect(result.count).toBe(1)
+    expect(result.limit).toBe(150)
+  })
+
+  it('request 150/150: last slot allowed', async () => {
+    mockQueryRaw.mockResolvedValue([{ n: 150 }])
+    const result = await checkAndConsumeVUsage(USER_ID, 'plus', FEATURE)
+    expect(result.allowed).toBe(true)
+    expect(result.count).toBe(150)
+    expect(result.limit).toBe(150)
+  })
+
+  it('request 151: WHERE 150 < 150 fails → 0 rows → blocked', async () => {
+    mockQueryRaw.mockResolvedValue([])
+    mockFindUnique.mockResolvedValue({ interactionCount: 150 })
+    const result = await checkAndConsumeVUsage(USER_ID, 'plus', FEATURE)
+    expect(result.allowed).toBe(false)
+    expect(result.count).toBe(150)
+    expect(result.limit).toBe(150)
+  })
+
+  it('blocked: does NOT call updateMany (no over-increment to roll back)', async () => {
+    mockQueryRaw.mockResolvedValue([])
+    mockFindUnique.mockResolvedValue({ interactionCount: 150 })
+    await checkAndConsumeVUsage(USER_ID, 'plus', FEATURE)
+    expect(mockUpdateMany).not.toHaveBeenCalled()
+  })
+
+  it('two simultaneous requests at count=149: exactly one fills slot 150, one is blocked', async () => {
+    mockQueryRaw
+      .mockResolvedValueOnce([{ n: 150 }])  // R-A wins the last slot
+      .mockResolvedValueOnce([])             // R-B: WHERE 150 < 150 fails
+    mockFindUnique.mockResolvedValue({ interactionCount: 150 })
+    const [rA, rB] = await Promise.all([
+      checkAndConsumeVUsage(USER_ID, 'plus', FEATURE),
+      checkAndConsumeVUsage(USER_ID, 'plus', FEATURE),
+    ])
+    const allowed = [rA.allowed, rB.allowed]
+    expect(allowed.filter(Boolean).length).toBe(1)
+    expect(allowed.filter(v => !v).length).toBe(1)
+  })
+})
+
+it('preserves existing outage behavior for a capped non-Coach feature', async () => {
+  mockQueryRaw.mockRejectedValue(new Error('DB connection lost'))
+
+  const result = await checkAndConsumeVUsage(USER_ID, 'trial', 'workout_generation')
+  expect(result).toEqual({ allowed: true, count: 0, limit: 20 })
+})
+
+// ─── Unlimited tier — trainer only ───────────────────────────────────────────
+
+describe('Unlimited tier — trainer', () => {
+  it('trainer always returns allowed=true with null limit', async () => {
+    mockQueryRaw.mockResolvedValue([{ n: 1 }])
+    const result = await checkAndConsumeVUsage(USER_ID, 'trainer', FEATURE)
     expect(result.allowed).toBe(true)
     expect(result.limit).toBeNull()
   })
 
-  it('never calls findUnique (no limit check)', async () => {
+  it('trainer never calls findUnique (no limit check)', async () => {
     mockQueryRaw.mockResolvedValue([{ n: 1 }])
-    await checkAndConsumeVUsage(USER_ID, 'plus', FEATURE)
+    await checkAndConsumeVUsage(USER_ID, 'trainer', FEATURE)
     expect(mockFindUnique).not.toHaveBeenCalled()
   })
 
-  it('trainer tier is also unlimited', async () => {
-    mockQueryRaw.mockResolvedValue([{ n: 1 }])
+  it('DB error on unlimited tier — returns allowed=true (fail open, no cap)', async () => {
+    mockQueryRaw.mockRejectedValue(new Error('DB connection lost'))
     const result = await checkAndConsumeVUsage(USER_ID, 'trainer', FEATURE)
     expect(result.allowed).toBe(true)
+    expect(result.dbError).toBeUndefined()
     expect(result.limit).toBeNull()
   })
 })

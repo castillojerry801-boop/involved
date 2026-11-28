@@ -107,7 +107,7 @@ const FAQ: { category: string; items: { q: string; a: string }[] }[] = [
     items: [
       {
         q: 'What\'s included in Involved+?',
-        a: 'Involved+ includes AI workout and program generation, unlimited V Coach messages, meal photo analysis, and additional features. See the Involved+ page in the app for current details.',
+        a: 'Involved+ includes AI workout and program generation, 150 V Coach messages per month, meal photo analysis, and additional features. See the Involved+ page in the app for current details.',
       },
       {
         q: 'How do I cancel my subscription?',

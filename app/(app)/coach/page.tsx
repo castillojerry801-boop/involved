@@ -84,7 +84,7 @@ interface MealLogMessage {
 type Message = TextMessage | WorkoutMessage | ProgramMessage | MealLogMessage
 
 interface Usage {
-  tier: 'free' | 'trial' | 'plus'
+  tier: 'free' | 'trial' | 'plus' | 'trainer'
   count: number
   limit: number | null
   remaining: number | null
@@ -683,7 +683,7 @@ export default function CoachPage() {
           <p className="font-black text-white">Involved Coach</p>
           <p className="text-xs text-zinc-300">
             {usage
-              ? usage.tier === 'plus' || usage.limit == null
+              ? usage.limit == null
                 ? 'Unlimited coaching'
                 : usage.tier === 'trial'
                   ? `${usage.remaining ?? usage.limit} of ${usage.limit} messages · ${usage.trialDaysRemaining ?? '?'} trial days left`
@@ -772,8 +772,13 @@ export default function CoachPage() {
               <div>
                 <p className="font-semibold text-amber-800 dark:text-amber-400 text-sm">Monthly coaching limit reached</p>
                 <p className="text-xs text-amber-700 dark:text-amber-500 mt-1">
-                  Your {usage?.tier === 'trial' ? 'trial' : 'free'} plan includes {usage?.limit} coach messages per month. Resets {usage?.resetsAt}.{' '}
-                  <Link href="/plus" className="underline">Upgrade to Involved+</Link> for unlimited coaching.
+                  {usage?.tier === 'plus'
+                    ? `Your Involved+ plan includes ${usage.limit} coach messages per month. Your allowance resets ${usage.resetsAt}. Chat history and existing plans remain accessible.`
+                    : <>
+                        Your {usage?.tier === 'trial' ? 'trial' : 'free'} plan includes {usage?.limit} coach messages per month. Resets {usage?.resetsAt}.{' '}
+                        <Link href="/plus" className="underline">Upgrade to Involved+</Link> for more messages.
+                      </>
+                  }
                 </p>
               </div>
             </div>

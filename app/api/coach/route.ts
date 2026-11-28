@@ -34,7 +34,8 @@ import { buildMealLogToken, verifyMealLogToken, selectTokenIngredients, TOKEN_TT
 import { storeMealCalculationRef, resolveMealCalculationRef } from '@/lib/v/meal-calculation-ref'
 import type OpenAI from 'openai'
 import { after } from 'next/server'
-import { buildTokenLog, flushRequestLogs } from '@/lib/ai/request-logger'
+import { checkAndConsumeVUsage } from '@/lib/v/usage'
+import { buildTokenLog, buildBlockedAttemptLog, flushRequestLogs } from '@/lib/ai/request-logger'
 import type { PendingRequestLog, OperationType } from '@/lib/ai/request-logger'
 import { inferCardioSubtype, type CardioSubtype } from '@/lib/ymove/hierarchy-scorer'
 
@@ -55,31 +56,6 @@ function trimMessageHistory<T extends { role: string; content: string }>(message
 function billingPeriod() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-async function checkAndIncrementUsage(userId: string, tier: 'free' | 'trial' | 'plus' | 'trainer') {
-  const limit = getAiLimit(tier, 'coach_message')
-  const period = billingPeriod()
-
-  try {
-    const record = await prisma.aiUsageLog.upsert({
-      where: { userId_billingPeriod_feature: { userId, billingPeriod: period, feature: 'coach_message' } },
-      update: { interactionCount: { increment: 1 } },
-      create: { userId, billingPeriod: period, feature: 'coach_message', interactionCount: 1 },
-    })
-
-    if (limit !== null && record.interactionCount > limit) {
-      await prisma.aiUsageLog.update({
-        where: { userId_billingPeriod_feature: { userId, billingPeriod: period, feature: 'coach_message' } },
-        data: { interactionCount: { decrement: 1 } },
-      })
-      return { allowed: false, count: record.interactionCount - 1, limit }
-    }
-
-    return { allowed: true, count: record.interactionCount, limit }
-  } catch {
-    return { allowed: true, count: 0, limit }
-  }
 }
 
 // ─── GET: usage status ────────────────────────────────────────────────────────
@@ -140,8 +116,23 @@ export async function POST(req: NextRequest) {
   const entitlement = await getUserEntitlement(user.id)
   const tier = entitlement.tier
 
-  const usage = await checkAndIncrementUsage(user.id, tier)
+  const usage = await checkAndConsumeVUsage(user.id, tier, 'coach_message')
+  if (usage.dbError) {
+    // DB unreachable — cannot verify whether a capped user has remaining messages.
+    // Return a retryable error rather than silently allowing unchecked usage.
+    return Response.json(
+      { error: 'usage_unavailable', message: 'Could not verify your usage. Please try again.' },
+      { status: 503 }
+    )
+  }
   if (!usage.allowed) {
+    // Log the blocked attempt for cost reporting — zero tokens, no model call.
+    const blockedLog = [buildBlockedAttemptLog(user.id, 'coach_message')]
+    try {
+      after(() => flushRequestLogs(blockedLog))
+    } catch {
+      await flushRequestLogs(blockedLog)
+    }
     return Response.json(
       { error: 'limit_reached', limit: usage.limit, count: usage.count },
       { status: 429 }

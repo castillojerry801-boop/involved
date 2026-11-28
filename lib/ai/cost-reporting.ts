@@ -43,6 +43,40 @@ export interface OperationSummary {
   p95InputTokens: number
 }
 
+export interface VUsageStats {
+  // Paying Premium members (active UserSubscription, tier=plus) who sent at least one V message this period.
+  // Tier is determined at reporting time — users who changed tiers mid-period are attributed to current tier.
+  premiumVUsers: number
+  // Users who reached the warning threshold (120 messages)
+  usersAt120: number
+  usersAt120Pct: number | null
+  // Users who hit the hard cap (150 messages)
+  usersAt150: number
+  usersAt150Pct: number | null
+  // Review trigger: 25% of active premium V users reaching 150
+  triggerThreshold: number
+  triggerThresholdReached: boolean
+  // Blocked attempts grouped by tier (profile.subscriptionTier at reporting time, not at block time)
+  blockedAttempts: {
+    plus: number
+    free: number
+    trial: number
+    unknown: number
+    total: number
+  }
+}
+
+export interface CoachCostBreakdown {
+  // Cheap turn-by-turn chat and intake rounds
+  ordinaryChat: number | null
+  // Program draft, correction, and Sol escalation rounds
+  programBuilds: number | null
+  // AI meal-photo analysis
+  mealPhotos: number | null
+  // Items with no confirmed pricing
+  missingPricingOperations: string[]
+}
+
 export interface AiUsageReport {
   billingPeriod: string
   generatedAt: string
@@ -62,6 +96,9 @@ export interface AiUsageReport {
   activeSubscriberCount: number
   estimatedCostPerSubscriberUsd: number | null
   reserveUtilizationPercent: number | null
+  // V-specific usage measurement
+  vUsageStats: VUsageStats
+  coachCostBreakdown: CoachCostBreakdown
   // Flags
   expensiveOperations: Array<{
     userId: string
@@ -265,6 +302,95 @@ export async function generateAiUsageReport(
     ? (estimatedCostPerSub / AI_MONTHLY_RESERVE_USD) * 100
     : null
 
+  // ── V usage measurement ───────────────────────────────────────────────────
+  // Uses AiUsageLog (per-user interaction counts) since AiRequestLog tracks
+  // individual API rounds, not conversation turns.
+  //
+  // Premium users are identified by active UserSubscription rows at reporting time.
+  // Limitation: AiUsageLog does not store the user's tier at message time.
+  // Users who subscribed or churned mid-period are attributed to their current tier.
+  const allCoachUsageLogs = await prisma.aiUsageLog.findMany({
+    where: { billingPeriod: period, feature: 'coach_message' },
+    select: { userId: true, interactionCount: true },
+  })
+
+  const coachUserIds = allCoachUsageLogs.map(l => l.userId)
+  const activePlusSubs = coachUserIds.length > 0
+    ? await prisma.userSubscription.findMany({
+        where: { userId: { in: coachUserIds }, tier: 'plus', status: 'active' },
+        select: { userId: true },
+      })
+    : []
+  const activePlusIds = new Set(activePlusSubs.map(s => s.userId))
+
+  const premiumCoachLogs = allCoachUsageLogs.filter(l => activePlusIds.has(l.userId))
+  const premiumVUsers = premiumCoachLogs.length
+  const usersAt120 = premiumCoachLogs.filter(l => l.interactionCount >= 120).length
+  const usersAt150 = premiumCoachLogs.filter(l => l.interactionCount >= 150).length
+  const triggerThreshold = Math.ceil(premiumVUsers * 0.25)
+
+  // Blocked attempts by tier — derived from the already-fetched logs array.
+  // Note: profile.subscriptionTier is the user's current tier at reporting time.
+  const blockedRaw = logs.filter(l => l.operationType === 'chat_rate_limited')
+  const blockedPlusCt  = blockedRaw.filter(l => (l.profile.subscriptionTier as string) === 'plus').length
+  const blockedFreeCt  = blockedRaw.filter(l => (l.profile.subscriptionTier as string) === 'free').length
+  const blockedTrialCt = blockedRaw.filter(l => (l.profile.subscriptionTier as string) === 'trial').length
+  const blockedAttempts = {
+    plus:    blockedPlusCt,
+    free:    blockedFreeCt,
+    trial:   blockedTrialCt,
+    unknown: blockedRaw.length - blockedPlusCt - blockedFreeCt - blockedTrialCt,
+    total:   blockedRaw.length,
+  }
+
+  const vUsageStats: VUsageStats = {
+    premiumVUsers,
+    usersAt120,
+    usersAt120Pct: premiumVUsers > 0 ? Math.round((usersAt120 / premiumVUsers) * 100) : null,
+    usersAt150,
+    usersAt150Pct: premiumVUsers > 0 ? Math.round((usersAt150 / premiumVUsers) * 100) : null,
+    triggerThreshold,
+    triggerThresholdReached: usersAt150 >= triggerThreshold && premiumVUsers > 0,
+    blockedAttempts,
+  }
+
+  // ── Coach cost breakdown by operation category ────────────────────────────
+  const ORDINARY_CHAT_OPS = new Set(['chat_intake', 'chat_prose'])
+  const PROGRAM_BUILD_OPS = new Set([
+    'program_draft', 'program_correction',
+    'quality_escalation', 'quality_escalation_correction',
+    'workout_generation', 'workout_modification', 'workout_shortening',
+  ])
+  const MEAL_PHOTO_OPS = new Set(['photo_analysis'])
+
+  let chatCost = 0
+  let buildCost = 0
+  let photoCost = 0
+  const missingPricingOps: string[] = []
+
+  for (const [opType, v] of opMap.entries()) {
+    if (opType === 'chat_rate_limited') continue
+    const bucket = ORDINARY_CHAT_OPS.has(opType) ? 'chat'
+      : PROGRAM_BUILD_OPS.has(opType) ? 'build'
+      : MEAL_PHOTO_OPS.has(opType) ? 'photo'
+      : null
+    if (bucket === null) continue
+    // If any log in this op type has unknown pricing, flag it
+    const opsInBucket = logs.filter(l => l.operationType === opType)
+    const hasUnknown = opsInBucket.some(l => l.pricingStatus === 'unknown')
+    if (hasUnknown && !missingPricingOps.includes(opType)) missingPricingOps.push(opType)
+    if (bucket === 'chat') chatCost += v.costSum
+    else if (bucket === 'build') buildCost += v.costSum
+    else if (bucket === 'photo') photoCost += v.costSum
+  }
+
+  const coachCostBreakdown: CoachCostBreakdown = {
+    ordinaryChat: missingPricingOps.some(op => ORDINARY_CHAT_OPS.has(op)) ? null : chatCost,
+    programBuilds: missingPricingOps.some(op => PROGRAM_BUILD_OPS.has(op)) ? null : buildCost,
+    mealPhotos: missingPricingOps.some(op => MEAL_PHOTO_OPS.has(op)) ? null : photoCost,
+    missingPricingOperations: missingPricingOps,
+  }
+
   return {
     billingPeriod: period,
     generatedAt: new Date().toISOString(),
@@ -281,10 +407,15 @@ export async function generateAiUsageReport(
     activeSubscriberCount,
     estimatedCostPerSubscriberUsd: estimatedCostPerSub,
     reserveUtilizationPercent: reserveUtil,
+    vUsageStats,
+    coachCostBreakdown,
     expensiveOperations: expensiveOps,
     billingNote:
       'Estimated costs are computed from public OpenAI pricing and may differ from actual billed amounts. ' +
       'Actual charges require the OpenAI dashboard (platform.openai.com → Usage). ' +
-      'Models marked "unknown" (gpt-6-luna, gpt-6-sol) have no confirmed pricing — their token counts are tracked but cost is omitted.',
+      'Models marked "unknown" (gpt-6-luna, gpt-6-sol) have no confirmed pricing — their token counts are tracked but cost is omitted. ' +
+      'V usage stats (premiumVUsers, usersAt120, usersAt150) use active UserSubscription records as of report time. ' +
+      'Blocked-attempt tier counts use profile.subscriptionTier at report time, not at block time. ' +
+      'Users who changed tiers mid-period are attributed to their current tier.',
   }
 }

@@ -4,5 +4,10 @@
       "path": "/api/cron/cleanup-meal-refs",
       "schedule": "0 0 * * *"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "coach-v/monthly-message-caps": false
+    }
+  }
 }
