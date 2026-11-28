@@ -3,44 +3,113 @@
  * scripts/test-chat-ceiling.ts
  * Authenticated Preview integration checks for the V chat ceiling.
  *
- * PREREQS:
- *   .env.local with NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
- *   SUPABASE_SERVICE_ROLE_KEY, and DIRECT_URL (or DATABASE_URL).
- *
- * Usage:
- *   PREVIEW_URL=https://your-preview.vercel.app npx tsx scripts/test-chat-ceiling.ts
- *   # Defaults to http://localhost:3000 when PREVIEW_URL is not set.
- *
- * Live vs mock breakdown:
- *   LIVE  — HTTP calls to the real Preview URL, real Supabase auth, real DB rows
- *   MOCK  — none (this script is purely live; unit mocks live in __tests__/)
+ * Classification: live auth/database integration with mocked OpenAI
+ *   LIVE  — real Supabase Auth (admin create + anon sign-in), real Postgres
+ *            (Prisma seed / query via DIRECT_URL), real HTTP requests to the
+ *            running Next.js dev server.
+ *   MOCKED — OpenAI provider replaced by a deterministic local stub whose
+ *            call count is verified per-check to assert that:
+ *              • allowed messages reach the provider exactly once
+ *              • blocked messages reach the provider zero times
  *
  * Checks performed:
- *   1. Free message 20  — allowed (last slot)
- *   2. Free message 21  — blocked (429), no OpenAI call
- *   3. Plus message 150 — allowed (last slot)
- *   4. Plus message 151 — blocked (429), no OpenAI call
- *   5. Concurrent       — two requests at count=149 → exactly one 200, one 429
- *   6. Billing reset    — previous-period row does NOT block current period
- *   7. GET banner       — Plus at-cap shows limit=150, remaining=0 (no upgrade prompt)
- *   8. DB error path    — 503 returned when usage check fails (mocked via seeded count
- *                         manipulation; not tested live since we can't cut DB access)
- *      NOTE: Check 8 is covered by unit tests (chat-ceiling.test.ts). Skipped here.
+ *   1. Free message 20  — allowed (last slot), stream delivers terminal event,
+ *                         provider called once
+ *   2. Free message 21  — blocked (429 limit_reached), zero provider calls
+ *   3. Plus message 150 — allowed (last slot), stream delivers terminal event,
+ *                         provider called once
+ *   4. Plus message 151 — blocked (429 limit_reached), zero provider calls
+ *   5. Concurrent       — two requests at count=149 → exactly one stream event,
+ *                         one 429, provider called exactly once total
+ *   6. Billing reset    — prior-period at-cap does not block current period,
+ *                         stream delivers terminal event, provider called once
+ *   7. GET banner       — Plus at-cap shows tier/limit/remaining/resetsAt,
+ *                         zero provider calls
+ *
+ * PREREQS:
+ *   ENV_FILE env var pointing to a file with:
+ *     NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+ *     SUPABASE_SERVICE_ROLE_KEY, DIRECT_URL (or DATABASE_URL)
+ *   REQUIRED_SUPABASE_REF  — project ref guard (aborts if mismatch)
+ *   OPENAI_STUB_URL        — base URL of the deterministic OpenAI stub
+ *   PREVIEW_URL            — dev server URL (default: http://localhost:3000)
  */
 
 import * as dotenv from 'dotenv'
+import * as fs from 'fs'
+import * as path from 'path'
 import { createClient } from '@supabase/supabase-js'
 import { PrismaClient } from '@prisma/client'
 
-dotenv.config({ path: '.env.local' })
+// ── Env file loading ──────────────────────────────────────────────────────────
+
+const envFile = process.env.ENV_FILE ?? '.env.local'
+const envPath = path.resolve(process.cwd(), envFile)
+if (!fs.existsSync(envPath)) {
+  console.error(`\x1b[31mAbort: env file not found: ${envPath}\x1b[0m`)
+  process.exit(1)
+}
+dotenv.config({ path: envPath })
+
+// ── Project ref guard — abort before any write if targets mismatch ────────────
+
+const REQUIRED_REF = process.env.REQUIRED_SUPABASE_REF
+if (!REQUIRED_REF) {
+  console.error(
+    '\x1b[31mAbort: REQUIRED_SUPABASE_REF is not set.\x1b[0m\n' +
+    '  Set it to the expected Supabase project ref.\n' +
+    '  This guard prevents accidental writes to production.'
+  )
+  process.exit(1)
+}
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const PREVIEW_URL = (process.env.PREVIEW_URL ?? 'http://localhost:3000').replace(/\/$/, '')
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const PREVIEW_URL       = (process.env.PREVIEW_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+const SUPABASE_URL      = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const SUPABASE_SRK      = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const OPENAI_STUB_URL   = (process.env.OPENAI_STUB_URL ?? '').replace(/\/$/, '')
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SUPABASE_SRK) {
+  console.error('\x1b[31mAbort: missing NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, or SUPABASE_SERVICE_ROLE_KEY\x1b[0m')
+  process.exit(1)
+}
+if (!OPENAI_STUB_URL) {
+  console.error('\x1b[31mAbort: OPENAI_STUB_URL is not set — required for deterministic provider-call assertions\x1b[0m')
+  process.exit(1)
+}
+
 const PROJECT_REF = new URL(SUPABASE_URL).hostname.split('.')[0]
+
+if (PROJECT_REF !== REQUIRED_REF) {
+  console.error(
+    `\x1b[31mAbort: Supabase URL project ref mismatch.\x1b[0m\n` +
+    `  Expected : ${REQUIRED_REF}\n` +
+    `  Got      : ${PROJECT_REF} (from ${SUPABASE_URL})\n` +
+    `  Env file : ${envPath}`
+  )
+  process.exit(1)
+}
+
+// ── Prisma DB URL ref guard ───────────────────────────────────────────────────
+
+const dbUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL ?? ''
+if (!dbUrl) {
+  console.error('\x1b[31mAbort: neither DIRECT_URL nor DATABASE_URL is set\x1b[0m')
+  process.exit(1)
+}
+if (!dbUrl.includes(REQUIRED_REF)) {
+  console.error(
+    `\x1b[31mAbort: DB URL does not contain the expected project ref.\x1b[0m\n` +
+    `  Expected ref in URL : ${REQUIRED_REF}\n` +
+    `  DB URL key used     : ${process.env.DIRECT_URL ? 'DIRECT_URL' : 'DATABASE_URL'}\n` +
+    `  Env file            : ${envPath}`
+  )
+  process.exit(1)
+}
+
+// ── Billing period helpers ─────────────────────────────────────────────────────
 
 function currentPeriod() {
   const d = new Date()
@@ -57,13 +126,11 @@ const PREV_PERIOD    = prevPeriod()
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 
-const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+const admin = createClient(SUPABASE_URL, SUPABASE_SRK, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 
-const prisma = new PrismaClient({
-  datasources: { db: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL } },
-})
+const prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } })
 
 // ── Reporting ─────────────────────────────────────────────────────────────────
 
@@ -80,8 +147,8 @@ function fail(label: string, detail?: string) {
 function section(title: string) { console.log(`\n${title}`) }
 
 // ── Cookie helpers ────────────────────────────────────────────────────────────
-// @supabase/ssr 0.12.7 stores sessions as "base64-" + base64url(JSON.stringify(session)),
-// chunked at 3180 URL-encoded bytes into sb-{ref}-auth-token.0 / .1 / ... cookies.
+// @supabase/ssr 0.12.7: "base64-" + base64url(JSON.stringify(session)),
+// chunked at 3180 URL-encoded bytes into sb-{ref}-auth-token[.N] cookies.
 
 const MAX_CHUNK_SIZE = 3180
 
@@ -91,15 +158,11 @@ function sessionToCookies(session: {
 }): string {
   const key     = `sb-${PROJECT_REF}-auth-token`
   const encoded = 'base64-' + Buffer.from(JSON.stringify(session)).toString('base64url')
-
-  if (encodeURIComponent(encoded).length <= MAX_CHUNK_SIZE) {
-    return `${key}=${encoded}`
-  }
+  if (encodeURIComponent(encoded).length <= MAX_CHUNK_SIZE) return `${key}=${encoded}`
 
   const parts: string[] = []
   let remaining = encoded, i = 0
   while (remaining.length > 0) {
-    // Find the boundary where URL-encoding stays within MAX_CHUNK_SIZE
     let end = MAX_CHUNK_SIZE
     while (end > 0 && encodeURIComponent(remaining.slice(0, end)).length > MAX_CHUNK_SIZE) end--
     parts.push(`${key}.${i}=${remaining.slice(0, end)}`)
@@ -111,7 +174,13 @@ function sessionToCookies(session: {
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
-type CoachPostResult = { status: number; body: unknown; headers: Record<string, string | null> }
+type CoachPostResult = {
+  status: number
+  body: unknown
+  headers: Record<string, string | null>
+  /** True when the SSE stream delivered the terminal {"type":"done"} event. */
+  hasDone: boolean
+}
 
 async function coachPost(cookieHeader: string): Promise<CoachPostResult> {
   const res = await fetch(`${PREVIEW_URL}/api/coach`, {
@@ -121,14 +190,19 @@ async function coachPost(cookieHeader: string): Promise<CoachPostResult> {
   })
 
   let body: unknown = null
+  let hasDone = false
   const ct = res.headers.get('content-type') ?? ''
+
   if (ct.includes('application/json')) {
     body = await res.json().catch(() => null)
-  } else {
-    // SSE stream — drain it
-    if (res.body) {
-      const r = res.body.getReader()
-      while (!(await r.read()).done) {}
+  } else if (res.body) {
+    // SSE stream — drain fully and check for the terminal {"type":"done"} event.
+    const reader = res.body.getReader()
+    const dec    = new TextDecoder()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (dec.decode(value, { stream: true }).includes('"type":"done"')) hasDone = true
     }
   }
 
@@ -139,6 +213,7 @@ async function coachPost(cookieHeader: string): Promise<CoachPostResult> {
       'x-usage-count': res.headers.get('x-usage-count'),
       'x-usage-limit': res.headers.get('x-usage-limit'),
     },
+    hasDone,
   }
 }
 
@@ -148,6 +223,16 @@ async function coachGet(cookieHeader: string): Promise<{ status: number; json: u
     headers: { Cookie: cookieHeader },
   })
   return { status: res.status, json: await res.json().catch(() => null) }
+}
+
+/** Returns the number of POST /v1/chat/completions calls the stub has seen. */
+async function stubCalls(): Promise<number> {
+  try {
+    const r = await fetch(`${OPENAI_STUB_URL}/calls`)
+    return ((await r.json()) as { count: number }).count
+  } catch {
+    return -1
+  }
 }
 
 // ── Setup / teardown ──────────────────────────────────────────────────────────
@@ -164,14 +249,10 @@ async function createTestUser(tag: string): Promise<TestUser> {
   if (error || !data.user) throw new Error(`createUser(${tag}): ${error?.message ?? 'no user'}`)
   const userId = data.user.id
 
-  // Profile row is required for AiRequestLog profile relation
   await (prisma as PrismaClient & { profile: { upsert: (a: unknown) => Promise<unknown> } }).profile.upsert({
-    where:  { id: userId },
-    create: { id: userId },
-    update: {},
+    where: { id: userId }, create: { id: userId }, update: {},
   })
 
-  // Sign in with anon client to get a session
   const anonClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
@@ -216,17 +297,57 @@ async function cleanupUser(userId: string): Promise<void> {
   await admin.auth.admin.deleteUser(userId).catch(() => {})
 }
 
+// ── Target verification (before any writes) ───────────────────────────────────
+
+async function verifyTargets(): Promise<void> {
+  const { error: authErr } = await admin.auth.admin.listUsers({ perPage: 1 })
+  if (authErr) {
+    console.error(
+      `\x1b[31mAbort: Supabase admin auth check failed.\x1b[0m\n` +
+      `  ${authErr.message}\n` +
+      `  Verify SUPABASE_SERVICE_ROLE_KEY belongs to project ${REQUIRED_REF}.`
+    )
+    process.exit(1)
+  }
+  try {
+    await prisma.$queryRaw`SELECT 1`
+  } catch (e) {
+    console.error(
+      `\x1b[31mAbort: Prisma DB connection failed.\x1b[0m\n` +
+      `  ${(e as Error).message}\n` +
+      `  Verify DATABASE_URL/DIRECT_URL targets project ${REQUIRED_REF}.`
+    )
+    await prisma.$disconnect()
+    process.exit(1)
+  }
+  try {
+    await fetch(`${OPENAI_STUB_URL}/calls`)
+  } catch {
+    console.error(
+      `\x1b[31mAbort: OpenAI stub unreachable at ${OPENAI_STUB_URL}.\x1b[0m\n` +
+      `  Verify the stub is running and OPENAI_STUB_URL is correct.`
+    )
+    process.exit(1)
+  }
+  console.log(G(`✓ Supabase Auth → ${REQUIRED_REF}`))
+  console.log(G(`✓ Postgres      → ${REQUIRED_REF}`))
+  console.log(G(`✓ OpenAI stub   → ${OPENAI_STUB_URL}`))
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log(`\nV Chat Ceiling — Live Preview Checks`)
-  console.log(`${DIM(`URL: ${PREVIEW_URL}`)}`)
-  console.log(`${DIM(`Period: ${CURRENT_PERIOD} (prev: ${PREV_PERIOD})`)}`)
+  console.log(`\nV Chat Ceiling — Live Integration Checks`)
+  console.log(DIM('Live  : Supabase Auth (create/sign-in) + Postgres (Prisma seed/query)'))
+  console.log(DIM('Mocked: OpenAI provider — deterministic stub, call-count verified per check'))
+  console.log(DIM(`Server : ${PREVIEW_URL}`))
+  console.log(DIM(`Project: ${PROJECT_REF}  Period: ${CURRENT_PERIOD}`))
+
+  await verifyTargets()
 
   const users: TestUser[] = []
 
   try {
-    // ── Create users ─────────────────────────────────────────────────────────
     console.log('\nCreating test users…')
     const [freeUser, plusUser, concurrentUser, resetUser] = await Promise.all([
       createTestUser('free'),
@@ -239,145 +360,160 @@ async function main() {
 
     await makePlusUser(plusUser.id)
     await makePlusUser(concurrentUser.id)
-    // resetUser is Plus for the billing-reset check (limit=150, not 20)
     await makePlusUser(resetUser.id)
 
-    // ── Seed usage counts ─────────────────────────────────────────────────────
     await Promise.all([
-      seedUsage(freeUser.id,       19),          // next POST = 20th (last free slot)
-      seedUsage(plusUser.id,      149),          // next POST = 150th (last plus slot)
-      seedUsage(concurrentUser.id, 149),          // race condition: two requests for slot 150
-      seedUsage(resetUser.id,     150, PREV_PERIOD), // prior period at cap — current period fresh
+      seedUsage(freeUser.id,       19),
+      seedUsage(plusUser.id,      149),
+      seedUsage(concurrentUser.id, 149),
+      seedUsage(resetUser.id, 150, PREV_PERIOD),
     ])
 
     // ── Check 1: Free message 20 (allowed) ───────────────────────────────────
     section('Check 1 — Free: message 20 allowed')
     {
-      const r = await coachPost(freeUser.cookieHeader)
-      if (r.status !== 429 && r.status !== 503) {
-        pass(`status ${r.status} (not blocked)`)
-      } else {
-        fail(`expected non-429, got ${r.status}`, JSON.stringify(r.body))
-      }
+      const before = await stubCalls()
+      const r      = await coachPost(freeUser.cookieHeader)
+      const after  = await stubCalls()
+      if (r.status === 200) pass(`status ${r.status} (not blocked)`)
+      else fail(`expected 200, got ${r.status}`, JSON.stringify(r.body))
+      if (r.hasDone) pass('stream delivered terminal {"type":"done"} event')
+      else fail('no terminal stream event received (stream ended without {"type":"done"})')
+      if (after === before + 1) pass(`provider called once (count ${before}→${after})`)
+      else fail(`provider call count`, `expected ${before + 1}, got ${after}`)
     }
 
     // ── Check 2: Free message 21 (blocked) ───────────────────────────────────
-    // After check 1 the count is now 20 (or still 19 if the AI call errored and decremented).
-    // Force count=20 to guarantee a clean blocked state.
     section('Check 2 — Free: message 21 blocked')
     {
       await seedUsage(freeUser.id, 20)
-      const r = await coachPost(freeUser.cookieHeader)
+      const before = await stubCalls()
+      const r      = await coachPost(freeUser.cookieHeader)
+      const after  = await stubCalls()
       if (r.status === 429) {
-        const body = r.body as { error?: string; limit?: number; count?: number }
-        pass(`429 returned`)
-        if (body?.error === 'limit_reached') pass(`body.error = limit_reached`)
-        else fail(`body.error`, `expected limit_reached, got ${body?.error}`)
-        if (body?.limit === 20) pass(`body.limit = 20`)
-        else fail(`body.limit`, `expected 20, got ${body?.limit}`)
+        const body = r.body as { error?: string; limit?: number }
+        pass('429 returned')
+        if (body?.error === 'limit_reached') pass('body.error = limit_reached')
+        else fail('body.error', `expected limit_reached, got ${body?.error}`)
+        if (body?.limit === 20) pass('body.limit = 20')
+        else fail('body.limit', `expected 20, got ${body?.limit}`)
       } else {
         fail(`expected 429, got ${r.status}`)
       }
+      if (after === before) pass(`zero provider calls for blocked message (count stayed ${after})`)
+      else fail('provider called for blocked message', `count ${before}→${after}`)
     }
 
     // ── Check 3: Plus message 150 (allowed) ──────────────────────────────────
     section('Check 3 — Plus: message 150 allowed')
     {
-      const r = await coachPost(plusUser.cookieHeader)
-      if (r.status !== 429 && r.status !== 503) {
-        pass(`status ${r.status} (not blocked)`)
-      } else {
-        fail(`expected non-429, got ${r.status}`, JSON.stringify(r.body))
-      }
+      const before = await stubCalls()
+      const r      = await coachPost(plusUser.cookieHeader)
+      const after  = await stubCalls()
+      if (r.status === 200) pass(`status ${r.status} (not blocked)`)
+      else fail(`expected 200, got ${r.status}`, JSON.stringify(r.body))
+      if (r.hasDone) pass('stream delivered terminal {"type":"done"} event')
+      else fail('no terminal stream event received')
+      if (after === before + 1) pass(`provider called once (count ${before}→${after})`)
+      else fail('provider call count', `expected ${before + 1}, got ${after}`)
     }
 
     // ── Check 4: Plus message 151 (blocked) ──────────────────────────────────
     section('Check 4 — Plus: message 151 blocked')
     {
       await seedUsage(plusUser.id, 150)
-      const r = await coachPost(plusUser.cookieHeader)
+      const before = await stubCalls()
+      const r      = await coachPost(plusUser.cookieHeader)
+      const after  = await stubCalls()
       if (r.status === 429) {
-        const body = r.body as { error?: string; limit?: number; count?: number }
-        pass(`429 returned`)
-        if (body?.error === 'limit_reached') pass(`body.error = limit_reached`)
-        else fail(`body.error`, `expected limit_reached, got ${body?.error}`)
-        if (body?.limit === 150) pass(`body.limit = 150`)
-        else fail(`body.limit`, `expected 150, got ${body?.limit}`)
+        const body = r.body as { error?: string; limit?: number }
+        pass('429 returned')
+        if (body?.error === 'limit_reached') pass('body.error = limit_reached')
+        else fail('body.error', `expected limit_reached, got ${body?.error}`)
+        if (body?.limit === 150) pass('body.limit = 150')
+        else fail('body.limit', `expected 150, got ${body?.limit}`)
       } else {
         fail(`expected 429, got ${r.status}`)
       }
+      if (after === before) pass(`zero provider calls for blocked message (count stayed ${after})`)
+      else fail('provider called for blocked message', `count ${before}→${after}`)
     }
 
     // ── Check 5: Concurrent — exactly one 200, one 429 ───────────────────────
     section('Check 5 — Concurrent: two requests at count=149, one wins')
     {
-      // concurrentUser is at count=149 (seeded above)
-      const [rA, rB] = await Promise.all([
+      const before       = await stubCalls()
+      const [rA, rB]     = await Promise.all([
         coachPost(concurrentUser.cookieHeader),
         coachPost(concurrentUser.cookieHeader),
       ])
-      const statuses = [rA.status, rB.status]
-      const blocked  = statuses.filter(s => s === 429).length
-      const allowed  = statuses.filter(s => s !== 429 && s !== 503).length
+      const after        = await stubCalls()
+      const statuses     = [rA.status, rB.status]
+      const blockedCount = statuses.filter(s => s === 429).length
+      const allowedCount = statuses.filter(s => s === 200).length
 
-      if (allowed === 1 && blocked === 1) {
-        pass(`exactly one allowed (${statuses.filter(s => s !== 429)[0]}), one blocked (429)`)
-      } else {
-        fail(`expected 1 allowed + 1 blocked`, `got statuses: ${statuses.join(', ')}`)
-      }
+      if (allowedCount === 1 && blockedCount === 1)
+        pass("exactly one allowed (200), one blocked (429)")
+      else fail('expected 1 allowed + 1 blocked', `got statuses: ${statuses.join(', ')}`)
+
+      const doneCount = [rA.hasDone, rB.hasDone].filter(Boolean).length
+      if (doneCount === 1) pass('terminal stream event from exactly one response')
+      else fail('terminal stream event count', `expected 1, got ${doneCount}`)
+
+      if (after === before + 1)
+        pass(`provider called exactly once for 2 concurrent requests (count ${before}→${after})`)
+      else fail('provider call count for concurrent test', `expected ${before + 1}, got ${after}`)
     }
 
     // ── Check 6: Billing period reset ────────────────────────────────────────
     section('Check 6 — Billing reset: prior-period at-cap does not block current period')
     {
-      // resetUser has count=150 for PREV_PERIOD but no row for CURRENT_PERIOD
-      const r = await coachPost(resetUser.cookieHeader)
-      if (r.status !== 429 && r.status !== 503) {
-        pass(`status ${r.status} (not blocked despite prior-period at-cap)`)
-      } else {
-        fail(`expected non-429, got ${r.status} — prior period bleeding into current`)
-      }
+      const before = await stubCalls()
+      const r      = await coachPost(resetUser.cookieHeader)
+      const after  = await stubCalls()
+      if (r.status === 200) pass(`status ${r.status} (not blocked despite prior-period at-cap)`)
+      else fail(`expected 200 with a fresh billing period, got ${r.status}`)
+      if (r.hasDone) pass('stream delivered terminal {"type":"done"} event')
+      else fail('no terminal stream event received')
+      if (after === before + 1) pass(`provider called once (count ${before}→${after})`)
+      else fail('provider call count', `expected ${before + 1}, got ${after}`)
     }
 
-    // ── Check 7: GET banner — Plus at-cap shows correct data ─────────────────
+    // ── Check 7: GET banner ───────────────────────────────────────────────────
     section('Check 7 — GET /api/coach: Plus at-cap banner data')
     {
       await seedUsage(plusUser.id, 150)
+      const before        = await stubCalls()
       const { status, json } = await coachGet(plusUser.cookieHeader)
+      const after         = await stubCalls()
       const data = json as { tier?: string; limit?: number; remaining?: number; resetsAt?: string } | null
 
-      if (status === 200) pass(`GET 200`)
-      else fail(`GET status`, `expected 200, got ${status}`)
+      if (status === 200) pass('GET 200')
+      else fail('GET status', `expected 200, got ${status}`)
 
-      if (data?.tier === 'plus') pass(`tier = plus`)
-      else fail(`tier`, `expected plus, got ${data?.tier}`)
+      if (data?.tier === 'plus') pass('tier = plus')
+      else fail('tier', `expected plus, got ${data?.tier}`)
 
-      if (data?.limit === 150) pass(`limit = 150`)
-      else fail(`limit`, `expected 150, got ${data?.limit}`)
+      if (data?.limit === 150) pass('limit = 150')
+      else fail('limit', `expected 150, got ${data?.limit}`)
 
-      if (data?.remaining === 0) pass(`remaining = 0`)
-      else fail(`remaining`, `expected 0, got ${data?.remaining}`)
+      if (data?.remaining === 0) pass('remaining = 0')
+      else fail('remaining', `expected 0, got ${data?.remaining}`)
 
       if (data?.resetsAt) pass(`resetsAt present (${data.resetsAt})`)
-      else fail(`resetsAt missing`)
+      else fail('resetsAt missing')
 
-      // No upgrade prompt: the GET response is JSON, not HTML. The banner itself is
-      // client-side. Verify the API does NOT return a tier of 'free' (which would
-      // cause the UI to render the upgrade link).
-      if (data?.tier !== 'free') pass(`tier is not 'free' (no upgrade prompt would render)`)
-      else fail(`tier is 'free' — upgrade prompt would appear for Plus user`)
+      if (after === before) pass(`zero provider calls for GET request (count stayed ${after})`)
+      else fail('provider called for GET request', `count ${before}→${after}`)
     }
 
   } finally {
-    // ── Cleanup ───────────────────────────────────────────────────────────────
     console.log('\nCleaning up test users…')
     await Promise.all(users.map(u => cleanupUser(u.id)))
     console.log(`  Deleted ${users.length} test users`)
-
     await prisma.$disconnect()
   }
 
-  // ── Summary ───────────────────────────────────────────────────────────────
   console.log(`\n${'─'.repeat(50)}`)
   if (failed === 0) {
     console.log(G(`✓ All ${passed} checks passed`))
