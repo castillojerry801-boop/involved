@@ -80,13 +80,12 @@ export async function checkAndConsumeVUsage(
     })
     return { allowed: false, count: existing?.interactionCount ?? limit, limit }
   } catch {
-    if (limit !== null) {
-      // Capped tier: cannot verify usage → signal the caller to return a temporary error.
-      // Failing open would let users bypass the ceiling on every DB outage.
+    if (feature === 'coach_message' && limit !== null) {
+      // Coach returns a retryable error when it cannot verify a capped allowance.
       return { allowed: false, count: 0, limit, dbError: true }
     }
-    // Unlimited tier: fail open (no cap to enforce, so no risk of over-use).
-    return { allowed: true, count: 0, limit: null }
+    // Preserve existing outage behavior for other features and unlimited tiers.
+    return { allowed: true, count: 0, limit }
   }
 }
 
