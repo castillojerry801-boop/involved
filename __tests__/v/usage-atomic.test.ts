@@ -155,6 +155,13 @@ describe('Limited tier — plus (limit=150)', () => {
   })
 })
 
+it('preserves existing outage behavior for a capped non-Coach feature', async () => {
+  mockQueryRaw.mockRejectedValue(new Error('DB connection lost'))
+
+  const result = await checkAndConsumeVUsage(USER_ID, 'trial', 'workout_generation')
+  expect(result).toEqual({ allowed: true, count: 0, limit: 20 })
+})
+
 // ─── Unlimited tier — trainer only ───────────────────────────────────────────
 
 describe('Unlimited tier — trainer', () => {
